@@ -29,6 +29,8 @@ class CommandResult:
     stdout: str
     stderr: str
     timed_out: bool = False
+    stdout_truncated: bool = False
+    stderr_truncated: bool = False
 
 
 class SandboxBackend(Protocol):
@@ -41,6 +43,14 @@ class SandboxBackend(Protocol):
     def resolve_path(self, path: str | Path) -> Path: ...
 
     async def read_text(self, path: str | Path, *, max_chars: int) -> tuple[str, bool]: ...
+
+    async def write_text(
+        self,
+        path: str | Path,
+        content: str,
+        *,
+        expected_sha256: str | None = None,
+    ) -> None: ...
 
     async def run_command(
         self,

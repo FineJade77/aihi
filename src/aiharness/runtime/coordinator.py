@@ -164,6 +164,7 @@ class RunCoordinator:
                     cwd=session.cwd,
                     mode=permission_mode,
                     sandbox=self.sandbox.descriptor,
+                    run_id=run_id,
                 )
                 context = ToolContext(
                     cwd=str(session.cwd),

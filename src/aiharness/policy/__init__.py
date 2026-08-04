@@ -8,11 +8,14 @@ from aiharness.policy.engine import (
     PermissionMode,
     PolicyEngine,
 )
+from aiharness.policy.leases import Approval, CapabilityLease
 
 __all__ = [
     "Decision",
     "DecisionEffect",
     "DefaultPolicyEngine",
+    "Approval",
+    "CapabilityLease",
     "PermissionContext",
     "PermissionMode",
     "PolicyEngine",

@@ -1,0 +1,71 @@
+"""Optimistic-concurrency text replacement tool."""
+
+from __future__ import annotations
+
+import hashlib
+from typing import Any
+
+from aiharness.core.errors import ToolInputError
+from aiharness.core.types import ToolSpec
+from aiharness.tools.base import ToolContext, ToolResult
+
+
+class EditFileTool:
+    spec = ToolSpec(
+        name="edit_file",
+        description="Replace exact text in a workspace file after checking its digest.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "old_text": {"type": "string"},
+                "new_text": {"type": "string"},
+                "expected_sha256": {"type": "string"},
+                "replace_all": {"type": "boolean"},
+            },
+            "required": ["path", "old_text", "new_text"],
+            "additionalProperties": False,
+        },
+        concurrency_safe=False,
+        mutates=True,
+        required_capabilities=("filesystem.write",),
+        timeout_seconds=30.0,
+    )
+
+    async def run(self, input: dict[str, Any], context: ToolContext) -> ToolResult:
+        path = str(input["path"])
+        old_text = str(input["old_text"])
+        new_text = str(input["new_text"])
+        replace_all = bool(input.get("replace_all", False))
+        expected_sha256 = input.get("expected_sha256")
+        if expected_sha256 is not None and not isinstance(expected_sha256, str):
+            raise ToolInputError("expected_sha256 must be a string")
+        if not old_text:
+            raise ToolInputError("old_text must not be empty")
+        current, truncated = await context.sandbox.read_text(path, max_chars=10_000_000)
+        if truncated:
+            raise ToolInputError("File is too large for safe edit")
+        current_sha256 = hashlib.sha256(current.encode("utf-8")).hexdigest()
+        if expected_sha256 is not None and expected_sha256 != current_sha256:
+            raise ToolInputError("File changed since it was read")
+        occurrences = current.count(old_text)
+        if occurrences == 0:
+            raise ToolInputError("old_text was not found")
+        if occurrences > 1 and not replace_all:
+            raise ToolInputError("old_text matched multiple locations; set replace_all=true")
+        updated = current.replace(old_text, new_text, -1 if replace_all else 1)
+        await context.sandbox.write_text(
+            path,
+            updated,
+            expected_sha256=current_sha256,
+        )
+        resolved = context.sandbox.resolve_path(path)
+        return ToolResult(
+            content=f"Edited {resolved}; replaced {occurrences} occurrence(s).",
+            metadata={
+                "path": str(resolved),
+                "old_sha256": current_sha256,
+                "new_sha256": hashlib.sha256(updated.encode("utf-8")).hexdigest(),
+                "replacements": occurrences if replace_all else 1,
+            },
+        )
