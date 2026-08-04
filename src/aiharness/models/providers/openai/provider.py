@@ -29,7 +29,11 @@ from aiharness.models.base import (
     ThinkingDelta,
     ToolInputDelta,
 )
-from aiharness.models.errors import ProviderProtocolError
+from aiharness.models.errors import (
+    ProviderContextLengthError,
+    ProviderProtocolError,
+    is_context_length_message,
+)
 from aiharness.models.transport import HttpRequest, HttpxTransport, JsonTransport
 
 
@@ -194,10 +198,10 @@ async def _parse_stream(
         if not saw_event:
             saw_event = True
             if not isinstance(event, dict) or isinstance(event.get("error"), dict):
-                raise ProviderProtocolError("OpenAI stream returned an error event")
+                _raise_stream_error(event)
             yield MessageStart(model=model)
         elif isinstance(event.get("error"), dict):
-            raise ProviderProtocolError("OpenAI stream returned an error event")
+            _raise_stream_error(event)
         raw_usage = event.get("usage")
         if isinstance(raw_usage, dict):
             usage = _usage_from_openai(raw_usage)
@@ -287,6 +291,17 @@ async def _parse_stream(
             usage=usage,
         )
     )
+
+
+def _raise_stream_error(event: object) -> None:
+    raw_error = event.get("error") if isinstance(event, dict) else event
+    detail = json.dumps(raw_error, ensure_ascii=False, sort_keys=True)
+    if is_context_length_message(detail):
+        raise ProviderContextLengthError(
+            "OpenAI provider rejected the request because the context is too large",
+            details={"provider_error": raw_error},
+        )
+    raise ProviderProtocolError("OpenAI stream returned an error event")
 
 
 def _usage_from_openai(value: dict[str, Any]) -> Usage:

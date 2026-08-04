@@ -110,8 +110,9 @@
 - Artifact 大小、访问权限和生命周期可控。
 
 当前进度：已完成 L0/L1 的 ContextCompiler、预算保护、内容寻址 ArtifactStore、成对工具
-消息压缩和 Runtime `compaction.created` 接入；L2 语义压缩、响应式 Provider 错误恢复和
-完整 Artifact 生命周期仍待本里程碑后续迭代。
+消息压缩和 Runtime `compaction.created` 接入；已完成可注入的 L2 `SummaryGenerator` 协议、
+无网络 deterministic fallback、Provider Context Length 稳定错误映射，以及每次 Run 最多一次
+的响应式 L2 重试。完整 Artifact 生命周期仍待本里程碑后续迭代。
 
 ## M5：插件、Skill、Hook、MCP 与 Memory
 

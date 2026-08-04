@@ -9,7 +9,13 @@ from typing import Any, Protocol
 
 import httpx
 
-from aiharness.models.errors import ProviderHTTPError, ProviderProtocolError, ProviderTimeout
+from aiharness.models.errors import (
+    ProviderContextLengthError,
+    ProviderHTTPError,
+    ProviderProtocolError,
+    ProviderTimeout,
+    is_context_length_message,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,7 +62,9 @@ class HttpxTransport:
                     headers=dict(request.headers),
                     json=request.json_body,
                 ) as response:
-                    _check_status(response.status_code, response.text if response.is_closed else "")
+                    if response.status_code >= 400:
+                        body = (await response.aread()).decode("utf-8", errors="replace")
+                        _check_status(response.status_code, body)
                     async for line in response.aiter_lines():
                         payload = _decode_sse_line(line)
                         if payload is not None:
@@ -85,11 +93,20 @@ def _decode_response(response: Any) -> dict[str, Any]:
 
 def _check_status(status_code: int, body: str) -> None:
     if status_code >= 400:
-        error = ProviderHTTPError(
+        error_type = (
+            ProviderContextLengthError
+            if status_code == 413 or is_context_length_message(body)
+            else ProviderHTTPError
+        )
+        error = error_type(
             f"Provider returned HTTP {status_code}",
             details={"status_code": status_code, "body": body[:2_000]},
         )
-        error.retryable = status_code == 429 or status_code >= 500
+        error.retryable = (
+            False
+            if isinstance(error, ProviderContextLengthError)
+            else status_code == 429 or status_code >= 500
+        )
         raise error
 
 

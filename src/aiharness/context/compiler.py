@@ -1,4 +1,4 @@
-"""Deterministic context budgeting, L0 artifactization, and L1 compaction."""
+"""Context budgeting, artifactization, and L1/L2 compaction."""
 
 from __future__ import annotations
 
@@ -8,6 +8,11 @@ from hashlib import sha256
 from typing import Any
 
 from aiharness.artifacts import ArtifactRef, ArtifactStore
+from aiharness.context.summary import (
+    DeterministicSummaryGenerator,
+    SummaryGenerator,
+    SummaryRequest,
+)
 from aiharness.core.errors import ContextWindowExceeded
 from aiharness.core.tokens import estimate_messages_tokens, estimate_text_tokens
 from aiharness.core.types import Message, TextBlock, ToolResultBlock, ToolSpec
@@ -67,6 +72,7 @@ class CompactionRecord:
     after_tokens: int
     artifact_ids: tuple[str, ...] = ()
     prompt_hash: str = ""
+    trigger: str = "budget"
 
     def to_event_data(self) -> dict[str, object]:
         return {
@@ -78,6 +84,7 @@ class CompactionRecord:
             "after_tokens": self.after_tokens,
             "artifact_ids": list(self.artifact_ids),
             "prompt_hash": self.prompt_hash,
+            "trigger": self.trigger,
         }
 
 
@@ -103,11 +110,13 @@ class ContextCompiler:
         *,
         artifact_threshold_tokens: int = 1_024,
         artifact_preview_chars: int = 4_000,
+        summary_generator: SummaryGenerator | None = None,
     ) -> None:
         if artifact_threshold_tokens <= 0 or artifact_preview_chars <= 0:
             raise ValueError("Artifact thresholds must be positive")
         self.artifact_threshold_tokens = artifact_threshold_tokens
         self.artifact_preview_chars = artifact_preview_chars
+        self.summary_generator = summary_generator or DeterministicSummaryGenerator()
 
     def compile(
         self,
@@ -171,6 +180,76 @@ class ContextCompiler:
             system_prompt=system_prompt,
             messages=compacted,
             estimated_tokens=after_tokens,
+            budget=budget,
+            artifacts=artifacts,
+            compaction=record,
+        )
+
+    def compact_l2(
+        self,
+        messages: tuple[Message, ...] | list[Message],
+        *,
+        system_prompt: str,
+        tools: tuple[ToolSpec, ...],
+        budget: ContextBudget,
+        artifact_store: ArtifactStore | None = None,
+        summary_generator: SummaryGenerator | None = None,
+        trigger: str = "provider_context_length",
+    ) -> CompiledContext:
+        """Force one structured-summary compaction for a context retry.
+
+        L2 deliberately omits at least one message group even when L1 would
+        fit. This makes a provider-reported context-length failure actionable
+        while retaining tool call/result groups atomically.
+        """
+
+        original = tuple(messages)
+        materialized, artifacts = self._artifactize(original, artifact_store)
+        before_tokens = self._total_tokens(system_prompt, materialized, budget)
+        groups = _message_groups(materialized)
+        if len(groups) < 2:
+            raise ContextWindowExceeded(
+                "Context cannot be reduced because it has fewer than two message groups",
+                details={"estimated_tokens": before_tokens, "usable_input": budget.usable_input},
+            )
+
+        message_limit = max(1, budget.usable_input - estimate_text_tokens(system_prompt))
+        generator = summary_generator or self.summary_generator
+        omitted = tuple(message for group in groups[:-1] for message in group)
+        retained = groups[-1]
+        summary = generator.generate(
+            SummaryRequest(
+                omitted_messages=omitted,
+                retained_messages=retained,
+                system_prompt=system_prompt,
+                artifact_ids=tuple(ref.artifact_id for ref in artifacts),
+            )
+        )
+        summary_message = summary.to_message(
+            source_message_ids=tuple(message.id for message in omitted),
+        )
+        candidate = (summary_message, *retained)
+        after_tokens = estimate_messages_tokens(candidate)
+        if after_tokens > message_limit:
+            raise ContextWindowExceeded(
+                "Structured context compaction cannot fit the configured input budget",
+                details={"estimated_tokens": before_tokens, "usable_input": budget.usable_input},
+            )
+        record = CompactionRecord(
+            strategy="l2_structured",
+            version=1,
+            replaced_message_ids=tuple(message.id for message in omitted),
+            summary=summary_message,
+            before_tokens=before_tokens,
+            after_tokens=self._total_tokens(system_prompt, candidate, budget),
+            artifact_ids=tuple(ref.artifact_id for ref in artifacts),
+            prompt_hash=_prompt_hash(system_prompt, materialized, tools, budget),
+            trigger=trigger,
+        )
+        return CompiledContext(
+            system_prompt=system_prompt,
+            messages=candidate,
+            estimated_tokens=record.after_tokens,
             budget=budget,
             artifacts=artifacts,
             compaction=record,

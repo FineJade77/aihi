@@ -45,8 +45,15 @@ usable_input = context_window - reserved_output - tool_schema - safety_margin
 
 当前 L0/L1 基线由 `ContextCompiler` 在无网络往返下执行：工具结果超过阈值时写入可寻址
 ArtifactStore，只向模型保留预览和引用；预算无法通过成对消息压缩满足时返回稳定的
-`context_window_exceeded` 错误。确定性压缩追加 `compaction.created`，Artifact 写入追加
-`artifact.created`；原始消息事件保持不变，后续 L2 语义压缩可复用同一事件边界。
+`context_window_exceeded` 错误。L2 通过可注入的 `SummaryGenerator(SummaryRequest) ->
+StructuredSummary` 协议生成固定 Schema 摘要；默认 `DeterministicSummaryGenerator` 不发起
+网络请求，未来可由 Compact Model 适配器替换。确定性压缩追加 `compaction.created`，Artifact
+写入追加 `artifact.created`；原始消息事件保持不变。
+
+Provider 适配器将 HTTP 413、明确的 context/token-limit 错误和流内错误事件归一化为稳定的
+`provider_context_length`。Runtime 对每个 Run 只允许一次响应式 L2 压缩重试；第二次仍返回该
+错误时直接失败，避免无限重试。`compaction.created.trigger` 标记 `budget`、
+`preflight_context_window` 或 `provider_context_length` 触发来源。
 
 压缩记录源事件范围、前后 Token、模型、Prompt Hash、策略版本和摘要版本。边界不能切断
 Tool Call/Tool Result 配对。

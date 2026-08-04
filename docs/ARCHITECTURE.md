@@ -161,7 +161,8 @@ tool.requested / tool.started / tool.completed
 policy.decided / approval.requested / approval.resolved
 capability.lease.issued / capability.lease.revoked
 context.compaction_started / context.compacted
-compaction.created / artifact.created
+compaction.created (trigger: budget | preflight_context_window | provider_context_length)
+artifact.created
 memory.candidate / memory.written
 subagent.started / subagent.completed
 ```
@@ -192,11 +193,13 @@ usable_input = context_window - reserved_output - tool_schema - safety_margin
 
 1. 输出外置：大工具结果写入 Artifact，仅保留预览和引用；
 2. 确定性微压缩：清理旧工具结果和重复上下文；
-3. 语义压缩：使用专用 Compact Model 生成结构化摘要。
+3. 语义压缩：通过 `SummaryGenerator` 协议生成结构化摘要；默认使用无网络
+   `DeterministicSummaryGenerator`，可替换为专用 Compact Model。
 
 结构化摘要至少保留目标、约束、决策、文件变化、验证结果、未解决事项、下一步、
-权限模式、Skill、Subagent 和 Artifact 引用。压缩记录源事件范围、摘要模型、Prompt Hash、
-前后 Token 估算和摘要版本。压缩不得切断 Tool Call/Tool Result 配对。
+权限模式、Skill、Subagent 和 Artifact 引用。压缩记录源事件范围、摘要策略、Prompt Hash、
+前后 Token 估算、摘要版本和触发原因。Provider 返回 Context Length 错误时，每个 Run 最多
+执行一次响应式 L2 压缩；第二次错误直接失败。压缩不得切断 Tool Call/Tool Result 配对。
 
 ## 8. Models：多模型适配与路由
 

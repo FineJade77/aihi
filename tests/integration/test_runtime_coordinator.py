@@ -6,6 +6,7 @@ import pytest
 from aiharness.artifacts import FileArtifactStore
 from aiharness.core.types import Message, ToolCallBlock, ToolResultBlock, ToolSpec
 from aiharness.hooks import HookBus
+from aiharness.models.errors import ProviderContextLengthError
 from aiharness.models.providers.fake import FakeProvider, FakeStep
 from aiharness.runtime import RunCoordinator, RunState
 from aiharness.sandbox import HostBackend
@@ -117,6 +118,64 @@ async def test_runtime_records_artifact_reference_for_large_tool_result(
     artifact_id = str(artifact_event.data["artifact"]["artifact_id"])
     assert artifact_store.read_text(artifact_id) == "output " * 1_000
     assert provider.requests[0].messages[-1].tool_results[0].metadata["artifact_id"] == artifact_id
+
+
+@pytest.mark.asyncio
+async def test_runtime_retries_once_after_provider_context_length_error(
+    session_tmp_path: Path,
+) -> None:
+    session = make_session(session_tmp_path, "ses-context-retry")
+    session.add_message(Message.text("user", "historical objective"))
+    provider = FakeProvider(
+        [
+            FakeStep(error=ProviderContextLengthError("context too large")),
+            FakeStep(text="recovered"),
+        ]
+    )
+    coordinator = RunCoordinator(
+        provider,
+        registry=ToolRegistry(),
+        sandbox=HostBackend(session_tmp_path, unsafe=True),
+    )
+
+    result = await coordinator.run(
+        session, model="fake-model", user_message=Message.text("user", "latest request")
+    )
+
+    assert result.state == RunState.COMPLETED
+    assert len(provider.requests) == 2
+    compactions = [event for event in session.events if event.type == "compaction.created"]
+    assert len(compactions) == 1
+    assert compactions[0].data["strategy"] == "l2_structured"
+    assert compactions[0].data["trigger"] == "provider_context_length"
+    assert provider.requests[1].messages[0].metadata["compaction"] == "l2_structured"
+
+
+@pytest.mark.asyncio
+async def test_runtime_does_not_retry_context_length_error_more_than_once(
+    session_tmp_path: Path,
+) -> None:
+    session = make_session(session_tmp_path, "ses-context-retry-once")
+    session.add_message(Message.text("user", "historical objective"))
+    provider = FakeProvider(
+        [
+            FakeStep(error=ProviderContextLengthError("context too large")),
+            FakeStep(error=ProviderContextLengthError("context still too large")),
+        ]
+    )
+    coordinator = RunCoordinator(
+        provider,
+        registry=ToolRegistry(),
+        sandbox=HostBackend(session_tmp_path, unsafe=True),
+    )
+
+    result = await coordinator.run(
+        session, model="fake-model", user_message=Message.text("user", "only request")
+    )
+
+    assert result.state == RunState.FAILED
+    assert len(provider.requests) == 2
+    assert sum(event.type == "compaction.created" for event in session.events) == 1
 
 
 @pytest.mark.asyncio

@@ -3,7 +3,12 @@ from pathlib import Path
 import pytest
 
 from aiharness.artifacts import FileArtifactStore
-from aiharness.context import ContextBudget, ContextCompiler
+from aiharness.context import (
+    ContextBudget,
+    ContextCompiler,
+    StructuredSummary,
+    SummaryRequest,
+)
 from aiharness.core.errors import ContextWindowExceeded
 from aiharness.core.types import Message, TextBlock, ToolCallBlock, ToolResultBlock
 
@@ -96,3 +101,39 @@ def test_context_compiler_rejects_system_prompt_that_cannot_be_compacted() -> No
             tools=(),
             budget=ContextBudget(context_window=100, reserved_output=0, safety_margin=0),
         )
+
+
+class RecordingSummaryGenerator:
+    def __init__(self) -> None:
+        self.requests: list[SummaryRequest] = []
+
+    def generate(self, request: SummaryRequest) -> StructuredSummary:
+        self.requests.append(request)
+        return StructuredSummary(
+            objective="injected objective",
+            decisions=("keep the API stable",),
+            omitted_message_count=len(request.omitted_messages),
+        )
+
+
+def test_l2_compaction_uses_injected_structured_summary_generator() -> None:
+    generator = RecordingSummaryGenerator()
+    messages = (
+        Message.text("user", "old objective"),
+        Message.text("assistant", "old decision"),
+        Message.text("user", "latest request"),
+    )
+
+    compiled = ContextCompiler(summary_generator=generator).compact_l2(
+        messages,
+        system_prompt="",
+        tools=(),
+        budget=ContextBudget(context_window=256, reserved_output=0, safety_margin=0),
+    )
+
+    assert compiled.compaction is not None
+    assert compiled.compaction.strategy == "l2_structured"
+    assert compiled.compaction.trigger == "provider_context_length"
+    assert generator.requests[0].omitted_messages == messages[:2]
+    assert compiled.messages[0].metadata["compaction"] == "l2_structured"
+    assert '"decisions":["keep the API stable"]' in compiled.messages[0].text_content

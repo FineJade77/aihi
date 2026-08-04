@@ -28,7 +28,11 @@ from aiharness.models.base import (
     ThinkingDelta,
     ToolInputDelta,
 )
-from aiharness.models.errors import ProviderProtocolError
+from aiharness.models.errors import (
+    ProviderContextLengthError,
+    ProviderProtocolError,
+    is_context_length_message,
+)
 from aiharness.models.transport import HttpRequest, HttpxTransport, JsonTransport
 
 
@@ -178,6 +182,12 @@ async def _parse_stream(
     async for event in events:
         event_type = str(event.get("type", ""))
         if event_type == "error":
+            detail = json.dumps(event.get("error", event), ensure_ascii=False, sort_keys=True)
+            if is_context_length_message(detail):
+                raise ProviderContextLengthError(
+                    "Anthropic provider rejected the request because the context is too large",
+                    details={"provider_error": event.get("error", event)},
+                )
             raise ProviderProtocolError("Anthropic stream returned an error event")
         if event_type == "message_start":
             saw_message = True

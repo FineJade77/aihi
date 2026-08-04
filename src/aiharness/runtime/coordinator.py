@@ -7,13 +7,15 @@ from dataclasses import asdict, dataclass
 from typing import Any
 
 from aiharness.artifacts import ArtifactStore
-from aiharness.context import ContextBudget, ContextCompiler
+from aiharness.context import CompiledContext, ContextBudget, ContextCompiler, SummaryGenerator
 from aiharness.core.awaits import await_cancelable
+from aiharness.core.errors import ContextWindowExceeded
 from aiharness.core.events import Event
 from aiharness.core.ids import new_id
 from aiharness.core.types import Message, ModelRequest, ModelResponse, ToolResultBlock
 from aiharness.hooks import HookBus
 from aiharness.models.base import MessageEnd, Provider, StreamChunk
+from aiharness.models.errors import ProviderContextLengthError
 from aiharness.policy import DefaultPolicyEngine, PermissionContext, PermissionMode, PolicyEngine
 from aiharness.runtime.state import RunState, RunStateMachine
 from aiharness.sandbox.base import SandboxBackend
@@ -42,6 +44,7 @@ class RunCoordinator:
         hooks: HookBus | None = None,
         context_compiler: ContextCompiler | None = None,
         artifact_store: ArtifactStore | None = None,
+        summary_generator: SummaryGenerator | None = None,
         context_window: int | None = None,
         context_safety_margin: int = 256,
     ) -> None:
@@ -55,8 +58,11 @@ class RunCoordinator:
         self.policy = policy or DefaultPolicyEngine()
         self.hooks = hooks or HookBus()
         self.dispatcher = ToolDispatcher(self.registry, self.policy, self.hooks)
-        self.context_compiler = context_compiler or ContextCompiler()
+        self.context_compiler = context_compiler or ContextCompiler(
+            summary_generator=summary_generator
+        )
         self.artifact_store = artifact_store
+        self.summary_generator = summary_generator
         self.context_window = context_window
         self.context_safety_margin = context_safety_margin
 
@@ -160,6 +166,7 @@ class RunCoordinator:
         max_output_tokens: int,
         cancel_event: asyncio.Event | None,
     ) -> ModelResponse:
+        context_retry_used = False
         while True:
             await self._check_cancel(cancel_event)
             session.refresh()
@@ -175,53 +182,28 @@ class RunCoordinator:
                 tools=self.registry.specs,
                 safety_margin=self.context_safety_margin,
             )
-            compiled = self.context_compiler.compile(
-                session.messages,
-                system_prompt=system_prompt,
-                tools=self.registry.specs,
-                budget=budget,
-                artifact_store=self.artifact_store,
-            )
-            existing_artifacts = {
-                str(event.data["artifact"]["artifact_id"])
-                for event in session.events
-                if event.type == "artifact.created"
-                and isinstance(event.data.get("artifact"), dict)
-                and "artifact_id" in event.data["artifact"]
-            }
-            for artifact in compiled.artifacts:
-                if artifact.artifact_id in existing_artifacts:
-                    continue
-                session.append(
-                    Event(
-                        type="artifact.created",
-                        session_id=session.id,
-                        run_id=run_id,
-                        data={"artifact": artifact.to_dict(), "purpose": "context"},
-                    )
+            try:
+                compiled = self.context_compiler.compile(
+                    session.messages,
+                    system_prompt=system_prompt,
+                    tools=self.registry.specs,
+                    budget=budget,
+                    artifact_store=self.artifact_store,
                 )
-                existing_artifacts.add(artifact.artifact_id)
-            if compiled.compaction is not None:
-                compaction_data = compiled.compaction.to_event_data()
-                source_ids = set(compiled.compaction.replaced_message_ids)
-                source_seqs = [
-                    event.seq
-                    for event in session.events
-                    if event.seq is not None
-                    and isinstance(event.data.get("message"), dict)
-                    and event.data["message"].get("id") in source_ids
-                ]
-                if source_seqs:
-                    compaction_data["source_seq_start"] = min(source_seqs)
-                    compaction_data["source_seq_end"] = max(source_seqs)
-                session.append(
-                    Event(
-                        type="compaction.created",
-                        session_id=session.id,
-                        run_id=run_id,
-                        data=compaction_data,
-                    )
+            except ContextWindowExceeded:
+                if context_retry_used:
+                    raise
+                context_retry_used = True
+                compiled = self.context_compiler.compact_l2(
+                    session.messages,
+                    system_prompt=system_prompt,
+                    tools=self.registry.specs,
+                    budget=budget,
+                    artifact_store=self.artifact_store,
+                    summary_generator=self.summary_generator,
+                    trigger="preflight_context_window",
                 )
+            self._persist_compiled_context(session, run_id, compiled)
             request = ModelRequest(
                 model=model,
                 messages=compiled.messages,
@@ -229,9 +211,26 @@ class RunCoordinator:
                 system_prompt=system_prompt,
                 max_output_tokens=effective_output_tokens,
             )
-            response = await self._consume_provider(
-                session, run_id, request, cancel_event=cancel_event
-            )
+            try:
+                response = await self._consume_provider(
+                    session, run_id, request, cancel_event=cancel_event
+                )
+            except ProviderContextLengthError:
+                if context_retry_used:
+                    raise
+                context_retry_used = True
+                session.refresh()
+                retry_compiled = self.context_compiler.compact_l2(
+                    session.messages,
+                    system_prompt=system_prompt,
+                    tools=self.registry.specs,
+                    budget=budget,
+                    artifact_store=self.artifact_store,
+                    summary_generator=self.summary_generator,
+                    trigger="provider_context_length",
+                )
+                self._persist_compiled_context(session, run_id, retry_compiled)
+                continue
             session.add_message(response.message, run_id=run_id)
             if not response.message.tool_calls:
                 return response
@@ -280,6 +279,51 @@ class RunCoordinator:
                     run_id=run_id,
                 )
             self._transition(session, run_id, machine, RunState.RUNNING)
+
+    def _persist_compiled_context(
+        self, session: Session, run_id: str, compiled: CompiledContext
+    ) -> None:
+        existing_artifacts = {
+            str(event.data["artifact"]["artifact_id"])
+            for event in session.events
+            if event.type == "artifact.created"
+            and isinstance(event.data.get("artifact"), dict)
+            and "artifact_id" in event.data["artifact"]
+        }
+        for artifact in compiled.artifacts:
+            if artifact.artifact_id in existing_artifacts:
+                continue
+            session.append(
+                Event(
+                    type="artifact.created",
+                    session_id=session.id,
+                    run_id=run_id,
+                    data={"artifact": artifact.to_dict(), "purpose": "context"},
+                )
+            )
+            existing_artifacts.add(artifact.artifact_id)
+        if compiled.compaction is None:
+            return
+        compaction_data = compiled.compaction.to_event_data()
+        source_ids = set(compiled.compaction.replaced_message_ids)
+        source_seqs = [
+            event.seq
+            for event in session.events
+            if event.seq is not None
+            and isinstance(event.data.get("message"), dict)
+            and event.data["message"].get("id") in source_ids
+        ]
+        if source_seqs:
+            compaction_data["source_seq_start"] = min(source_seqs)
+            compaction_data["source_seq_end"] = max(source_seqs)
+        session.append(
+            Event(
+                type="compaction.created",
+                session_id=session.id,
+                run_id=run_id,
+                data=compaction_data,
+            )
+        )
 
     async def _consume_provider(
         self,

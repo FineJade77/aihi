@@ -7,7 +7,12 @@ import pytest
 from aiharness.core.errors import ProviderFailure
 from aiharness.core.types import Message, ModelRequest, ToolSpec
 from aiharness.models.base import MessageEnd, MessageStart, TextDelta, ToolInputDelta
-from aiharness.models.errors import ProviderProtocolError, ProviderTimeout
+from aiharness.models.errors import (
+    ProviderContextLengthError,
+    ProviderProtocolError,
+    ProviderTimeout,
+    is_context_length_message,
+)
 from aiharness.models.gateway import ModelGateway, ModelRouter
 from aiharness.models.providers.anthropic import AnthropicProvider
 from aiharness.models.providers.openai import OpenAIProvider
@@ -50,6 +55,13 @@ def request() -> ModelRequest:
         system_prompt="You are concise.",
         effort="low",
     )
+
+
+def test_context_length_detection_requires_input_context_semantics() -> None:
+    assert is_context_length_message("maximum context length exceeded") is True
+    assert is_context_length_message("prompt is too long") is True
+    assert is_context_length_message("max_tokens must be positive") is False
+    assert is_context_length_message("rate limit token limit reached") is False
 
 
 @pytest.mark.asyncio
@@ -148,6 +160,25 @@ async def test_embedded_provider_error_events_do_not_become_successful_messages(
         "secret", transport=FakeTransport([{"type": "error", "error": {"message": "bad"}}])
     )
     with pytest.raises(ProviderProtocolError):
+        _ = [chunk async for chunk in anthropic.stream(request())]
+
+
+@pytest.mark.asyncio
+async def test_embedded_context_length_errors_use_stable_error_type() -> None:
+    openai = OpenAIProvider(
+        "secret",
+        transport=FakeTransport([{"error": {"code": "context_length_exceeded"}}]),
+    )
+    with pytest.raises(ProviderContextLengthError):
+        _ = [chunk async for chunk in openai.stream(request())]
+
+    anthropic = AnthropicProvider(
+        "secret",
+        transport=FakeTransport(
+            [{"type": "error", "error": {"message": "maximum context length exceeded"}}]
+        ),
+    )
+    with pytest.raises(ProviderContextLengthError):
         _ = [chunk async for chunk in anthropic.stream(request())]
 
 
