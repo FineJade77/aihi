@@ -6,6 +6,7 @@ from aiharness.policy.engine import (
     DefaultPolicyEngine,
     PermissionContext,
     PermissionMode,
+    PolicyEngine,
 )
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "DefaultPolicyEngine",
     "PermissionContext",
     "PermissionMode",
+    "PolicyEngine",
 ]

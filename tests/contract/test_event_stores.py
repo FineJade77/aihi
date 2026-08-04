@@ -33,7 +33,7 @@ def test_event_store_is_append_only_and_optimistically_concurrent(store) -> None
     assert [event.type for event in store.read("ses-1")] == ["session.created", "run.started"]
     assert store.get("ses-1").head_seq == 2
     with pytest.raises(ConcurrencyConflict):
-        store.append("ses-1", 0, [Event(type="run.finished", session_id="ses-1")])
+        store.append("ses-1", 0, [Event(type="run.completed", session_id="ses-1")])
     with pytest.raises(EventConflict):
         store.append("ses-1", 2, [first[0]])
     assert store.append("ses-1", 2, []) == []

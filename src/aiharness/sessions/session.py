@@ -137,6 +137,21 @@ class Session:
         return self.append_many([event])[0]
 
     def append_many(self, events: list[Event]) -> list[Event]:
+        candidate_messages = list(self._messages)
+        message_event_types = {
+            "message.added",
+            "user.message",
+            "assistant.message",
+            "system.message",
+            "tool.result",
+        }
+        for event in events:
+            if event.type not in message_event_types:
+                continue
+            raw = event.data.get("message")
+            if isinstance(raw, dict):
+                candidate_messages.append(Message.from_dict(raw))
+                find_orphan_tool_calls(candidate_messages)
         persisted = self.store.append(self.id, self.head_seq, events)
         self.head_seq += len(persisted)
         self._events.extend(persisted)
