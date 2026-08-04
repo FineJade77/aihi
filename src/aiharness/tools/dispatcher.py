@@ -11,7 +11,7 @@ from aiharness.core.awaits import await_cancelable
 from aiharness.core.errors import HarnessError, ToolInputError, ToolNotFound
 from aiharness.core.types import ToolCallBlock
 from aiharness.hooks import HookBus
-from aiharness.policy import Decision, DecisionEffect, PermissionContext, PolicyEngine
+from aiharness.policy import Approval, Decision, DecisionEffect, PermissionContext, PolicyEngine
 from aiharness.tools.base import ToolContext, ToolResult, validate_tool_input
 from aiharness.tools.registry import ToolRegistry
 
@@ -85,11 +85,31 @@ class ToolDispatcher:
                 if decision.effect == DecisionEffect.ASK
                 else "permission_denied"
             )
+            metadata: dict[str, Any] = {"error_code": error_code}
+            if decision.effect == DecisionEffect.ASK and decision.rule_id == (
+                "default.mutation_requires_approval"
+            ):
+                approval = Approval.issue(
+                    tool.spec.name,
+                    "policy",
+                    run_id=context.run_id,
+                )
+                await emit(
+                    "approval.requested",
+                    {
+                        "tool_call_id": call.id,
+                        "tool_name": call.name,
+                        "reason": decision.reason,
+                        "approval": approval.to_dict(),
+                    },
+                )
+                metadata["approval_id"] = approval.approval_id
             return self._error(
                 call,
                 error_code,
                 f"Tool {call.name} was not allowed: {decision.reason}",
                 decision=decision,
+                metadata=metadata,
             )
 
         await emit(
@@ -169,10 +189,15 @@ class ToolDispatcher:
         content: str,
         *,
         decision: Decision | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> DispatchResult:
         return DispatchResult(
             tool_call_id=call.id,
             tool_name=call.name,
-            result=ToolResult(content=content, is_error=True, metadata={"error_code": error_code}),
+            result=ToolResult(
+                content=content,
+                is_error=True,
+                metadata=metadata or {"error_code": error_code},
+            ),
             decision=decision,
         )

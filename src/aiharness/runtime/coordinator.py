@@ -54,6 +54,7 @@ class RunCoordinator:
         user_message: Message | None = None,
         run_id: str | None = None,
         permission_mode: PermissionMode = PermissionMode.DEFAULT,
+        require_capability_lease: bool = False,
         system_prompt: str = "",
         max_output_tokens: int = 4_096,
         cancel_event: asyncio.Event | None = None,
@@ -74,6 +75,7 @@ class RunCoordinator:
                     "sandbox_descriptor": self.sandbox.descriptor.to_dict(),
                     "unsafe": self.sandbox.descriptor.unsafe,
                     "permission_mode": permission_mode.value,
+                    "require_capability_lease": require_capability_lease,
                 },
             )
         )
@@ -86,6 +88,7 @@ class RunCoordinator:
                 model=model,
                 machine=machine,
                 permission_mode=permission_mode,
+                require_capability_lease=require_capability_lease,
                 system_prompt=system_prompt,
                 max_output_tokens=max_output_tokens,
                 cancel_event=cancel_event,
@@ -138,6 +141,7 @@ class RunCoordinator:
         model: str,
         machine: RunStateMachine,
         permission_mode: PermissionMode,
+        require_capability_lease: bool,
         system_prompt: str,
         max_output_tokens: int,
         cancel_event: asyncio.Event | None,
@@ -160,10 +164,15 @@ class RunCoordinator:
             self._transition(session, run_id, machine, RunState.WAITING_TOOL)
             for call in response.message.tool_calls:
                 await self._check_cancel(cancel_event)
+                session.refresh()
+                authorization = session.authorization
                 permission = PermissionContext(
                     cwd=session.cwd,
                     mode=permission_mode,
                     sandbox=self.sandbox.descriptor,
+                    leases=authorization.active_leases(run_id),
+                    approvals=authorization.active_approvals(run_id),
+                    require_capability_lease=require_capability_lease,
                     run_id=run_id,
                 )
                 context = ToolContext(

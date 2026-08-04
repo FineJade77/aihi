@@ -86,6 +86,8 @@
 - 写工具默认 ASK，Plan 模式拒绝修改；
 - 外部文件发生变化后，编辑需要重新读取并拒绝盲写；
 - Shell 超时、取消、输出上限和进程组清理均有测试。
+- Approval/Capability Lease 以事件持久化；两者只能授权对应 `run_id`，过期或撤销后失效；
+  Runtime 恢复 Session 后仍能重建授权投影，默认 ASK 产生可审计的 `approval.requested`。
 
 ## M4：上下文、压缩与 Artifact
 

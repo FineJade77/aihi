@@ -10,6 +10,7 @@ from aiharness.core.errors import EventInvariantViolation
 from aiharness.core.events import Event
 from aiharness.core.ids import new_id
 from aiharness.core.types import Message, ToolCallBlock, ToolResultBlock
+from aiharness.policy import Approval, AuthorizationState, CapabilityLease
 from aiharness.sessions.store import EventStore
 
 
@@ -128,6 +129,111 @@ class Session:
     @property
     def cwd(self) -> Path:
         return Path(str(self.metadata["cwd"]))
+
+    @property
+    def authorization(self) -> AuthorizationState:
+        return AuthorizationState.from_events(self._events)
+
+    def refresh(self) -> None:
+        """Refresh projections when another owner appended events to the store."""
+        for _ in range(3):
+            info = self.store.get(self.id)
+            if info.head_seq == self.head_seq:
+                return
+            events = self.store.read(self.id)
+            if self.store.get(self.id).head_seq != info.head_seq:
+                continue
+            self.metadata = dict(info.metadata)
+            self.head_seq = info.head_seq
+            self._events = events
+            self._messages = project_messages(events)
+            return
+        raise EventInvariantViolation("Session changed while refreshing authorization state")
+
+    def issue_capability_lease(
+        self,
+        *,
+        run_id: str,
+        capabilities: frozenset[str] | set[str] | tuple[str, ...],
+        ttl_seconds: float = 300.0,
+        issued_by: str = "runtime",
+    ) -> CapabilityLease:
+        lease = CapabilityLease.issue(run_id, capabilities, ttl_seconds=ttl_seconds)
+        self.append(
+            Event(
+                type="capability.lease.issued",
+                session_id=self.id,
+                run_id=run_id,
+                data={"lease": lease.to_dict(), "issued_by": issued_by},
+            )
+        )
+        return lease
+
+    def revoke_capability_lease(
+        self, lease_id: str, *, run_id: str, revoked_by: str = "runtime"
+    ) -> None:
+        lease = self.authorization.leases.get(lease_id)
+        if lease is None:
+            raise EventInvariantViolation(f"Unknown capability lease: {lease_id}")
+        if lease.run_id != run_id:
+            raise EventInvariantViolation(f"Capability lease belongs to another run: {lease_id}")
+        self.append(
+            Event(
+                type="capability.lease.revoked",
+                session_id=self.id,
+                run_id=run_id,
+                data={"lease_id": lease_id, "revoked_by": revoked_by},
+            )
+        )
+
+    def request_approval(
+        self,
+        scope: str,
+        *,
+        requested_by: str,
+        ttl_seconds: float | None = None,
+        run_id: str,
+    ) -> Approval:
+        approval = Approval.issue(
+            scope, requested_by, run_id=run_id, ttl_seconds=ttl_seconds
+        )
+        self.append(
+            Event(
+                type="approval.requested",
+                session_id=self.id,
+                run_id=run_id,
+                data={"approval": approval.to_dict(), "requested_by": requested_by},
+            )
+        )
+        return approval
+
+    def resolve_approval(
+        self,
+        approval_id: str,
+        *,
+        approved: bool,
+        resolved_by: str,
+        run_id: str,
+    ) -> Approval | None:
+        approval = self.authorization.pending_approval(approval_id)
+        if approval is None:
+            raise EventInvariantViolation(f"Unknown approval: {approval_id}")
+        if approval.run_id != run_id:
+            raise EventInvariantViolation(f"Approval belongs to another run: {approval_id}")
+        self.append(
+            Event(
+                type="approval.resolved",
+                session_id=self.id,
+                run_id=run_id,
+                data={
+                    "approval_id": approval_id,
+                    "approval": approval.to_dict(),
+                    "status": "granted" if approved else "denied",
+                    "resolved_by": resolved_by,
+                },
+            )
+        )
+        return approval if approved else None
 
     @property
     def orphan_tool_calls(self) -> tuple[ToolCallBlock, ...]:

@@ -43,7 +43,10 @@ class PermissionContext:
         )
 
     def is_approved(self, scope: str) -> bool:
-        return any(approval.covers(scope) for approval in self.approvals)
+        return self.run_id is not None and any(
+            approval.run_id == self.run_id and approval.covers(scope)
+            for approval in self.approvals
+        )
 
 
 @dataclass(frozen=True, slots=True)

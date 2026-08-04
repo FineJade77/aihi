@@ -151,7 +151,9 @@ async def test_policy_requires_approval_or_lease_before_mutating_tool(tmp_path: 
         context=tool_context,
         permission=permission(
             tmp_path,
-            approvals=(Approval(scope="write_file", granted_by="test"),),
+            approvals=(
+                Approval(scope="write_file", granted_by="test", run_id="run-tools"),
+            ),
         ),
     )
     assert approved.result.is_error is False

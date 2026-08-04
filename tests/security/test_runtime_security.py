@@ -113,4 +113,15 @@ async def test_default_policy_asks_before_mutating_tool_execution(tmp_path: Path
         session.messages[-2].tool_results[0].metadata["error_code"]
         == "permission_approval_required"
     )
+    approval_event = next(event for event in session.events if event.type == "approval.requested")
+    approval_id = str(approval_event.data["approval"]["approval_id"])
+    assert session.authorization.approval(approval_id) is not None
+    assert approval_event.run_id is not None
+    session.resolve_approval(
+        approval_id,
+        approved=True,
+        resolved_by="user",
+        run_id=approval_event.run_id,
+    )
+    assert session.authorization.active_approvals(approval_event.run_id)
     assert not any(event.type == "tool.started" for event in session.events)

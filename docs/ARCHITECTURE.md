@@ -159,6 +159,7 @@ user.message / assistant.message / tool.result
 model.requested / model.completed / usage.recorded
 tool.requested / tool.started / tool.completed
 policy.decided / approval.requested / approval.resolved
+capability.lease.issued / capability.lease.revoked
 context.compaction_started / context.compacted
 memory.candidate / memory.written
 subagent.started / subagent.completed
@@ -247,6 +248,11 @@ Hook 有优先级、超时、失败策略和只读/可修改声明。Hook 自己
 Policy 输出 `ALLOW / DENY / ASK`，同时返回原因、命中的规则、作用域和有效期。硬拒绝优先于
 组织、工作区、用户和会话临时授权。路径要 canonicalize，并检查 symlink escape；命令工具
 不能只靠字符串黑名单。
+
+Approval 与 Capability Lease 都是 append-only 授权事件的投影，并绑定单个 `run_id`。
+两者在过期或撤销后失效；Runtime 在每次工具调用前从 Session 事件重建有效授权，不能把
+未持久化的内存授权当作事实源。Approval 的请求和解决结果分别记录，只有匹配 pending
+请求的单次 granted 结果才会产生有效授权；默认 ASK 会追加 `approval.requested`。
 
 ### 10.1 已确认的沙箱基线
 
