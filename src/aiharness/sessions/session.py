@@ -6,10 +6,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from aiharness.core.errors import EventInvariantViolation
 from aiharness.core.events import Event
 from aiharness.core.ids import new_id
 from aiharness.core.types import Message, ToolCallBlock, ToolResultBlock
-from aiharness.session.store import EventStore
+from aiharness.sessions.store import EventStore
 
 
 def project_messages(events: list[Event]) -> list[Message]:
@@ -17,7 +18,13 @@ def project_messages(events: list[Event]) -> list[Message]:
 
     messages: list[Message] = []
     for event in events:
-        if event.type == "message.added":
+        if event.type in {
+            "message.added",
+            "user.message",
+            "assistant.message",
+            "system.message",
+            "tool.result",
+        }:
             raw = event.data.get("message")
             if isinstance(raw, dict):
                 messages.append(Message.from_dict(raw))
@@ -38,11 +45,23 @@ def project_messages(events: list[Event]) -> list[Message]:
 
 def find_orphan_tool_calls(messages: list[Message]) -> tuple[ToolCallBlock, ...]:
     pending: dict[str, ToolCallBlock] = {}
+    completed: set[str] = set()
     for message in messages:
         for call in message.tool_calls:
+            if call.id in pending or call.id in completed:
+                raise EventInvariantViolation(f"Duplicate tool call id: {call.id}")
             pending[call.id] = call
         for result in message.tool_results:
+            if result.tool_call_id in completed:
+                raise EventInvariantViolation(
+                    f"Multiple tool results for call: {result.tool_call_id}"
+                )
+            if result.tool_call_id not in pending:
+                raise EventInvariantViolation(
+                    f"Tool result has no preceding call: {result.tool_call_id}"
+                )
             pending.pop(result.tool_call_id, None)
+            completed.add(result.tool_call_id)
     return tuple(pending.values())
 
 
@@ -122,7 +141,13 @@ class Session:
         self.head_seq += len(persisted)
         self._events.extend(persisted)
         for event in persisted:
-            if event.type == "message.added":
+            if event.type in {
+                "message.added",
+                "user.message",
+                "assistant.message",
+                "system.message",
+                "tool.result",
+            }:
                 raw = event.data.get("message")
                 if isinstance(raw, dict):
                     self._messages.append(Message.from_dict(raw))
@@ -131,9 +156,17 @@ class Session:
         return persisted
 
     def add_message(self, message: Message, *, run_id: str | None = None) -> Event:
+        if message.tool_results:
+            event_type = "tool.result"
+        elif message.role == "user":
+            event_type = "user.message"
+        elif message.role == "system":
+            event_type = "system.message"
+        else:
+            event_type = "assistant.message"
         return self.append(
             Event(
-                type="message.added",
+                type=event_type,
                 session_id=self.id,
                 run_id=run_id,
                 data={"message": message.to_dict()},
@@ -165,7 +198,7 @@ class Session:
                     data={"orphan_tool_call_ids": [call.id for call in orphans]},
                 ),
                 Event(
-                    type="message.added",
+                    type="tool.result",
                     session_id=self.id,
                     run_id=run_id,
                     data={"message": repaired_message.to_dict()},

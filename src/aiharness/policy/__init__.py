@@ -1,6 +1,6 @@
 """Policy evaluation and approval decisions."""
 
-from aiharness.permission.engine import (
+from aiharness.policy.engine import (
     Decision,
     DecisionEffect,
     DefaultPolicyEngine,

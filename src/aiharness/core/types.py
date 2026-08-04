@@ -228,6 +228,10 @@ class ToolSpec:
             "name": self.name,
             "description": self.description,
             "input_schema": self.input_schema,
+            "concurrency_safe": self.concurrency_safe,
+            "mutates": self.mutates,
+            "required_capabilities": list(self.required_capabilities),
+            "timeout_seconds": self.timeout_seconds,
         }
 
 

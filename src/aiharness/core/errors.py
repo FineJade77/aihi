@@ -17,6 +17,14 @@ class ConcurrencyConflict(HarnessError):
     retryable = True
 
 
+class EventConflict(HarnessError):
+    code = "event_conflict"
+
+
+class EventInvariantViolation(HarnessError):
+    code = "event_invariant_violation"
+
+
 class SessionNotFound(HarnessError):
     code = "session_not_found"
 

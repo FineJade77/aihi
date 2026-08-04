@@ -19,7 +19,7 @@ from aiharness.core.types import (
     ToolCallBlock,
     Usage,
 )
-from aiharness.model.base import (
+from aiharness.models.base import (
     BlockEnd,
     BlockStart,
     MessageEnd,

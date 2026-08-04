@@ -100,7 +100,9 @@ class DefaultPolicyEngine:
                 "This tool can mutate external state and requires approval.",
                 "default.mutation_requires_approval",
             )
-        unsafe_note = " The selected Host backend is explicitly unsafe." if context.sandbox.unsafe else ""
+        unsafe_note = (
+            " The selected Host backend is explicitly unsafe." if context.sandbox.unsafe else ""
+        )
         return Decision(
             DecisionEffect.ALLOW,
             "Read-only tool allowed by the default policy." + unsafe_note,

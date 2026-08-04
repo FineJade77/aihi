@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
-from aiharness.core.errors import ConcurrencyConflict, SessionNotFound
+from aiharness.core.errors import ConcurrencyConflict, EventConflict, SessionNotFound
 from aiharness.core.events import Event, utc_now
 
 
@@ -46,6 +46,7 @@ class InMemoryEventStore:
     def __init__(self) -> None:
         self._sessions: dict[str, SessionInfo] = {}
         self._events: dict[str, list[Event]] = {}
+        self._event_sessions: dict[str, str] = {}
         self._lock = threading.RLock()
 
     def create_session(
@@ -77,12 +78,19 @@ class InMemoryEventStore:
                     f"Expected session {session_id} at seq {expected_seq}, found {info.head_seq}",
                     details={"expected_seq": expected_seq, "actual_seq": info.head_seq},
                 )
+            event_ids = [event.id for event in events]
+            if len(set(event_ids)) != len(event_ids):
+                raise EventConflict("An append batch contains duplicate event ids")
             persisted: list[Event] = []
             for offset, event in enumerate(events, start=1):
                 if event.session_id != session_id:
                     raise ValueError("Cannot append an event to a different session")
+                if event.id in self._event_sessions:
+                    raise EventConflict(f"Event already exists: {event.id}")
                 persisted.append(event.persisted(expected_seq + offset))
             self._events[session_id].extend(persisted)
+            for event in persisted:
+                self._event_sessions[event.id] = session_id
             self._sessions[session_id] = SessionInfo(
                 session_id=info.session_id,
                 head_seq=expected_seq + len(persisted),
@@ -177,8 +185,6 @@ class SQLiteEventStore:
                 raise ConcurrencyConflict(f"Session already exists: {session_id}") from exc
 
     def append(self, session_id: str, expected_seq: int, events: list[Event]) -> list[Event]:
-        if not events:
-            return []
         with self._lock:
             connection = self._connection
             connection.execute("BEGIN IMMEDIATE")
@@ -194,6 +200,14 @@ class SQLiteEventStore:
                         f"Expected session {session_id} at seq {expected_seq}, found {actual_seq}",
                         details={"expected_seq": expected_seq, "actual_seq": actual_seq},
                     )
+                event_ids = [event.id for event in events]
+                if len(set(event_ids)) != len(event_ids):
+                    raise EventConflict("An append batch contains duplicate event ids")
+                for event_id in event_ids:
+                    if connection.execute(
+                        "SELECT 1 FROM events WHERE event_id = ?", (event_id,)
+                    ).fetchone() is not None:
+                        raise EventConflict(f"Event already exists: {event_id}")
                 persisted: list[Event] = []
                 for offset, event in enumerate(events, start=1):
                     if event.session_id != session_id:
