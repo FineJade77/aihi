@@ -244,6 +244,7 @@ class ModelRequest:
     max_output_tokens: int = 4_096
     effort: str | None = None
     metadata: JsonObject = field(default_factory=dict)
+    timeout_seconds: float | None = None
 
 
 @dataclass(frozen=True, slots=True)

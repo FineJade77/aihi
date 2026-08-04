@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Iterable
+from dataclasses import replace
 
 from aiharness.core.types import Capabilities, ModelRequest
 from aiharness.models.base import Provider, StreamChunk
-from aiharness.models.errors import ProviderFailure, ProviderRouteNotFound
+from aiharness.models.errors import ProviderFailure, ProviderRouteNotFound, ProviderTimeout
+from aiharness.models.retry import RetryPolicy
 
 
 class ModelRouter:
@@ -45,9 +48,16 @@ class ModelRouter:
 class ModelGateway:
     """Provider-neutral gateway with fallback only before the first stream chunk."""
 
-    def __init__(self, router: ModelRouter, *, fallback: tuple[Provider, ...] = ()) -> None:
+    def __init__(
+        self,
+        router: ModelRouter,
+        *,
+        fallback: tuple[Provider, ...] = (),
+        retry_policy: RetryPolicy | None = None,
+    ) -> None:
         self.router = router
         self.fallback = fallback
+        self.retry_policy = retry_policy or RetryPolicy()
 
     def provider_for(self, model: str) -> Provider:
         return self.router.resolve(model)
@@ -64,17 +74,57 @@ class ModelGateway:
     async def _stream_with_fallback(self, request: ModelRequest) -> AsyncIterator[StreamChunk]:
         primary = self.provider_for(request.model)
         candidates = (primary, *(provider for provider in self.fallback if provider is not primary))
+        loop = asyncio.get_running_loop()
+        deadline = (
+            loop.time() + request.timeout_seconds
+            if request.timeout_seconds is not None
+            else None
+        )
         last_error: ProviderFailure | None = None
         for index, provider in enumerate(candidates):
-            emitted = False
-            try:
-                async for chunk in provider.stream(request):
-                    emitted = True
-                    yield chunk
-                return
-            except ProviderFailure as error:
-                last_error = error
-                if emitted or not error.retryable or index == len(candidates) - 1:
-                    raise
+            for attempt in range(self.retry_policy.max_attempts):
+                remaining = None if deadline is None else deadline - loop.time()
+                if remaining is not None and remaining <= 0:
+                    raise ProviderTimeout("Provider request deadline exceeded")
+                attempt_request = (
+                    replace(request, timeout_seconds=remaining)
+                    if remaining is not None
+                    else request
+                )
+                emitted = False
+                try:
+                    if remaining is None:
+                        async for chunk in provider.stream(attempt_request):
+                            emitted = True
+                            yield chunk
+                    else:
+                        async with asyncio.timeout(remaining):
+                            async for chunk in provider.stream(attempt_request):
+                                emitted = True
+                                yield chunk
+                    return
+                except TimeoutError as error:
+                    failure = ProviderTimeout("Provider request deadline exceeded")
+                    last_error = failure
+                    if emitted or (deadline is not None and deadline - loop.time() <= 0):
+                        raise failure from error
+                except ProviderFailure as error:
+                    last_error = error
+                    if emitted or not error.retryable:
+                        raise
+                if attempt < self.retry_policy.max_attempts - 1:
+                    delay = self.retry_policy.delay_for_retry(attempt)
+                    if deadline is not None:
+                        remaining = deadline - loop.time()
+                        if remaining <= 0:
+                            raise ProviderTimeout("Provider request deadline exceeded")
+                        if delay >= remaining:
+                            await asyncio.sleep(remaining)
+                            raise ProviderTimeout("Provider request deadline exceeded")
+                    await asyncio.sleep(delay)
+            if last_error is not None and (
+                index == len(candidates) - 1 or not last_error.retryable
+            ):
+                raise last_error
         if last_error is not None:
             raise last_error

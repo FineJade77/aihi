@@ -86,7 +86,11 @@ class OpenAIProvider:
                 "content-type": "application/json",
             },
             json_body=payload,
-            timeout_seconds=self.config.timeout_seconds,
+            timeout_seconds=(
+                request.timeout_seconds
+                if request.timeout_seconds is not None
+                else self.config.timeout_seconds
+            ),
         )
         events = self.transport.stream_json(http_request)
         async for chunk in _parse_stream(events, model=request.model):

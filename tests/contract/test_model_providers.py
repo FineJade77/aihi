@@ -1,15 +1,18 @@
 from collections.abc import AsyncIterator
+from dataclasses import replace
+from time import monotonic
 
 import pytest
 
 from aiharness.core.errors import ProviderFailure
 from aiharness.core.types import Message, ModelRequest, ToolSpec
 from aiharness.models.base import MessageEnd, MessageStart, TextDelta, ToolInputDelta
-from aiharness.models.errors import ProviderProtocolError
+from aiharness.models.errors import ProviderProtocolError, ProviderTimeout
 from aiharness.models.gateway import ModelGateway, ModelRouter
 from aiharness.models.providers.anthropic import AnthropicProvider
 from aiharness.models.providers.openai import OpenAIProvider
 from aiharness.models.providers.openai_compatible import OpenAICompatibleProvider
+from aiharness.models.retry import RetryPolicy
 from aiharness.models.transport import HttpRequest
 
 
@@ -171,6 +174,84 @@ class FailingProvider:
         error.retryable = True
         raise error
         yield  # pragma: no cover
+
+
+class RetryOnceProvider:
+    name = "retry-once"
+
+    def __init__(self) -> None:
+        self.attempts = 0
+
+    def capabilities(self, model: str):
+        return OpenAIProvider("secret", transport=FakeTransport([])).capabilities(model)
+
+    async def count_tokens(self, request: ModelRequest) -> int:
+        return 1
+
+    async def stream(self, request: ModelRequest):
+        self.attempts += 1
+        if self.attempts == 1:
+            error = ProviderFailure("temporary")
+            error.retryable = True
+            raise error
+        from aiharness.models.base import MessageStart
+
+        yield MessageStart(model=request.model)
+
+
+class SlowProvider:
+    name = "slow"
+
+    def capabilities(self, model: str):
+        return OpenAIProvider("secret", transport=FakeTransport([])).capabilities(model)
+
+    async def count_tokens(self, request: ModelRequest) -> int:
+        return 1
+
+    async def stream(self, request: ModelRequest):
+        import asyncio
+
+        await asyncio.sleep(0.05)
+        yield MessageStart(model=request.model)
+
+
+@pytest.mark.asyncio
+async def test_gateway_retries_retryable_provider_before_fallback() -> None:
+    provider = RetryOnceProvider()
+    gateway = ModelGateway(
+        ModelRouter(default=provider),
+        retry_policy=RetryPolicy(max_attempts=2, initial_delay_seconds=0),
+    )
+
+    chunks = [chunk async for chunk in gateway.stream(request())]
+
+    assert provider.attempts == 2
+    assert isinstance(chunks[0], MessageStart)
+
+
+@pytest.mark.asyncio
+async def test_gateway_enforces_request_timeout() -> None:
+    gateway = ModelGateway(
+        ModelRouter(default=SlowProvider()),
+        retry_policy=RetryPolicy(max_attempts=1),
+    )
+
+    with pytest.raises(ProviderTimeout):
+        _ = [chunk async for chunk in gateway.stream(replace(request(), timeout_seconds=0.001))]
+
+
+@pytest.mark.asyncio
+async def test_request_deadline_includes_retry_backoff() -> None:
+    gateway = ModelGateway(
+        ModelRouter(default=RetryOnceProvider()),
+        retry_policy=RetryPolicy(max_attempts=2, initial_delay_seconds=0.1),
+    )
+    started = monotonic()
+
+    with pytest.raises(ProviderTimeout):
+        _ = [chunk async for chunk in gateway.stream(replace(request(), timeout_seconds=0.01))]
+
+    assert monotonic() - started < 0.08
 
 
 @pytest.mark.asyncio
