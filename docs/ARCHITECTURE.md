@@ -1,412 +1,301 @@
-# aiharness 架构设计
+# AIHarness 架构设计
 
-**状态**：定稿待实现
-**日期**：2026-08-03
+状态：Accepted / 实施中
+版本：v0.1
+日期：2026-08-04
 
----
+## 1. 定位与目标
 
-## 一、定位
+AIHarness 是面向 Coding Agent 的运行时基础设施。模型只负责生成意图，Harness 负责：
 
-aiharness 是一个 **AI Coding Agent 的运行时**——模型之外的全部：手、眼、记忆和安全边界。
+- 持久化会话、恢复、分支和审计；
+- 上下文预算、自动压缩和大型输出管理；
+- Provider 适配、多模型路由和成本控制；
+- 工具注册、插件、MCP、Skill、Hook 和 Subagent；
+- 策略决策、审批、能力租约和沙箱执行；
+- 记忆、评估、事件回放和可观测性。
 
-对标 Claude Code 一类的产品形态，而不是通用 Agent 编排框架。这个取舍决定了一切：核心难点在**上下文管理、工具执行安全、会话可恢复**，而不在编排抽象的可插拔性。
+### 1.1 非目标
 
-### 非目标
+- 不在核心层绑定某个模型厂商或 Agent 编排框架；
+- 不把完整历史覆盖成摘要；
+- 不把第三方插件代码直接加载进 Harness 主进程；
+- 不把 Host 执行描述成真正的安全隔离；
+- 不在第一阶段构建复杂 TUI、聊天渠道或控制台。
 
-明确不做的事，写下来是为了防止范围蔓延：
+## 2. 总体拓扑
 
-- **不做通用 Agent 编排框架**。没有 ReAct/Planning/Loop 四种"Agent 模式"的抽象层，没有消息总线，没有协作拓扑。多 Agent 通过"subagent 作为一个 Tool"表达，覆盖主管-工人和流水线两类实际用途。
-- **不做接口先行**。抽象从跑通的代码里提取，不提前声明。任何没有两个真实实现验证过的接口都是猜测。
-- **不做模型训练/评测平台**。eval 是后期的辅助设施，不是架构中心。
+```mermaid
+flowchart TB
+    U["CLI / TUI / HTTP API / Python SDK"] --> API["api: Session API"]
+    API --> R["runtime: Run Coordinator"]
+    R --> C["context: Context Compiler"]
+    C --> M["models: Model Gateway"]
+    M --> P1["Anthropic Adapter"]
+    M --> P2["OpenAI Adapter"]
+    M --> P3["Compatible Adapter"]
 
----
+    R --> D["tools: Tool Dispatcher"]
+    D --> POL["policy: Policy + Approval"]
+    POL --> H["hooks: Lifecycle Hooks"]
+    H --> S["sandbox: Execution Backend"]
+    S --> B["Builtin Tools"]
+    S --> PH["Plugin Host"]
+    S --> MCP["MCP Servers"]
 
-## 二、分层原则
+    R --> A["agents: Subagent Coordinator"]
+    R --> MEM["memory: Memory Service"]
+    R --> SK["skills: Skill Registry"]
 
-按**"改不动的" vs "随时能换的"** 分层，而不是按功能域平铺。
-
-### L0 内核 —— 写错了天花板锁死
-
-五个契约。它们的共同点是：一旦定错，所有历史会话、所有工具、所有 UI 都要陪葬。
-
-1. 对话表示（`Message` / `ContentBlock`）—— 决定持久化格式
-2. 会话日志（append-only + projection + fork）—— 决定可恢复性与可审计性
-3. 事件流（`Event`）—— 决定所有外围组件的耦合方式
-4. Provider 协议 + 能力声明 —— 决定多模型是否真的可换
-5. Tool 协议（含权限与沙箱的必经点）—— 决定安全边界能否事后加固
-
-**总量目标：不超过 2000 行。** 超了说明抽象错了。
-
-### L1 能力层 —— 加法，删掉重来成本低
-
-工具集、skills、MCP 客户端、hooks、subagent。
-
-### L2 产品层 —— 最后做
-
-TUI、slash commands、主题、聊天平台接入。
-
----
-
-## 三、目录结构
-
+    R --> SES["sessions: Event Store"]
+    D --> ART["artifacts: Artifact Store"]
+    R --> OBS["observability: OTel + Cost"]
+    SES --> DB["SQLite / PostgreSQL"]
+    ART --> OBJ["Local FS / S3 / MinIO"]
 ```
+
+控制面决定执行计划和上下文；执行面承载有副作用的工具、Hook 和插件。所有副作用必须
+经过 `tools → policy → hooks → sandbox` 链路。
+
+## 3. 工程目录
+
+```text
 src/aiharness/
-  core/          types, events, errors, ids, tokens        # 零依赖
-  model/         provider 协议, capabilities, 路由, 重试
-    providers/   anthropic/, openai/, openai_compatible/, fake/
-  session/       store (jsonl append-only), session, filestate
-  context/       system prompt 组装, token 预算, 压缩, 溢出落盘
-  tools/         协议, 注册表, builtin/{read,write,edit,bash,grep,glob}
-  permission/    模式, 规则, 决策引擎, 会话授权表
-  sandbox/       执行后端 (process → seatbelt → container)
-  hooks/         生命周期分发
-  loop/          agent.py —— 唯一的循环
-  cli/           最小 REPL
+  core/                 # Canonical types, events, IDs, errors
+  runtime/              # Agent state machine, run coordinator
+  sessions/             # Event store, snapshots, branching
+  context/              # Context compiler and compaction strategies
+  models/               # Gateway, router, provider adapters
+  tools/                # Tool contract, registry, dispatcher
+  plugins/              # Manifest, discovery, plugin host
+  policy/               # Rules, decisions, approvals, capability leases
+  hooks/                # Lifecycle event bus
+  sandbox/              # Backend protocols and implementations
+  memory/               # Extraction, retrieval, scopes
+  skills/               # SKILL.md discovery and loading
+  agents/               # Subagent task graph and coordination
+  artifacts/            # Large output and patch storage
+  observability/        # OTel, logging, cost accounting
+  evals/                # Datasets, replay, graders
+  api/                  # FastAPI optional service
+  cli/                  # Typer CLI
+tests/
+  unit/
+  contract/
+  integration/
+  security/
+  evals/
+docs/
+  rfcs/
+  adr/
+plugins/
+examples/
 ```
 
-依赖方向严格单向：`core` ← 其他所有；`loop` 依赖大部分；`cli` 只依赖 `loop` 和 `core`。
+依赖方向：`core` 不依赖其他业务包；领域包依赖 `core`；`runtime` 组装依赖；`api/cli`
+只调用公共 Runtime API。Provider、Sandbox、Store 和 Plugin Host 只能通过协议访问。
 
-**禁止**：`core` 依赖任何其他包；任何包 import `model/providers/` 下的具体实现（只能拿到协议）。
+## 4. Runtime 与 Agent Loop
 
----
+一次用户请求对应一个 `Run`，一次会话可以有多个 Run。Runtime 是可恢复状态机：
 
-## 四、核心契约
-
-### 4.1 对话表示
-
-内核只表达**意图**，厂商机制留在适配器。任何以厂商术语命名的字段都是设计错误。
-
-```python
-@dataclass(slots=True)
-class ContentBlock:
-    kind: str
-
-@dataclass(slots=True)
-class TextBlock(ContentBlock):
-    text: str
-    stable_prefix: bool = False
-    # ↑ "此处是一个稳定前缀边界"。不是 cache_control。
-    #   适配器决定要不要用、怎么用、用几个。
-
-@dataclass(slots=True)
-class ThinkingBlock(ContentBlock):
-    text: str
-    provider: str                          # 产生它的适配器名
-    opaque: dict[str, Any] | None = None   # 必须逐字节回传的载荷，内核不解释
-
-@dataclass(slots=True)
-class ToolUseBlock(ContentBlock):
-    id: str
-    name: str
-    input: dict[str, Any]
-
-@dataclass(slots=True)
-class ToolResultBlock(ContentBlock):
-    tool_use_id: str
-    content: str
-    is_error: bool = False
-
-@dataclass(slots=True)
-class ImageBlock(ContentBlock):
-    media_type: str
-    data: str   # base64
+```text
+ACCEPTED
+  → CONTEXT_COMPILED
+  → MODEL_STREAMING
+  → MODEL_COMPLETED
+  → TOOL_CALLS_PROPOSED
+  → POLICY_EVALUATED
+  → APPROVAL_PENDING / TOOL_EXECUTING
+  → TOOL_RESULTS_COMMITTED
+  → CONTEXT_COMPILED
+  → COMPLETED / FAILED / CANCELLED / INTERRUPTED
 ```
 
-**ThinkingBlock 的跨 provider 规则**（唯一一条硬规则）：
+核心顺序不可交换：
 
-```
-block.provider == request.provider  → 原样带上，opaque 逐字节不变
-block.provider != request.provider  → 整块丢弃
-```
+1. 先追加 `assistant.message`，再执行模型提出的工具；
+2. 每个 Tool Call 最终必须对应一个 Tool Result；
+3. 工具结果和权限决定在执行后立即落盘；
+4. 流式增量用于 UI，不作为每 Token 的持久事件；
+5. 取消或进程崩溃后，下一次 Resume 必须修复孤儿 Tool Call。
 
-内核不知道 "signature" 是什么。Anthropic 的 signature、OpenAI 的 encrypted reasoning、将来任何家的等价物，都存在 `opaque` 里。
+### 4.1 取消与恢复
 
-**序列化契约**：`to_dict` / `from_dict` 无损往返，因为会话日志就是持久化这些 dict。
+取消流程必须收尾所有在飞任务，给未完成 Tool Call 合成错误结果，并追加
+`run.interrupted`。进程直接退出时，Session Load 会扫描未配对调用并生成
+`session.repaired`。不得自动重放未知是否已产生副作用的工具。
 
-```python
-@dataclass(slots=True)
-class Message:
-    role: Literal["user", "assistant", "system"]
-    content: list[ContentBlock]
-    id: str
-    meta: dict[str, Any]   # 自由溯源：{"compacted": True}, {"subagent": "reviewer"}
-```
+## 5. 核心契约
 
-**`ToolResultBatch`**：一次 assistant turn 对应的全部工具结果，作为**不可分割的单元**交给适配器。
+### 5.1 Canonical Types
 
-```python
-@dataclass(slots=True)
-class ToolResultBatch:
-    results: list[ToolResultBlock]
-```
+`core` 只定义厂商无关类型：
 
-"Anthropic 要求放进同一条 user 消息"、"OpenAI 要求 N 条独立 role:tool 消息"——两个都是适配器内部的渲染规则，loop 不知道。
+- `Message`、`TextBlock`、`ThinkingBlock`、`ImageBlock`；
+- `ToolCallBlock`、`ToolResultBlock`；
+- `ModelRequest`、`ModelResponse`、`Usage`、`Capabilities`；
+- `ToolSpec`、`ToolResult`、`Event`。
 
-### 4.2 会话日志
+所有类型必须支持稳定 JSON 序列化和无损往返。Provider 的签名、加密推理载荷等放在
+`ThinkingBlock.opaque`，只由对应 Adapter 解释。
 
-**append-only 日志，不是状态快照。** 活的对话是**日志重放出的投影**。
+### 5.2 Event
 
-买到三件事：
+事件统一包含：
 
-- **崩溃安全**：被 kill 最多丢正在写的那条记录
-- **可审计**：压缩只缩小模型视野，从不删磁盘。"它当时为什么那么干"永远可回答
-- **可 fork**：fork 是前缀重放到新日志，O(prefix)，永不改动父会话
-
-记录类型：
-
-| 类型 | 内容 |
-|---|---|
-| `session.meta` | 头：cwd、模型角色、harness 版本、父会话 |
-| `message` | 一条 `Message` |
-| `compaction` | 用一条摘要替换一组 message id |
-| `usage` | 每轮 token 计量 |
-| `permission` | 一次权限判定（谁、什么、判成什么、依据哪条规则） |
-| `checkpoint` | 命名标记，可回退到 |
-| `event` | 非对话事件的持久痕迹（hook 决策等） |
-
-`project_messages(records) -> list[Message]` 是唯一的投影函数。`compaction` 记录**就地应用**——摘要落在被移除跨度的原位，不是追加到末尾。
-
-**并发模型**：一个会话一个所有者 loop，单写者。用 `O_APPEND` 追加 + fsync，不需要锁守护进程。读到损坏的尾行（硬 kill 造成）就丢弃尾部，不是丢整个会话。
-
-### 4.3 事件流与流式块 —— 两层，禁止合并
-
-**这是最容易犯的错。** 合并了之后 UI 会开始依赖 provider 的线格式。
-
-**`StreamChunk`（provider 归一化后的线格式，7 种）** —— 只在 `model/` 层内部流动：
-
-```
-MessageStart(model)
-BlockStart(index, kind)
-TextDelta(index, text)
-ThinkingDelta(index, text)
-ToolInputDelta(index, partial_json)
-BlockEnd(index)
-MessageEnd(stop_reason, usage)
+```text
+event_id, session_id, run_id, seq, type, schema_version, created_at, data
 ```
 
-**`Event`（harness 对外的语义事件）** —— loop 产出 `AsyncIterator[Event]`，UI / 日志 / eval / 远程传输**只消费事件**，任何组件不许伸手进 loop 内部：
+事件是事实源；Projection、Snapshot、Trace 和 Eval 都从事件产生。
 
-```
-session.started      turn.started        turn.completed      turn.interrupted
-text.delta           thinking.delta      message.completed
-tool.requested       tool.permission_required                tool.completed
-context.compacted    subagent.started    subagent.completed
-error
-```
+推荐事件类型：
 
-适配器只管产 chunk；loop 累积成 `ModelResponse` 并发 Event。
-
-### 4.4 Provider 协议
-
-**不做最小公倍数，做能力声明。** 抽象成交集会立刻丢掉 effort、前缀缓存、推理回放——那正是 coding agent 最吃的东西。
-
-```python
-@dataclass(frozen=True)
-class Capabilities:
-    streaming: bool
-    parallel_tools: bool
-    reasoning: bool                  # 会返回推理内容
-    reasoning_replay: bool           # 推理内容必须原样回传（否则可安全丢弃）
-    effort_levels: tuple[str, ...]   # () = 不支持；适配器映射到自家参数
-    prefix_caching: bool             # 能利用 stable_prefix 标记（显式或隐式都算）
-    inline_system: bool              # 支持会话中途注入系统级指令
-    token_counting: bool
-    max_context: int
-    max_output: int
-
-class Provider(Protocol):
-    name: str
-    def capabilities(self, model: str) -> Capabilities: ...
-    def stream(self, req: ModelRequest) -> AsyncIterator[StreamChunk]: ...
-    async def count_tokens(self, req: ModelRequest) -> int: ...
+```text
+session.created / session.forked / session.repaired
+run.started / run.completed / run.failed / run.interrupted
+user.message / assistant.message / tool.result
+model.requested / model.completed / usage.recorded
+tool.requested / tool.started / tool.completed
+policy.decided / approval.requested / approval.resolved
+context.compaction_started / context.compacted
+memory.candidate / memory.written
+subagent.started / subagent.completed
 ```
 
-**没有一个字段名来自某家厂商。** loop 和 context 层查询能力，**永远不做 `isinstance(provider, XProvider)` 判断**。
+## 6. 会话与存储
 
-四个实现，地位对等：
+`sessions` 保存元数据和 `head_seq`；`events` 按 `(session_id, seq)` 追加。追加必须携带
+`expected_seq`，冲突时拒绝写入。单会话由一个 Runtime Owner 写入，生产 Worker 通过 lease
+保证所有权。
 
-| provider | 用途 | 说明 |
-|---|---|---|
-| `fake` | 测试与契约参考 | 脚本化回复、注入错误(429/529/refusal)、注入延迟(测取消)、录制回放 |
-| `anthropic` | 主力 | 适配器最厚，见 4.4.1 |
-| `openai` | 官方 API | `reasoning_effort` 三档；工具结果 N 条 `role:tool` |
-| `openai_compatible` | base_url + key | GLM/Kimi/DeepSeek/Ollama/vLLM。能力**逐 endpoint 配置** |
+- 本地：SQLite WAL，单文件、事务、可备份；
+- 生产：PostgreSQL，使用同一 Store Protocol；
+- 大型输出、Diff、附件和日志：Artifact Store；
+- Snapshot：按事件数量或时间生成，只用于加速 Load，不取代事件。
 
-**真正的参考实现是 `fake`**：它定义契约，另外三个实现契约。契约测试（同一组 `ModelRequest` 跑过全部四个适配器，断言中性层行为一致）对着 `fake` 写。
+Branch 通过父 Session + 起始序号表达；父会话不可变，子会话只追加自己的事件。
 
-#### 4.4.1 Anthropic 适配器承担的厂商约束
+## 7. 上下文与自动压缩
 
-这些**全部**留在适配器内，一条都不许泄漏到内核：
+Context Compiler 将系统指令、项目约定、Skill 摘要、记忆、历史消息、工具 Schema 和
+当前用户输入编译成模型请求，并在编译前计算预算：
 
-- 渲染顺序固定 `tools → system → messages`。工具列表在最前面，改一个工具 = 全量缓存失效 → **工具注册表必须按名字排序、序列化确定**（这条约束由适配器提出，注册表满足它）。
-- 显式缓存断点上限 **4 个**；每个断点只向前回溯 **20 个 content block**。长 turn（30+ 个 tool_use/tool_result 是常态）会静默 miss。→ **整套断点选择算法在适配器里**：turn 边界优先，长 turn 内每约 15 个 block 补一个，超上限淘汰最旧的。
-- Opus 5 最小可缓存前缀 512 token；低于此静默不缓存（`cache_creation_input_tokens: 0`，无报错）。
-- 全部 `tool_result` 必须在**同一条 user 消息**里。拆开会静默地训练模型不再并行调用工具。
-- `stop_reason: "pause_turn"` → 映射到中性的 `paused`。
-- 会话中途 `{"role": "system"}` 消息（Opus 5 支持，无需 beta header）→ `inline_system=True`。不支持时降级为 user 消息里的 `<system-reminder>` 文本块。
-- `thinking: {"type": "adaptive", "display": "summarized"}`；`display` 默认是 `omitted`（空文本），要展示推理必须显式打开。
-- `output_config.effort`：`low/medium/high/xhigh/max`。**没有** `budget_tokens`，**没有** `temperature/top_p/top_k`（传了 400）。
-- `max_tokens` 是"思考 + 回复"的硬上限。高 effort 下必须给足余量（≥64K）。
-
-### 4.5 Tool 协议
-
-```python
-@dataclass(frozen=True)
-class ToolSpec:
-    name: str
-    description: str
-    input_schema: dict[str, Any]
-    concurrency_safe: bool     # 能否与其他 safe 工具并发
-    mutates: bool              # 是否改变外部状态（影响权限默认值）
-
-class Tool(Protocol):
-    spec: ToolSpec
-    async def run(self, input: dict[str, Any], ctx: ToolContext) -> ToolResult: ...
+```text
+usable_input = context_window - reserved_output - tool_schema - safety_margin
 ```
 
-`concurrency_safe` 必须在**协议里**，不能靠名字猜。read/grep/glob 并发跑；write/edit/bash 串行。
+压缩按成本递增：
 
-`ToolContext` 携带：cwd、session、file state tracker、sandbox、取消令牌、发事件的通道。
+1. 输出外置：大工具结果写入 Artifact，仅保留预览和引用；
+2. 确定性微压缩：清理旧工具结果和重复上下文；
+3. 语义压缩：使用专用 Compact Model 生成结构化摘要。
 
-**权限判定不在工具内部**，在 loop 里、执行前。见第六节。
+结构化摘要至少保留目标、约束、决策、文件变化、验证结果、未解决事项、下一步、
+权限模式、Skill、Subagent 和 Artifact 引用。压缩记录源事件范围、摘要模型、Prompt Hash、
+前后 Token 估算和摘要版本。压缩不得切断 Tool Call/Tool Result 配对。
 
----
+## 8. Models：多模型适配与路由
 
-## 五、Agent Loop
+`ModelGateway` 不直接依赖具体 SDK。Provider Adapter 实现：
 
-唯一入口：
-
-```python
-async def query(session: Session, prompt: str, *, deps: Deps) -> AsyncIterator[Event]
+```text
+capabilities(model)
+stream(ModelRequest)
+count_tokens(ModelRequest)
 ```
 
-### 5.1 主流程
+Capability 包含 Streaming、Tool Calling、Parallel Tools、Reasoning、Vision、Prompt Cache、
+Token Counting、Context Window、Max Output 和 Effort Levels。
 
-```
-emit TurnStarted
-loop (最多 max_iterations 轮):
-    组装 ModelRequest（system + messages + tools + effort）
-    provider.stream(req) → 累积 StreamChunk，同时 emit TextDelta/ThinkingDelta
-    emit MessageCompleted
-    session.add_message(assistant_msg)          ← 必须先落盘，再执行工具
+路由按角色配置独立模型：
 
-    if stop_reason in (end_turn, refusal, max_tokens): break
-    if stop_reason == paused: continue          ← 不需要新用户输入
-
-    # stop_reason == tool_use
-    for each tool_use:  权限判定 → allow / deny / ask
-    并发执行 concurrency_safe 的，串行执行其余的
-    收集成 ToolResultBatch → session.add_message(user_msg)
-emit TurnCompleted
+```text
+primary / fallback / compact / vision / memory / judge / subagent
 ```
 
-**顺序不可换**：带 `tool_use` 的 assistant 消息**必须在执行工具前落盘**。否则崩溃后日志里会出现"工具执行了但没有记录"的空洞。
+第一阶段实现 Fake Provider；随后实现 Anthropic、OpenAI 和 OpenAI-Compatible。Fallback 只能
+在模型请求尚未产生可执行 Tool Call 时自动发生；有副作用的工具结果不得盲目重放。
 
-### 5.2 中断修复协议 —— 最容易写错的一段
+## 9. Tools、Plugins、Skills 与 Hooks
 
-每一轮跑在独立的 `asyncio.Task` 里，Esc 取消它。捕获 `CancelledError` 后**必须按序完成**：
+### 9.1 Tools
 
-1. 取消所有在飞的工具任务，`gather(..., return_exceptions=True)` 收尾
-2. 对每一个**还没有配对 tool_result 的 tool_use**，合成 `is_error: true` 的结果（`"Interrupted by user"`），**全部放进同一个 `ToolResultBatch`**
-3. 追加一条中断标记消息，让模型下一轮知道发生过什么
-4. emit `TurnInterrupted`，落盘
+每个工具声明名称、描述、JSON Schema、是否修改外部状态、并发安全、能力需求、超时和
+幂等策略。所有输入先校验和规范化，再进入 Policy。
 
-**这段修复逻辑本身必须屏蔽二次取消**（`asyncio.shield`，或把它放在不可取消的路径上）。
+### 9.2 Plugins
 
-> **失败模式**：用户连按两次 Esc，修复只做了一半 → 日志里出现没有配对 `tool_result` 的 `tool_use` → 这个会话之后每次请求都 400，**永久报废**。
->
-> 这就是为什么中断必须是 L0 的一部分，不能事后补。
+Plugin 使用 `plugin.json` 描述版本、Tools、Skills、Agents、Hooks、MCP、依赖和 Hash。
+第三方插件由独立 Plugin Host 子进程加载，通过 JSON-RPC 或等价协议通信。项目级插件默认
+关闭；启用后必须经过信任检查和 lockfile。
 
----
+### 9.3 Skills
 
-## 六、权限模型
+兼容 `SKILL.md` + frontmatter。启动只注入 Skill 索引，正文、脚本和参考资料按需加载。
+Skill 是知识和流程扩展，不应隐式获得比当前 Run 更大的权限。
 
-判定发生在 **loop 里、工具执行前**，顺序固定：
+### 9.4 Hooks
 
-```
-mode → deny 规则 → allow 规则 → 会话授权表 → hooks → ask 回调
-```
+生命周期包括 `RunStart`、`BeforeModel`、`AfterModel`、`BeforeTool`、`AfterTool`、
+`PolicyDecision`、`BeforeCompact`、`AfterCompact`、`Subagent*` 和 `RunStop`。
+Hook 有优先级、超时、失败策略和只读/可修改声明。Hook 自己也必须经过 Policy 与 Sandbox。
 
-**模式**：`default` / `acceptEdits` / `plan` / `bypass`
+## 10. Policy 与 Sandbox
 
-**ask 回调**（注入进 loop，不是双向 generator——后者在并行工具下控制流没法推理）：
+Policy 输出 `ALLOW / DENY / ASK`，同时返回原因、命中的规则、作用域和有效期。硬拒绝优先于
+组织、工作区、用户和会话临时授权。路径要 canonicalize，并检查 symlink escape；命令工具
+不能只靠字符串黑名单。
 
-```python
-async def can_use_tool(name: str, input: dict, ctx: PermissionContext) -> Decision
-```
+### 10.1 已确认的沙箱基线
 
-`Decision` = `allow` | `deny(reason)` | `allow_always(rule)`
+- `HostBackend` 是本地首选，适合最小依赖和快速启动；
+- Host 执行必须显式 `unsafe=true`，未显式声明时拒绝；
+- 每个 `run.started`、`tool.started` 事件记录 `sandbox=host, unsafe=true`；
+- Host 仅提供工作区路径约束、超时、输出上限和进程组清理，不宣称系统隔离；
+- `DockerBackend` 是可选后端，要求真实隔离的部署通过策略禁止 Host；
+- 后续可加入 gVisor、Firecracker 或 Kubernetes Worker。
 
-`allow_always` 写进**会话授权表**（例："以后 `bash` 里匹配 `npm test` 的都放行"）。需要一个基于工具名 + 输入模式的匹配器。
+执行链：
 
-**每一次判定都写进 session log**（`permission` 记录类型）。这是审计线索，也是"它当时为什么敢删那个文件"的唯一答案。
-
----
-
-## 七、上下文管理
-
-三个机制，常被混为一谈，**必须分开做**：
-
-| 机制 | 触发点 | 成本 | 说明 |
-|---|---|---|---|
-| **工具结果截断/溢出** | tool 边界 | 零 LLM 调用 | 2MB 的文件读取不进上下文。截断到 N 字符 + 全文落盘 + 告诉模型路径。**性价比最高的一层** |
-| **旧工具结果清理** | 阈值 | 零 LLM 调用 | 优先用 provider 的服务端能力；无则自己做 |
-| **压缩** | 总量 > 阈值 | 一次廉价模型调用 | 用摘要替换旧跨度。必须保留：原始用户意图、最近的文件编辑、当前任务状态 |
-
-**`Compactor` 是协议**，默认实现委托给 provider 的服务端压缩（若 capability 支持），需要时换成自己的实现。
-
-**token 计量分两条路**，故意分开：
-
-- `estimate_tokens()` —— 廉价、同步、无网络。压缩触发器每轮调用，差 10% 无所谓，网络往返不可接受
-- `TokenCounter` —— provider 精确计数，用于代价高的决策（预算预检、eval 报告）。计数失败降级到估算，**绝不让计数打断一个 turn**
-
-> 绝不用外来分词器（`tiktoken` 等）。对 Claude 的计数是错的，代码上错得尤其厉害。
-
-`stable_prefix` 标记由上下文层在**语义边界**（turn 结束、system prompt 末尾）打，**数量不设限**。厂商配额是适配器的事。
-
----
-
-## 八、配置
-
-分层，从低到高：内置默认 < 用户 `~/.aiharness/settings.json` < 项目 `.aiharness/settings.json` < 本地 `.aiharness/settings.local.json`（gitignore）< 环境变量 `AIH_*` < 显式覆盖。
-
-dict 深合并；**list 整体替换**——项目声明 `policy.deny` 意思是"就这些规则"，不是"这些加上用户的"，否则 deny 列表永远收不窄。
-
-模型配置：**role → provider + model**。路由解析角色，代码里永远不出现裸模型 id，换模型是配置改动不是代码改动。
-
-```yaml
-model:
-  providers:
-    anthropic:  {type: anthropic, api_key_env: ANTHROPIC_API_KEY}
-    glm:        {type: openai_compatible, base_url: "...", api_key_env: GLM_API_KEY,
-                 capabilities: {reasoning: true, prefix_caching: false, effort_levels: []}}
-    fake:       {type: fake}
-  roles:
-    primary:    {provider: anthropic, model: claude-opus-5, effort: xhigh}
-    fast:       {provider: anthropic, model: claude-haiku-4-5}
-    compactor:  {provider: anthropic, model: claude-haiku-4-5}
-  fallbacks:
-    primary: [{provider: glm, model: glm-4.6}]
+```text
+Schema Validate
+→ Canonicalize
+→ Policy Preflight
+→ BeforeTool Hook
+→ Policy Re-evaluate
+→ Approval
+→ Capability Lease
+→ Sandbox Execute
+→ AfterTool Hook
+→ Persist Result
 ```
 
----
+## 11. Memory 与 Agents
 
-## 九、设计决策记录
+Memory 分为 Working、Episodic、Semantic、Procedural 四层。长期记忆必须带作用域、来源、
+置信度、时间和可删除标记；写入前做 Secret/PII 清洗、去重和人工可追溯。
 
-| # | 决策 | 理由 | 代价 |
-|---|---|---|---|
-| 1 | 垂直切片优先，不做接口先行 | 抽象要从跑通的代码里提取。自顶向下定 9 大类接口，会在真实调用面前发现抽象是错的 | 通用能力晚半拍 |
-| 2 | 内核只表达意图，厂商机制在适配器 | 以厂商术语命名字段 = 内核长成那家的形状，别人来适配 | Anthropic 适配器变厚（正确的地方厚） |
-| 3 | 通用 provider 层，四个实现 | `fake` 的测试价值单独就够本；OpenAI 兼容层是国内模型刚需 | ThinkingBlock 跨 provider 不可通约，靠 `provider` 字段丢弃解决 |
-| 4 | 全 async | 流式 + 并行工具下，同步版本会变成线程池噩梦 | 所有工具必须 `async def` |
-| 5 | 权限用注入回调，不用双向 generator | 可测试、可组合，CLI 和未来 HTTP server 都能实现；双向 generator 在并行工具下没法推理 | — |
-| 6 | subagent 是一个 Tool，不做消息总线 | 覆盖主管-工人和流水线两类实际用途，不需要总线/订阅/心跳 | 复杂拓扑要等真实需求 |
-| 7 | 断点策略在适配器，不在 context 层 | "最多 4 个"、"20-block 窗口" 是 Anthropic 配额，泄漏进内核是设计错误 | — |
-| 8 | 中断修复属于 L0 | 修复做错会让会话永久 400 报废，事后补不进去 | S1 就要写 |
-| 9 | 编辑工具要 "读后才能写" 不变式 | 否则 agent 会盲写覆盖用户改动。需要跨工具共享的 file state tracker | tracker 是 L0 组件 |
+Subagent 是独立 Session/Run，权限只能是父 Run 的子集，拥有独立预算、上下文、工作区或
+Git Worktree。父 Agent 通过结构化 `TaskSpec`、Mailbox 和 `AgentResult` 协作；最大深度、
+并发数、Token、成本和超时都由 Runtime 控制。
 
----
+## 12. Eval 与 Observability
 
-## 十、参考
+每个 Session、Run、Model Attempt、Tool Call、Policy Decision、Hook、Sandbox 和 Compaction
+都带 Trace Context。使用 OpenTelemetry 输出 Trace、Metrics 和结构化日志，敏感字段先脱敏。
 
-- `docs/TASKS.md` —— 分阶段任务分解与验收标准
+评估支持 Fake/Replay、Provider Contract、Golden Tasks、安全测试和 Coding Tasks。核心指标：
+
+- 任务成功率、测试通过率和 Patch 正确率；
+- 恢复成功率、孤儿 Tool Call 率；
+- 压缩前后 Token、上下文保持率；
+- Tool 错误率、策略拒绝率、审批率；
+- 首 Token 延迟、总延迟、Token 和成本。
+
+## 13. 技术与部署
+
+首选 Python 3.11+、asyncio/AnyIO、Pydantic v2、SQLite/PostgreSQL、Typer、可选 FastAPI、
+OpenTelemetry、structlog。第一形态是可嵌入 SDK + CLI；第二形态将 Runtime、Sandbox Worker 和
+Plugin Host 拆分部署。核心不强依赖 LangChain/LangGraph，保持对 Provider 和执行面的控制。
