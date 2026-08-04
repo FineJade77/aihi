@@ -25,6 +25,10 @@ class EventInvariantViolation(HarnessError):
     code = "event_invariant_violation"
 
 
+class ContextWindowExceeded(HarnessError):
+    code = "context_window_exceeded"
+
+
 class SessionNotFound(HarnessError):
     code = "session_not_found"
 

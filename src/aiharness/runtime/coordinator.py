@@ -6,6 +6,8 @@ import asyncio
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from aiharness.artifacts import ArtifactStore
+from aiharness.context import ContextBudget, ContextCompiler
 from aiharness.core.awaits import await_cancelable
 from aiharness.core.events import Event
 from aiharness.core.ids import new_id
@@ -38,13 +40,25 @@ class RunCoordinator:
         sandbox: SandboxBackend,
         policy: PolicyEngine | None = None,
         hooks: HookBus | None = None,
+        context_compiler: ContextCompiler | None = None,
+        artifact_store: ArtifactStore | None = None,
+        context_window: int | None = None,
+        context_safety_margin: int = 256,
     ) -> None:
+        if context_window is not None and context_window <= 0:
+            raise ValueError("context_window must be positive")
+        if context_safety_margin < 0:
+            raise ValueError("context_safety_margin cannot be negative")
         self.provider = provider
         self.registry = registry
         self.sandbox = sandbox
         self.policy = policy or DefaultPolicyEngine()
         self.hooks = hooks or HookBus()
         self.dispatcher = ToolDispatcher(self.registry, self.policy, self.hooks)
+        self.context_compiler = context_compiler or ContextCompiler()
+        self.artifact_store = artifact_store
+        self.context_window = context_window
+        self.context_safety_margin = context_safety_margin
 
     async def run(
         self,
@@ -148,12 +162,72 @@ class RunCoordinator:
     ) -> ModelResponse:
         while True:
             await self._check_cancel(cancel_event)
+            session.refresh()
+            capabilities = self.provider.capabilities(model)
+            effective_output_tokens = min(max_output_tokens, capabilities.max_output)
+            effective_context_window = min(
+                self.context_window or capabilities.max_context,
+                capabilities.max_context,
+            )
+            budget = ContextBudget.for_request(
+                context_window=effective_context_window,
+                reserved_output=effective_output_tokens,
+                tools=self.registry.specs,
+                safety_margin=self.context_safety_margin,
+            )
+            compiled = self.context_compiler.compile(
+                session.messages,
+                system_prompt=system_prompt,
+                tools=self.registry.specs,
+                budget=budget,
+                artifact_store=self.artifact_store,
+            )
+            existing_artifacts = {
+                str(event.data["artifact"]["artifact_id"])
+                for event in session.events
+                if event.type == "artifact.created"
+                and isinstance(event.data.get("artifact"), dict)
+                and "artifact_id" in event.data["artifact"]
+            }
+            for artifact in compiled.artifacts:
+                if artifact.artifact_id in existing_artifacts:
+                    continue
+                session.append(
+                    Event(
+                        type="artifact.created",
+                        session_id=session.id,
+                        run_id=run_id,
+                        data={"artifact": artifact.to_dict(), "purpose": "context"},
+                    )
+                )
+                existing_artifacts.add(artifact.artifact_id)
+            if compiled.compaction is not None:
+                compaction_data = compiled.compaction.to_event_data()
+                source_ids = set(compiled.compaction.replaced_message_ids)
+                source_seqs = [
+                    event.seq
+                    for event in session.events
+                    if event.seq is not None
+                    and isinstance(event.data.get("message"), dict)
+                    and event.data["message"].get("id") in source_ids
+                ]
+                if source_seqs:
+                    compaction_data["source_seq_start"] = min(source_seqs)
+                    compaction_data["source_seq_end"] = max(source_seqs)
+                session.append(
+                    Event(
+                        type="compaction.created",
+                        session_id=session.id,
+                        run_id=run_id,
+                        data=compaction_data,
+                    )
+                )
             request = ModelRequest(
                 model=model,
-                messages=session.messages,
+                messages=compiled.messages,
                 tools=self.registry.specs,
                 system_prompt=system_prompt,
-                max_output_tokens=max_output_tokens,
+                max_output_tokens=effective_output_tokens,
             )
             response = await self._consume_provider(
                 session, run_id, request, cancel_event=cancel_event

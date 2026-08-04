@@ -43,5 +43,10 @@ usable_input = context_window - reserved_output - tool_schema - safety_margin
 达到配置阈值时主动压缩；Provider 返回 Context Length 错误时最多执行一次响应式压缩，
 防止无限重试。
 
+当前 L0/L1 基线由 `ContextCompiler` 在无网络往返下执行：工具结果超过阈值时写入可寻址
+ArtifactStore，只向模型保留预览和引用；预算无法通过成对消息压缩满足时返回稳定的
+`context_window_exceeded` 错误。确定性压缩追加 `compaction.created`，Artifact 写入追加
+`artifact.created`；原始消息事件保持不变，后续 L2 语义压缩可复用同一事件边界。
+
 压缩记录源事件范围、前后 Token、模型、Prompt Hash、策略版本和摘要版本。边界不能切断
 Tool Call/Tool Result 配对。

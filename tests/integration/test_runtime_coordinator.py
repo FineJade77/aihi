@@ -3,7 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from aiharness.core.types import Message, ToolCallBlock, ToolSpec
+from aiharness.artifacts import FileArtifactStore
+from aiharness.core.types import Message, ToolCallBlock, ToolResultBlock, ToolSpec
 from aiharness.hooks import HookBus
 from aiharness.models.providers.fake import FakeProvider, FakeStep
 from aiharness.runtime import RunCoordinator, RunState
@@ -50,6 +51,72 @@ async def test_fake_provider_completes_plain_response_and_persists_stream(
     assert result.response.message.text_content == "hello from fake"
     assert any(event.type == "model.chunk" for event in session.events)
     assert [event.type for event in session.events][-1] == "run.completed"
+
+
+@pytest.mark.asyncio
+async def test_runtime_compacts_history_without_dropping_raw_events(
+    session_tmp_path: Path,
+) -> None:
+    session = make_session(session_tmp_path, "ses-context-compact")
+    for index in range(20):
+        session.add_message(Message.text("user", f"historical objective {index} " + "x" * 80))
+    provider = FakeProvider([FakeStep(text="done")])
+    coordinator = RunCoordinator(
+        provider,
+        registry=ToolRegistry(),
+        sandbox=HostBackend(session_tmp_path, unsafe=True),
+        context_window=600,
+        context_safety_margin=0,
+    )
+
+    result = await coordinator.run(session, model="fake-model", max_output_tokens=64)
+
+    assert result.state == RunState.COMPLETED
+    assert any(event.type == "compaction.created" for event in session.events)
+    assert sum(event.type == "user.message" for event in session.events) == 20
+    assert session.messages[0].metadata["compaction"] == "l1_deterministic"
+    assert provider.requests[0].messages[0].role == "system"
+
+
+@pytest.mark.asyncio
+async def test_runtime_records_artifact_reference_for_large_tool_result(
+    session_tmp_path: Path,
+) -> None:
+    session = make_session(session_tmp_path, "ses-context-artifact")
+    call = ToolCallBlock(id="call-artifact", name="shell", input={"argv": ["echo", "ok"]})
+    second_call = ToolCallBlock(id="call-artifact-2", name="shell", input={"argv": ["echo", "ok"]})
+    session.add_message(Message(role="assistant", content=(call,)))
+    session.add_message(
+        Message(
+            role="user",
+            content=(ToolResultBlock(tool_call_id=call.id, content="output " * 1_000),),
+        )
+    )
+    session.add_message(Message(role="assistant", content=(second_call,)))
+    session.add_message(
+        Message(
+            role="user",
+            content=(ToolResultBlock(tool_call_id=second_call.id, content="output " * 1_000),),
+        )
+    )
+    provider = FakeProvider([FakeStep(text="summarized")])
+    artifact_store = FileArtifactStore(session_tmp_path / "artifacts")
+    coordinator = RunCoordinator(
+        provider,
+        registry=ToolRegistry(),
+        sandbox=HostBackend(session_tmp_path, unsafe=True),
+        artifact_store=artifact_store,
+    )
+
+    result = await coordinator.run(session, model="fake-model", max_output_tokens=64)
+
+    assert result.state == RunState.COMPLETED
+    artifact_events = [event for event in session.events if event.type == "artifact.created"]
+    assert len(artifact_events) == 1
+    artifact_event = artifact_events[0]
+    artifact_id = str(artifact_event.data["artifact"]["artifact_id"])
+    assert artifact_store.read_text(artifact_id) == "output " * 1_000
+    assert provider.requests[0].messages[-1].tool_results[0].metadata["artifact_id"] == artifact_id
 
 
 @pytest.mark.asyncio

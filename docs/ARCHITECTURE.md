@@ -161,6 +161,7 @@ tool.requested / tool.started / tool.completed
 policy.decided / approval.requested / approval.resolved
 capability.lease.issued / capability.lease.revoked
 context.compaction_started / context.compacted
+compaction.created / artifact.created
 memory.candidate / memory.written
 subagent.started / subagent.completed
 ```

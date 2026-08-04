@@ -1,0 +1,320 @@
+"""Deterministic context budgeting, L0 artifactization, and L1 compaction."""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass, replace
+from hashlib import sha256
+from typing import Any
+
+from aiharness.artifacts import ArtifactRef, ArtifactStore
+from aiharness.core.errors import ContextWindowExceeded
+from aiharness.core.tokens import estimate_messages_tokens, estimate_text_tokens
+from aiharness.core.types import Message, TextBlock, ToolResultBlock, ToolSpec
+
+
+@dataclass(frozen=True, slots=True)
+class ContextBudget:
+    context_window: int
+    reserved_output: int
+    tool_schema_tokens: int = 0
+    safety_margin: int = 256
+
+    def __post_init__(self) -> None:
+        if self.context_window <= 0:
+            raise ValueError("context_window must be positive")
+        if self.reserved_output < 0 or self.tool_schema_tokens < 0 or self.safety_margin < 0:
+            raise ValueError("Context budget components cannot be negative")
+        if self.usable_input <= 0:
+            raise ValueError("Context budget leaves no usable input capacity")
+
+    @property
+    def usable_input(self) -> int:
+        return (
+            self.context_window
+            - self.reserved_output
+            - self.tool_schema_tokens
+            - self.safety_margin
+        )
+
+    @classmethod
+    def for_request(
+        cls,
+        *,
+        context_window: int,
+        reserved_output: int,
+        tools: tuple[ToolSpec, ...] = (),
+        safety_margin: int = 256,
+    ) -> ContextBudget:
+        tool_schema_tokens = estimate_text_tokens(
+            json.dumps([tool.to_dict() for tool in tools], sort_keys=True, separators=(",", ":"))
+        )
+        return cls(
+            context_window=context_window,
+            reserved_output=reserved_output,
+            tool_schema_tokens=tool_schema_tokens,
+            safety_margin=safety_margin,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class CompactionRecord:
+    strategy: str
+    version: int
+    replaced_message_ids: tuple[str, ...]
+    summary: Message
+    before_tokens: int
+    after_tokens: int
+    artifact_ids: tuple[str, ...] = ()
+    prompt_hash: str = ""
+
+    def to_event_data(self) -> dict[str, object]:
+        return {
+            "strategy": self.strategy,
+            "version": self.version,
+            "replaced_message_ids": list(self.replaced_message_ids),
+            "summary": self.summary.to_dict(),
+            "before_tokens": self.before_tokens,
+            "after_tokens": self.after_tokens,
+            "artifact_ids": list(self.artifact_ids),
+            "prompt_hash": self.prompt_hash,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class CompiledContext:
+    system_prompt: str
+    messages: tuple[Message, ...]
+    estimated_tokens: int
+    budget: ContextBudget
+    artifacts: tuple[ArtifactRef, ...] = ()
+    compaction: CompactionRecord | None = None
+
+    @property
+    def over_budget(self) -> bool:
+        return self.estimated_tokens > self.budget.usable_input
+
+
+class ContextCompiler:
+    """Compile messages without network calls and preserve tool-call boundaries."""
+
+    def __init__(
+        self,
+        *,
+        artifact_threshold_tokens: int = 1_024,
+        artifact_preview_chars: int = 4_000,
+    ) -> None:
+        if artifact_threshold_tokens <= 0 or artifact_preview_chars <= 0:
+            raise ValueError("Artifact thresholds must be positive")
+        self.artifact_threshold_tokens = artifact_threshold_tokens
+        self.artifact_preview_chars = artifact_preview_chars
+
+    def compile(
+        self,
+        messages: tuple[Message, ...] | list[Message],
+        *,
+        system_prompt: str,
+        tools: tuple[ToolSpec, ...],
+        budget: ContextBudget,
+        artifact_store: ArtifactStore | None = None,
+    ) -> CompiledContext:
+        original = tuple(messages)
+        materialized, artifacts = self._artifactize(original, artifact_store)
+        before_tokens = self._total_tokens(system_prompt, materialized, budget)
+        if before_tokens <= budget.usable_input:
+            return CompiledContext(
+                system_prompt=system_prompt,
+                messages=materialized,
+                estimated_tokens=before_tokens,
+                budget=budget,
+                artifacts=artifacts,
+            )
+
+        compacted, replaced_ids = self._compact(materialized, system_prompt, budget)
+        after_tokens = self._total_tokens(system_prompt, compacted, budget)
+        if not replaced_ids:
+            if after_tokens > budget.usable_input:
+                raise ContextWindowExceeded(
+                    "Context cannot be reduced below the configured input budget",
+                    details={
+                        "estimated_tokens": after_tokens,
+                        "usable_input": budget.usable_input,
+                    },
+                )
+            return CompiledContext(
+                system_prompt=system_prompt,
+                messages=compacted,
+                estimated_tokens=after_tokens,
+                budget=budget,
+                artifacts=artifacts,
+            )
+        summary = compacted[0]
+        record = CompactionRecord(
+            strategy="l1_deterministic",
+            version=1,
+            replaced_message_ids=tuple(replaced_ids),
+            summary=summary,
+            before_tokens=before_tokens,
+            after_tokens=after_tokens,
+            artifact_ids=tuple(ref.artifact_id for ref in artifacts),
+            prompt_hash=_prompt_hash(system_prompt, materialized, tools, budget),
+        )
+        if after_tokens > budget.usable_input:
+            raise ContextWindowExceeded(
+                "Context cannot be reduced below the configured input budget",
+                details={
+                    "estimated_tokens": after_tokens,
+                    "usable_input": budget.usable_input,
+                },
+            )
+        return CompiledContext(
+            system_prompt=system_prompt,
+            messages=compacted,
+            estimated_tokens=after_tokens,
+            budget=budget,
+            artifacts=artifacts,
+            compaction=record,
+        )
+
+    def _artifactize(
+        self,
+        messages: tuple[Message, ...],
+        artifact_store: ArtifactStore | None,
+    ) -> tuple[tuple[Message, ...], tuple[ArtifactRef, ...]]:
+        if artifact_store is None:
+            return messages, ()
+        artifacts: list[ArtifactRef] = []
+        materialized: list[Message] = []
+        for message in messages:
+            blocks = []
+            for block in message.content:
+                if not isinstance(block, ToolResultBlock):
+                    blocks.append(block)
+                    continue
+                if estimate_text_tokens(block.content) <= self.artifact_threshold_tokens:
+                    blocks.append(block)
+                    continue
+                ref = artifact_store.put_text(
+                    block.content,
+                    metadata={"tool_call_id": block.tool_call_id, "is_error": block.is_error},
+                )
+                artifacts.append(ref)
+                preview = block.content[: self.artifact_preview_chars]
+                if len(preview) < len(block.content):
+                    preview += "\n\n[Full tool output stored as an artifact.]"
+                blocks.append(
+                    replace(
+                        block,
+                        content=preview,
+                        metadata={
+                            **block.metadata,
+                            "artifact_id": ref.artifact_id,
+                            "artifact_sha256": ref.sha256,
+                            "artifact_size_bytes": ref.size_bytes,
+                        },
+                    )
+                )
+            materialized.append(replace(message, content=tuple(blocks)))
+        return tuple(materialized), tuple(artifacts)
+
+    def _compact(
+        self,
+        messages: tuple[Message, ...],
+        system_prompt: str,
+        budget: ContextBudget,
+    ) -> tuple[tuple[Message, ...], list[str]]:
+        groups = _message_groups(messages)
+        if not groups:
+            return messages, []
+        message_limit = max(1, budget.usable_input - estimate_text_tokens(system_prompt))
+        for keep_count in range(len(groups) - 1, 0, -1):
+            selected = groups[-keep_count:]
+            omitted = [
+                message for group in groups[: len(groups) - keep_count] for message in group
+            ]
+            summary = _summary_message(omitted, messages)
+            candidate = (summary, *(message for group in selected for message in group))
+            if estimate_messages_tokens(candidate) <= message_limit:
+                return candidate, [message.id for message in omitted]
+        omitted = [message for group in groups[:-1] for message in group]
+        summary = _summary_message(omitted, messages)
+        return (summary, *groups[-1]), [message.id for message in omitted]
+
+    @staticmethod
+    def _total_tokens(
+        system_prompt: str,
+        messages: tuple[Message, ...],
+        budget: ContextBudget,
+    ) -> int:
+        return estimate_text_tokens(system_prompt) + estimate_messages_tokens(messages)
+
+
+def _message_groups(messages: tuple[Message, ...]) -> list[tuple[Message, ...]]:
+    """Group each assistant tool call with all following results atomically."""
+
+    groups: list[tuple[Message, ...]] = []
+    index = 0
+    while index < len(messages):
+        start = index
+        pending = {call.id for call in messages[index].tool_calls}
+        pending.difference_update(result.tool_call_id for result in messages[index].tool_results)
+        index += 1
+        while pending and index < len(messages):
+            pending.difference_update(
+                result.tool_call_id for result in messages[index].tool_results
+            )
+            pending.update(call.id for call in messages[index].tool_calls)
+            index += 1
+        groups.append(messages[start:index])
+    return groups
+
+
+def _summary_message(omitted: list[Message], all_messages: tuple[Message, ...]) -> Message:
+    objective = next(
+        (message.text_content for message in reversed(all_messages) if message.role == "user"),
+        "",
+    )
+    payload: dict[str, Any] = {
+        "kind": "context_compaction_summary",
+        "objective": objective,
+        "constraints": [],
+        "decisions": [],
+        "files_changed": [],
+        "verified_state": [],
+        "open_questions": [],
+        "next_steps": [],
+        "permission_mode": None,
+        "skills": [],
+        "subagents": [],
+        "artifacts": [],
+        "omitted_message_count": len(omitted),
+    }
+    text = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return Message(
+        role="system",
+        content=(TextBlock(text),),
+        metadata={
+            "compaction": "l1_deterministic",
+            "source_message_ids": [message.id for message in omitted],
+        },
+    )
+
+
+def _prompt_hash(
+    system_prompt: str,
+    messages: tuple[Message, ...],
+    tools: tuple[ToolSpec, ...],
+    budget: ContextBudget,
+) -> str:
+    material = json.dumps(
+        {
+            "system_prompt": system_prompt,
+            "messages": [message.to_dict() for message in messages],
+            "tools": [tool.to_dict() for tool in tools],
+            "usable_input": budget.usable_input,
+            "reserved_output": budget.reserved_output,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return sha256(material.encode("utf-8")).hexdigest()
