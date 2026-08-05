@@ -55,5 +55,13 @@ Provider 适配器将 HTTP 413、明确的 context/token-limit 错误和流内�
 错误时直接失败，避免无限重试。`compaction.created.trigger` 标记 `budget`、
 `preflight_context_window` 或 `provider_context_length` 触发来源。
 
+Artifact 生命周期由 Manifest 中的 `ArtifactPolicy` 控制：`run`、`session`、`persistent`
+三种 Retention，配合 Session/Run 所有者和可选 `expires_at`。Runtime 上下文产物默认使用
+Session 作用域；`ArtifactAccess` 必须匹配作用域才能读取，删除还需要显式 delete capability。
+作用域参与 Artifact ID 的派生，同一 Payload 不会因跨 Session 去重而共享权限。过期清理只删除
+已授权且已过期的条目；`expires_at` 是硬过期边界，过期条目拒绝读取并从普通列表隐藏。
+Runtime 删除入口统一追加 `artifact.deleted`，Store 的物理删除原语
+不直接写事件。Payload 完整性仍由 SHA-256 和 Manifest 双重校验保证。
+
 压缩记录源事件范围、前后 Token、模型、Prompt Hash、策略版本和摘要版本。边界不能切断
 Tool Call/Tool Result 配对。

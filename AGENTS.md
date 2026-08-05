@@ -9,6 +9,7 @@
 5. [ADR-0001](docs/adr/0001-host-sandbox-default.md)
 6. [ADR-0002](docs/adr/0002-event-store-and-snapshots.md)
 7. [ADR-0003](docs/adr/0003-plugin-host-isolation.md)
+8. [ADR-0004](docs/adr/0004-artifact-lifecycle-and-scope.md)
 
 ## 项目目标
 

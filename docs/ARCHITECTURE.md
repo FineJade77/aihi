@@ -162,7 +162,7 @@ policy.decided / approval.requested / approval.resolved
 capability.lease.issued / capability.lease.revoked
 context.compaction_started / context.compacted
 compaction.created (trigger: budget | preflight_context_window | provider_context_length)
-artifact.created
+artifact.created / artifact.deleted
 memory.candidate / memory.written
 subagent.started / subagent.completed
 ```
@@ -200,6 +200,14 @@ usable_input = context_window - reserved_output - tool_schema - safety_margin
 权限模式、Skill、Subagent 和 Artifact 引用。压缩记录源事件范围、摘要策略、Prompt Hash、
 前后 Token 估算、摘要版本和触发原因。Provider 返回 Context Length 错误时，每个 Run 最多
 执行一次响应式 L2 压缩；第二次错误直接失败。压缩不得切断 Tool Call/Tool Result 配对。
+
+Artifact Store 使用不可变内容摘要校验 Payload，并在 Manifest 中记录 `ArtifactPolicy`：
+`run`、`session` 或 `persistent` Retention，以及可选过期时间。Runtime 产生的上下文 Artifact
+默认绑定当前 Session；读取、删除和过期清理由带有匹配 `ArtifactAccess` 的调用执行。相同内容
+在不同 Session/Run 的作用域下使用不同 Artifact ID，避免内容寻址去重跨越权限边界。
+`expires_at` 是硬过期边界：过期条目立即拒绝读取并从普通列表隐藏，清理器只负责物理回收。
+Runtime 的删除和过期清理入口追加 `artifact.deleted`，原始 `artifact.created` 事件不覆盖；
+Store 的 `delete` 仅是受控物理存储原语，不绕过 Runtime 审计。
 
 ## 8. Models：多模型适配与路由
 

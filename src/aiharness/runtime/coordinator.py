@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from typing import Any
 
-from aiharness.artifacts import ArtifactStore
+from aiharness.artifacts import ArtifactAccess, ArtifactPolicy, ArtifactRef, ArtifactStore
 from aiharness.context import CompiledContext, ContextBudget, ContextCompiler, SummaryGenerator
 from aiharness.core.awaits import await_cancelable
 from aiharness.core.errors import ContextWindowExceeded
@@ -189,6 +190,7 @@ class RunCoordinator:
                     tools=self.registry.specs,
                     budget=budget,
                     artifact_store=self.artifact_store,
+                    artifact_policy=self._artifact_policy(session),
                 )
             except ContextWindowExceeded:
                 if context_retry_used:
@@ -200,6 +202,7 @@ class RunCoordinator:
                     tools=self.registry.specs,
                     budget=budget,
                     artifact_store=self.artifact_store,
+                    artifact_policy=self._artifact_policy(session),
                     summary_generator=self.summary_generator,
                     trigger="preflight_context_window",
                 )
@@ -226,6 +229,7 @@ class RunCoordinator:
                     tools=self.registry.specs,
                     budget=budget,
                     artifact_store=self.artifact_store,
+                    artifact_policy=self._artifact_policy(session),
                     summary_generator=self.summary_generator,
                     trigger="provider_context_length",
                 )
@@ -324,6 +328,58 @@ class RunCoordinator:
                 data=compaction_data,
             )
         )
+
+    @staticmethod
+    def _artifact_policy(session: Session) -> ArtifactPolicy:
+        return ArtifactPolicy(session_id=session.id, retention="session")
+
+    def cleanup_expired_artifacts(
+        self,
+        session: Session,
+        *,
+        run_id: str,
+        now: datetime | None = None,
+    ) -> tuple[str, ...]:
+        """Remove expired artifacts in the session scope and append audit events."""
+
+        if self.artifact_store is None:
+            return ()
+        access = ArtifactAccess(session_id=session.id, run_id=run_id, allow_delete=True)
+        deleted = self.artifact_store.cleanup_expired(now=now, access=access)
+        for ref in deleted:
+            session.append(
+                Event(
+                    type="artifact.deleted",
+                    session_id=session.id,
+                    run_id=run_id,
+                    data={"artifact": ref.to_dict(), "reason": "expired"},
+                )
+            )
+        return tuple(ref.artifact_id for ref in deleted)
+
+    def delete_artifact(
+        self,
+        session: Session,
+        artifact_id: str,
+        *,
+        run_id: str,
+        reason: str = "requested",
+    ) -> ArtifactRef:
+        """Delete one artifact and persist the corresponding audit event."""
+
+        if self.artifact_store is None:
+            raise ValueError("Artifact storage is not configured")
+        access = ArtifactAccess(session_id=session.id, run_id=run_id, allow_delete=True)
+        ref = self.artifact_store.delete(artifact_id, access=access)
+        session.append(
+            Event(
+                type="artifact.deleted",
+                session_id=session.id,
+                run_id=run_id,
+                data={"artifact": ref.to_dict(), "reason": reason},
+            )
+        )
+        return ref
 
     async def _consume_provider(
         self,

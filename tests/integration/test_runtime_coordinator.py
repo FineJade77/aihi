@@ -1,9 +1,10 @@
 import asyncio
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
-from aiharness.artifacts import FileArtifactStore
+from aiharness.artifacts import ArtifactAccess, ArtifactPolicy, FileArtifactStore
 from aiharness.core.types import Message, ToolCallBlock, ToolResultBlock, ToolSpec
 from aiharness.hooks import HookBus
 from aiharness.models.errors import ProviderContextLengthError
@@ -116,8 +117,66 @@ async def test_runtime_records_artifact_reference_for_large_tool_result(
     assert len(artifact_events) == 1
     artifact_event = artifact_events[0]
     artifact_id = str(artifact_event.data["artifact"]["artifact_id"])
-    assert artifact_store.read_text(artifact_id) == "output " * 1_000
+    assert artifact_store.read_text(
+        artifact_id, access=ArtifactAccess(session_id=session.id)
+    ) == "output " * 1_000
     assert provider.requests[0].messages[-1].tool_results[0].metadata["artifact_id"] == artifact_id
+
+
+@pytest.mark.asyncio
+async def test_runtime_cleanup_expired_artifacts_appends_audit_event(
+    session_tmp_path: Path,
+) -> None:
+    session = make_session(session_tmp_path, "ses-artifact-cleanup")
+    artifact_store = FileArtifactStore(session_tmp_path / "artifacts")
+    ref = artifact_store.put_text(
+        "temporary",
+        policy=ArtifactPolicy(
+            session_id=session.id,
+            retention="session",
+            expires_at=(datetime.now(UTC) - timedelta(seconds=1)).isoformat(),
+        ),
+    )
+    coordinator = RunCoordinator(
+        FakeProvider(),
+        registry=ToolRegistry(),
+        sandbox=HostBackend(session_tmp_path, unsafe=True),
+        artifact_store=artifact_store,
+    )
+
+    deleted = coordinator.cleanup_expired_artifacts(
+        session, run_id="run-cleanup", now=datetime.now(UTC)
+    )
+
+    assert deleted == (ref.artifact_id,)
+    event = next(event for event in session.events if event.type == "artifact.deleted")
+    assert event.data["artifact"]["artifact_id"] == ref.artifact_id
+    assert artifact_store.list_refs(access=ArtifactAccess(session_id=session.id)) == ()
+
+
+@pytest.mark.asyncio
+async def test_runtime_delete_artifact_appends_audit_event(session_tmp_path: Path) -> None:
+    session = make_session(session_tmp_path, "ses-artifact-delete")
+    artifact_store = FileArtifactStore(session_tmp_path / "artifacts")
+    ref = artifact_store.put_text(
+        "delete me",
+        policy=ArtifactPolicy(session_id=session.id, retention="session"),
+    )
+    coordinator = RunCoordinator(
+        FakeProvider(),
+        registry=ToolRegistry(),
+        sandbox=HostBackend(session_tmp_path, unsafe=True),
+        artifact_store=artifact_store,
+    )
+
+    deleted = coordinator.delete_artifact(session, ref.artifact_id, run_id="run-delete")
+
+    assert deleted.artifact_id == ref.artifact_id
+    assert any(
+        event.type == "artifact.deleted"
+        and event.data["reason"] == "requested"
+        for event in session.events
+    )
 
 
 @pytest.mark.asyncio

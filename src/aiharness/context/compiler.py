@@ -7,7 +7,7 @@ from dataclasses import dataclass, replace
 from hashlib import sha256
 from typing import Any
 
-from aiharness.artifacts import ArtifactRef, ArtifactStore
+from aiharness.artifacts import ArtifactPolicy, ArtifactRef, ArtifactStore
 from aiharness.context.summary import (
     DeterministicSummaryGenerator,
     SummaryGenerator,
@@ -126,9 +126,10 @@ class ContextCompiler:
         tools: tuple[ToolSpec, ...],
         budget: ContextBudget,
         artifact_store: ArtifactStore | None = None,
+        artifact_policy: ArtifactPolicy | None = None,
     ) -> CompiledContext:
         original = tuple(messages)
-        materialized, artifacts = self._artifactize(original, artifact_store)
+        materialized, artifacts = self._artifactize(original, artifact_store, artifact_policy)
         before_tokens = self._total_tokens(system_prompt, materialized, budget)
         if before_tokens <= budget.usable_input:
             return CompiledContext(
@@ -193,6 +194,7 @@ class ContextCompiler:
         tools: tuple[ToolSpec, ...],
         budget: ContextBudget,
         artifact_store: ArtifactStore | None = None,
+        artifact_policy: ArtifactPolicy | None = None,
         summary_generator: SummaryGenerator | None = None,
         trigger: str = "provider_context_length",
     ) -> CompiledContext:
@@ -204,7 +206,7 @@ class ContextCompiler:
         """
 
         original = tuple(messages)
-        materialized, artifacts = self._artifactize(original, artifact_store)
+        materialized, artifacts = self._artifactize(original, artifact_store, artifact_policy)
         before_tokens = self._total_tokens(system_prompt, materialized, budget)
         groups = _message_groups(materialized)
         if len(groups) < 2:
@@ -259,6 +261,7 @@ class ContextCompiler:
         self,
         messages: tuple[Message, ...],
         artifact_store: ArtifactStore | None,
+        artifact_policy: ArtifactPolicy | None,
     ) -> tuple[tuple[Message, ...], tuple[ArtifactRef, ...]]:
         if artifact_store is None:
             return messages, ()
@@ -273,10 +276,15 @@ class ContextCompiler:
                 if estimate_text_tokens(block.content) <= self.artifact_threshold_tokens:
                     blocks.append(block)
                     continue
-                ref = artifact_store.put_text(
-                    block.content,
-                    metadata={"tool_call_id": block.tool_call_id, "is_error": block.is_error},
-                )
+                metadata = {"tool_call_id": block.tool_call_id, "is_error": block.is_error}
+                if artifact_policy is None:
+                    ref = artifact_store.put_text(block.content, metadata=metadata)
+                else:
+                    ref = artifact_store.put_text(
+                        block.content,
+                        metadata=metadata,
+                        policy=artifact_policy,
+                    )
                 artifacts.append(ref)
                 preview = block.content[: self.artifact_preview_chars]
                 if len(preview) < len(block.content):
