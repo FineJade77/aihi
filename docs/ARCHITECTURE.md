@@ -250,8 +250,15 @@ lockfile；Manifest 或内容 Hash 变化后自动失效。
 
 ### 9.3 Skills
 
-兼容 `SKILL.md` + frontmatter。启动只注入 Skill 索引，正文、脚本和参考资料按需加载。
-Skill 是知识和流程扩展，不应隐式获得比当前 Run 更大的权限。
+兼容 `SKILL.md` + 严格 frontmatter。frontmatter 当前只允许 `name`、`description`、
+`version`、`allowed_tools`、`required_permissions` 和 `tags`；不支持脚本入口或可执行指令。
+Skill 按 `builtin < user < project < workspace` 分层发现，高层同名 Skill 遮蔽低层版本，
+同层重复则拒绝启动。Discovery 只保留索引元数据和内容 Hash，不把 Markdown 正文放入候选对象。
+
+启动或编译上下文时只注入 Skill 索引（名称、描述、版本和作用域）。正文必须由调用方显式请求，
+并经过精确的 `name@version+scope+content_sha256` Trust、重新 Discovery/Hash 校验后才能加载；
+未请求、未信任、已禁用或发生变更的 Skill 一律拒绝。Skill 内容只能作为当前 Run 的知识输入，
+不能扩大工具、Policy、Approval、Capability Lease 或 Sandbox 权限。
 
 ### 9.4 Hooks
 

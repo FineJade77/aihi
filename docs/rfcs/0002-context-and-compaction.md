@@ -11,6 +11,8 @@ Skill 和 Memory。直接把事件历史全部发送给模型会导致超限、�
 ## 方案
 
 `context/` 将事实历史编译为版本化 Context View。源历史永远保留，Context View 可以替换。
+Skill 只以已发现的索引进入编译输入；正文必须由上游显式请求并通过 Skill Trust 后才可加入
+当前 Context View，不能因为目录中存在 `SKILL.md` 就自动注入。
 
 ### 压缩级别
 
@@ -62,6 +64,10 @@ Session 作用域；`ArtifactAccess` 必须匹配作用域才能读取，删除�
 已授权且已过期的条目；`expires_at` 是硬过期边界，过期条目拒绝读取并从普通列表隐藏。
 Runtime 删除入口统一追加 `artifact.deleted`，Store 的物理删除原语
 不直接写事件。Payload 完整性仍由 SHA-256 和 Manifest 双重校验保证。
+
+Skill 的分层目录按 `builtin < user < project < workspace` 解析，同名高层条目遮蔽低层条目，
+同层重复视为发现冲突。Skill Loader 在正文读取前重新校验 `name@version+scope+content_sha256`
+Trust；正文读取后再次比对 Hash，确保候选快照、授权记录和 Context View 之间没有静默漂移。
 
 压缩记录源事件范围、前后 Token、模型、Prompt Hash、策略版本和摘要版本。边界不能切断
 Tool Call/Tool Result 配对。

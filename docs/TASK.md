@@ -126,8 +126,9 @@
 - `memory/`：Working/Episodic/Semantic/Procedural、候选抽取、Secret 清洗、检索和删除。
 
 当前进度：已完成 M5a Plugin Manifest、SemVer/Harness 版本约束、无执行 Discovery、确定性
-内容 Hash、默认关闭的 Trust Manager 和原子 JSON lockfile；Plugin Host、Skill、Hook、MCP
-和 Memory 仍待后续切片实现。
+内容 Hash、默认关闭的 Trust Manager 和原子 JSON lockfile；已完成 M5b Skill frontmatter、
+分层发现、作用域遮蔽、显式请求加载、内容 Hash Trust 和原子 JSON lockfile。Plugin Host、Hook、
+MCP 和 Memory 仍待后续切片实现。
 
 ### 验收
 
@@ -135,6 +136,7 @@
 - 项目级 Plugin 默认关闭，启用有明确 Trust 记录；
 - Hook 无法绕过 Policy 或 Sandbox；
 - Skill 正文未加载时不进入模型上下文；
+- 未显式请求、未信任或内容发生变化的 Skill 必须拒绝加载；
 - MCP 工具与内置工具使用同一 Policy/Hook/Sandbox 链路；
 - Memory 条目可追溯、可删除、不会把 Secret 写入长期记忆。
 
