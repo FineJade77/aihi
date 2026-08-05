@@ -240,9 +240,13 @@ primary / fallback / compact / vision / memory / judge / subagent
 
 ### 9.2 Plugins
 
-Plugin 使用 `plugin.json` 描述版本、Tools、Skills、Agents、Hooks、MCP、依赖和 Hash。
-第三方插件由独立 Plugin Host 子进程加载，通过 JSON-RPC 或等价协议通信。项目级插件默认
-关闭；启用后必须经过信任检查和 lockfile。
+Plugin 使用 `plugin.json` 描述 Manifest Version、ID、SemVer、Harness API 约束、能力、权限、
+Entry Point 和可选内容 Hash。Discovery 只读取 Manifest 并对 Manifest 之外的文件做确定性
+Hash，不 import 或执行第三方代码。第三方插件由独立 Plugin Host 子进程加载，通过 JSON-RPC
+或等价协议通信。项目级插件默认关闭；启用前必须对精确的
+`plugin_id@version+manifest_sha256+content_sha256` 记录显式 Trust，并写入原子更新的
+lockfile；Manifest 或内容 Hash 变化后自动失效。
+真正激活前必须重新 Discovery/Hash 校验候选快照，防止 Trust 记录和 Host 启动之间的 TOCTOU。
 
 ### 9.3 Skills
 

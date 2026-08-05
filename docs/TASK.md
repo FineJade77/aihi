@@ -125,6 +125,10 @@
 - MCP Client、Server Tool Schema 和断线处理。
 - `memory/`：Working/Episodic/Semantic/Procedural、候选抽取、Secret 清洗、检索和删除。
 
+当前进度：已完成 M5a Plugin Manifest、SemVer/Harness 版本约束、无执行 Discovery、确定性
+内容 Hash、默认关闭的 Trust Manager 和原子 JSON lockfile；Plugin Host、Skill、Hook、MCP
+和 Memory 仍待后续切片实现。
+
 ### 验收
 
 - 第三方 Plugin 不在主进程直接执行；
