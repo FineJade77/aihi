@@ -309,7 +309,13 @@ Approval 与 Capability Lease 都是 append-only 授权事件的投影，并绑�
 - Host 执行必须显式 `unsafe=true`，未显式声明时拒绝；
 - 每个 `run.started`、`tool.started` 事件记录 `sandbox=host, unsafe=true`；
 - Host 仅提供工作区路径约束、超时、输出上限和进程组清理，不宣称系统隔离；
+- `LocalIsolatedBackend` 是可选的 OS-native 本地后端：Linux 使用 bubblewrap namespace，macOS
+  使用 Seatbelt；它必须在 launcher 能力探测成功后才构造，默认隔离网络、进程并限制 workspace
+  外写。`filesystem_write_isolated`、`network_isolated`、`process_isolated` 和 mechanism 都写入
+  `SandboxDescriptor`；本地后端仍可能读取主机只读文件，不能把它描述成完整的文件机密边界；
 - `DockerBackend` 是可选后端，要求真实隔离的部署通过策略禁止 Host；
+- 本地 launcher 不可用或能力不足时必须 fail closed，禁止静默降级为 Host；要求完整文件系统
+  隔离的 Policy Profile 只能选择具备 `filesystem_isolated=true` 的后端（通常是 Docker）；
 - 后续可加入 gVisor、Firecracker 或 Kubernetes Worker。
 
 执行链：

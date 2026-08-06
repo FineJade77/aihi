@@ -55,3 +55,11 @@ class UnsafeHostNotAcknowledged(HarnessError):
 
 class SandboxViolation(HarnessError):
     code = "sandbox_violation"
+
+
+class SandboxUnavailable(HarnessError):
+    code = "sandbox_unavailable"
+
+
+class SandboxConfigurationError(HarnessError):
+    code = "sandbox_configuration_error"

@@ -34,6 +34,7 @@ class PermissionContext:
     leases: tuple[CapabilityLease, ...] = ()
     approvals: tuple[Approval, ...] = ()
     require_capability_lease: bool = False
+    require_isolation: bool = False
     run_id: str | None = None
 
     def has_capabilities(self, required: tuple[str, ...]) -> bool:
@@ -135,6 +136,13 @@ class DefaultPolicyEngine:
                     "Sensitive credential paths are never available to tools.",
                     "builtin.sensitive_path",
                 )
+
+        if context.require_isolation and not context.sandbox.filesystem_isolated:
+            return Decision(
+                DecisionEffect.DENY,
+                "This policy profile requires full filesystem isolation.",
+                "sandbox.full_isolation_required",
+            )
 
         if context.mode == PermissionMode.PLAN and spec.mutates:
             return Decision(

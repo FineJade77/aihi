@@ -13,6 +13,9 @@ class SandboxDescriptor:
     unsafe: bool
     filesystem_isolated: bool
     network_isolated: bool
+    filesystem_write_isolated: bool = False
+    process_isolated: bool = False
+    mechanism: str = "unspecified"
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -20,6 +23,9 @@ class SandboxDescriptor:
             "unsafe": self.unsafe,
             "filesystem_isolated": self.filesystem_isolated,
             "network_isolated": self.network_isolated,
+            "filesystem_write_isolated": self.filesystem_write_isolated,
+            "process_isolated": self.process_isolated,
+            "mechanism": self.mechanism,
         }
 
 
