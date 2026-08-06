@@ -86,7 +86,9 @@ Provider、Tool、Policy、Sandbox 和 Runtime 实现，但 `aiharness` 不得�
 ## Runtime 实现规则
 
 Runtime 是显式状态机，不把状态藏在不可恢复的局部变量中。每个重要状态变化都产生事件。
-流式 Token Delta 可作为临时事件，不应按每个 Token 写入存储。
+流式 Token Delta 必须是 `ephemeral=True` 并经 `Session.emit` 发布，不写入 Store；
+`Session.append` 拒绝 ephemeral 事件，`emit` 拒绝持久事件。无副作用的相邻事件可以用
+`append_many` 合并成一个事务，但跨越工具执行边界的事件必须各自立即落盘（ADR-0021）。
 
 取消任务时必须：
 

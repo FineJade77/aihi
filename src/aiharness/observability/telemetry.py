@@ -388,6 +388,9 @@ class Telemetry:
             return trace
 
     def record_event(self, event: Event) -> None:
+        # Ephemeral stream deltas would evict real records from a bounded sink.
+        if event.ephemeral:
+            return
         try:
             trace = self.trace_for_run(event.run_id) if event.run_id else None
             observation = Observation(

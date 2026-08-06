@@ -274,10 +274,27 @@ class Session:
     def orphan_tool_calls(self) -> tuple[ToolCallBlock, ...]:
         return find_orphan_tool_calls(self._messages)
 
+    def emit(self, event: Event) -> Event:
+        """Publish an observer-only event that is never written to the store.
+
+        Streaming deltas are UI data, not facts: they are replayable from the
+        assistant message that the same stream produces.
+        """
+
+        if not event.ephemeral:
+            raise EventInvariantViolation("Session.emit requires an ephemeral event")
+        self._notify_observers([event])
+        return event
+
     def append(self, event: Event) -> Event:
         return self.append_many([event])[0]
 
     def append_many(self, events: list[Event]) -> list[Event]:
+        for event in events:
+            if event.ephemeral:
+                raise EventInvariantViolation(
+                    "Ephemeral events cannot be persisted; use Session.emit"
+                )
         candidate_messages = list(self._messages)
         message_event_types = {
             "message.added",
@@ -313,6 +330,11 @@ class Session:
         return persisted
 
     def add_message(self, message: Message, *, run_id: str | None = None) -> Event:
+        return self.append(self.message_event(message, run_id=run_id))
+
+    def message_event(self, message: Message, *, run_id: str | None = None) -> Event:
+        """Build the message event without appending, so callers can batch it."""
+
         if message.tool_results:
             event_type = "tool.result"
         elif message.role == "user":
@@ -321,13 +343,11 @@ class Session:
             event_type = "system.message"
         else:
             event_type = "assistant.message"
-        return self.append(
-            Event(
-                type=event_type,
-                session_id=self.id,
-                run_id=run_id,
-                data={"message": message.to_dict()},
-            )
+        return Event(
+            type=event_type,
+            session_id=self.id,
+            run_id=run_id,
+            data={"message": message.to_dict()},
         )
 
     def repair_orphan_tool_calls(

@@ -144,13 +144,14 @@ class RunCoordinator:
         if self.telemetry is not None:
             session.add_event_observer(self.telemetry.record_event)
         machine = RunStateMachine()
-        if user_message is not None:
-            session.add_message(user_message, run_id=rid)
         suspended_calls = self._suspended_tool_call_ids(session, rid)
         already_started = any(
             event.type == "run.started" and event.run_id == rid for event in session.events
         )
-        session.append(
+        opening: list[Event] = []
+        if user_message is not None:
+            opening.append(session.message_event(user_message, run_id=rid))
+        opening.append(
             Event(
                 type="run.resumed" if already_started else "run.started",
                 session_id=session.id,
@@ -166,6 +167,7 @@ class RunCoordinator:
                 },
             )
         )
+        session.append_many(opening)
         try:
             self._transition(session, rid, machine, RunState.RUNNING)
             session.repair_orphan_tool_calls(run_id=rid, exclude=suspended_calls)
@@ -181,15 +183,7 @@ class RunCoordinator:
                 cancel_event=cancel_event,
                 pending_tool_call_ids=suspended_calls,
             )
-            self._transition(session, rid, machine, RunState.COMPLETED)
-            session.append(
-                Event(
-                    type="run.completed",
-                    session_id=session.id,
-                    run_id=rid,
-                    data={"state": machine.state.value},
-                )
-            )
+            self._finish(session, rid, machine, RunState.COMPLETED, "run.completed")
             return RunResult(rid, machine.state, response=response)
         except _RunSuspended as suspended:
             # A suspension is not a failure: no terminal event is written and the
@@ -215,28 +209,17 @@ class RunCoordinator:
             )
         except asyncio.CancelledError:
             self._repair_after_interrupt(session, rid)
-            if machine.state not in {RunState.COMPLETED, RunState.FAILED, RunState.CANCELLED}:
-                self._transition(session, rid, machine, RunState.CANCELLED)
-            session.append(
-                Event(
-                    type="run.interrupted",
-                    session_id=session.id,
-                    run_id=rid,
-                    data={"state": machine.state.value},
-                )
-            )
+            self._finish(session, rid, machine, RunState.CANCELLED, "run.interrupted")
             return RunResult(rid, machine.state, error="run_cancelled")
         except Exception as error:  # noqa: BLE001 - persisted as a recoverable run failure.
             self._repair_after_interrupt(session, rid)
-            if machine.state not in {RunState.COMPLETED, RunState.FAILED, RunState.CANCELLED}:
-                self._transition(session, rid, machine, RunState.FAILED)
-            session.append(
-                Event(
-                    type="run.failed",
-                    session_id=session.id,
-                    run_id=rid,
-                    data={"state": machine.state.value, "error": str(error)},
-                )
+            self._finish(
+                session,
+                rid,
+                machine,
+                RunState.FAILED,
+                "run.failed",
+                data={"error": str(error)},
             )
             return RunResult(rid, machine.state, error=str(error))
         finally:
@@ -624,10 +607,13 @@ class RunCoordinator:
             and isinstance(event.data.get("artifact"), dict)
             and "artifact_id" in event.data["artifact"]
         }
+        # Context bookkeeping has no side effects to fence, so one transaction
+        # commits every artifact reference together with its compaction record.
+        pending: list[Event] = []
         for artifact in compiled.artifacts:
             if artifact.artifact_id in existing_artifacts:
                 continue
-            session.append(
+            pending.append(
                 Event(
                     type="artifact.created",
                     session_id=session.id,
@@ -637,6 +623,8 @@ class RunCoordinator:
             )
             existing_artifacts.add(artifact.artifact_id)
         if compiled.compaction is None:
+            if pending:
+                session.append_many(pending)
             return
         compaction_data = compiled.compaction.to_event_data()
         source_ids = set(compiled.compaction.replaced_message_ids)
@@ -650,7 +638,7 @@ class RunCoordinator:
         if source_seqs:
             compaction_data["source_seq_start"] = min(source_seqs)
             compaction_data["source_seq_end"] = max(source_seqs)
-        session.append(
+        pending.append(
             Event(
                 type="compaction.created",
                 session_id=session.id,
@@ -658,6 +646,7 @@ class RunCoordinator:
                 data=compaction_data,
             )
         )
+        session.append_many(pending)
 
     @staticmethod
     def _artifact_policy(session: Session) -> ArtifactPolicy:
@@ -728,12 +717,14 @@ class RunCoordinator:
                 except StopAsyncIteration:
                     break
                 await self._check_cancel(cancel_event)
-                session.append(
+                # Stream deltas are UI data: observers see them, the log does not.
+                session.emit(
                     Event(
                         type="model.chunk",
                         session_id=session.id,
                         run_id=run_id,
                         data=_chunk_to_dict(chunk),
+                        ephemeral=True,
                     )
                 )
                 if isinstance(chunk, MessageEnd):
@@ -755,15 +746,44 @@ class RunCoordinator:
     def _transition(
         session: Session, run_id: str, machine: RunStateMachine, target: RunState
     ) -> None:
+        session.append(RunCoordinator._transition_event(session, run_id, machine, target))
+
+    @staticmethod
+    def _transition_event(
+        session: Session, run_id: str, machine: RunStateMachine, target: RunState
+    ) -> Event:
         state = machine.transition(target)
-        session.append(
+        return Event(
+            type="run.state_changed",
+            session_id=session.id,
+            run_id=run_id,
+            data={"state": state.value},
+        )
+
+    @staticmethod
+    def _finish(
+        session: Session,
+        run_id: str,
+        machine: RunStateMachine,
+        target: RunState,
+        event_type: str,
+        *,
+        data: dict[str, Any] | None = None,
+    ) -> None:
+        """Commit the final transition and its terminal event in one transaction."""
+
+        events: list[Event] = []
+        if machine.state not in {RunState.COMPLETED, RunState.FAILED, RunState.CANCELLED}:
+            events.append(RunCoordinator._transition_event(session, run_id, machine, target))
+        events.append(
             Event(
-                type="run.state_changed",
+                type=event_type,
                 session_id=session.id,
                 run_id=run_id,
-                data={"state": state.value},
+                data={"state": machine.state.value, **(data or {})},
             )
         )
+        session.append_many(events)
 
     @staticmethod
     async def _check_cancel(cancel_event: asyncio.Event | None) -> None:

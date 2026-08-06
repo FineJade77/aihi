@@ -33,10 +33,12 @@ def session_tmp_path(tmp_path: Path) -> Path:
 
 
 @pytest.mark.asyncio
-async def test_fake_provider_completes_plain_response_and_persists_stream(
+async def test_fake_provider_completes_plain_response_and_streams_to_observers(
     session_tmp_path: Path,
 ) -> None:
     session = make_session(session_tmp_path, "ses-plain")
+    observed: list[str] = []
+    session.add_event_observer(lambda event: observed.append(event.type))
     provider = FakeProvider([FakeStep(text="hello from fake")])
     coordinator = RunCoordinator(
         provider,
@@ -51,7 +53,9 @@ async def test_fake_provider_completes_plain_response_and_persists_stream(
     assert result.state == RunState.COMPLETED
     assert result.response is not None
     assert result.response.message.text_content == "hello from fake"
-    assert any(event.type == "model.chunk" for event in session.events)
+    # Stream deltas reach observers but never the durable log.
+    assert observed.count("model.chunk") > 1
+    assert not any(event.type == "model.chunk" for event in session.events)
     assert [event.type for event in session.events][-1] == "run.completed"
 
 

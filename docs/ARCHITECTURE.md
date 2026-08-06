@@ -166,7 +166,8 @@ CREATED
 1. 先追加 `assistant.message`，再执行模型提出的工具；
 2. 每个 Tool Call 最终必须对应一个 Tool Result；
 3. 工具结果和权限决定在执行后立即落盘；
-4. 流式增量用于 UI，不作为每 Token 的持久事件；
+4. 流式增量用于 UI，不作为每 Token 的持久事件：`ephemeral=True` 的事件只能经 `Session.emit`
+   发布给 observer，`append` 会拒绝它们，反之亦然（ADR-0021）；
 5. 取消或进程崩溃后，下一次 Resume 必须修复孤儿 Tool Call。
 
 ### 4.1 取消与恢复
