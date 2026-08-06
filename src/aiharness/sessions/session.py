@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import copy
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -74,6 +76,7 @@ class Session:
     head_seq: int
     _events: list[Event]
     _messages: list[Message]
+    _event_observers: list[Callable[[Event], None]] = field(default_factory=list, repr=False)
 
     @classmethod
     def create(
@@ -84,6 +87,7 @@ class Session:
         provider: str,
         model: str,
         session_id: str | None = None,
+        event_observer: Callable[[Event], None] | None = None,
     ) -> Session:
         resolved_cwd = str(Path(cwd).resolve())
         sid = session_id or new_id("ses")
@@ -96,17 +100,26 @@ class Session:
         store.create_session(sid, metadata)
         event = Event(type="session.created", session_id=sid, data=metadata)
         persisted = store.append(sid, 0, [event])
-        return cls(
+        session = cls(
             id=sid,
             store=store,
             metadata=metadata,
             head_seq=1,
             _events=persisted,
             _messages=[],
+            _event_observers=[event_observer] if event_observer is not None else [],
         )
+        session._notify_observers(persisted)
+        return session
 
     @classmethod
-    def load(cls, store: EventStore, session_id: str) -> Session:
+    def load(
+        cls,
+        store: EventStore,
+        session_id: str,
+        *,
+        event_observer: Callable[[Event], None] | None = None,
+    ) -> Session:
         info = store.get(session_id)
         events = store.read(session_id)
         return cls(
@@ -116,7 +129,23 @@ class Session:
             head_seq=info.head_seq,
             _events=events,
             _messages=project_messages(events),
+            _event_observers=[event_observer] if event_observer is not None else [],
         )
+
+    def add_event_observer(self, observer: Callable[[Event], None]) -> None:
+        if not callable(observer):
+            raise ValueError("event observer must be callable")
+        if observer not in self._event_observers:
+            self._event_observers.append(observer)
+
+    def _notify_observers(self, events: list[Event]) -> None:
+        for event in events:
+            for observer in tuple(self._event_observers):
+                try:
+                    observer(copy.deepcopy(event))
+                except Exception:
+                    # Observability is a side channel and must not alter runtime state.
+                    continue
 
     @property
     def events(self) -> tuple[Event, ...]:
@@ -274,6 +303,7 @@ class Session:
                     self._messages.append(Message.from_dict(raw))
             elif event.type == "compaction.created":
                 self._messages = project_messages(self._events)
+        self._notify_observers(persisted)
         return persisted
 
     def add_message(self, message: Message, *, run_id: str | None = None) -> Event:

@@ -17,6 +17,7 @@ from aiharness.core.types import Message, ModelRequest, ModelResponse, ToolResul
 from aiharness.hooks import HookBus
 from aiharness.models.base import MessageEnd, Provider, StreamChunk
 from aiharness.models.errors import ProviderContextLengthError
+from aiharness.observability import Telemetry
 from aiharness.policy import DefaultPolicyEngine, PermissionContext, PermissionMode, PolicyEngine
 from aiharness.runtime.state import RunState, RunStateMachine
 from aiharness.sandbox.base import SandboxBackend
@@ -46,6 +47,7 @@ class RunCoordinator:
         context_compiler: ContextCompiler | None = None,
         artifact_store: ArtifactStore | None = None,
         summary_generator: SummaryGenerator | None = None,
+        telemetry: Telemetry | None = None,
         context_window: int | None = None,
         context_safety_margin: int = 256,
     ) -> None:
@@ -64,6 +66,7 @@ class RunCoordinator:
         )
         self.artifact_store = artifact_store
         self.summary_generator = summary_generator
+        self.telemetry = telemetry
         self.context_window = context_window
         self.context_safety_margin = context_safety_margin
 
@@ -81,6 +84,8 @@ class RunCoordinator:
         cancel_event: asyncio.Event | None = None,
     ) -> RunResult:
         rid = run_id or new_id("run")
+        if self.telemetry is not None:
+            session.add_event_observer(self.telemetry.record_event)
         machine = RunStateMachine()
         if user_message is not None:
             session.add_message(user_message, run_id=rid)

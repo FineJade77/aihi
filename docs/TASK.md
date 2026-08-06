@@ -195,6 +195,12 @@ bubblewrap 或 macOS Seatbelt 做网络、进程和 workspace 外写约束，能
 - 事件轨迹导出、离线回放和评分器接口。
 - CI 回归门禁：恢复、策略、压缩、工具安全和 Provider 兼容性。
 
+当前进度：M7a 已完成不绑定厂商的 `TraceContext`、结构化 `Observation`、`MetricPoint`、
+`CostRecord`、有界 `InMemoryTelemetrySink` 和 `Telemetry` facade；Session 可旁路观察本实例
+追加的持久化 Event，观测故障不会改变 Runtime 结果。Redactor 对常见凭据、非 JSON/非有限值、
+超长内容和未知对象 fail-closed；成本核算拒绝负数、非有限和溢出。尚未声称已接入 OpenTelemetry
+导出器，也尚未覆盖外部 Worker refresh 的事件观察。
+
 ### 验收
 
 - 任意 Tool Call 可定位到 Session、Run、Model Attempt、Policy、Hook 和 Sandbox；

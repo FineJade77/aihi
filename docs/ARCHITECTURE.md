@@ -366,6 +366,13 @@ in-flight 状态，消费方显式 ack 后才删除。取消会递归收尾活�
 每个 Session、Run、Model Attempt、Tool Call、Policy Decision、Hook、Sandbox 和 Compaction
 都带 Trace Context。使用 OpenTelemetry 输出 Trace、Metrics 和结构化日志，敏感字段先脱敏。
 
+当前 M7a 提供不绑定厂商的 `TraceContext`、`Observation`、`MetricPoint`、`CostRecord` 和
+`TelemetrySink` Protocol。`Telemetry` 通过 Session 的已持久化 Event observer 旁路记录事件，
+不会改变事件顺序、Policy 或 Sandbox 决策；observer 收到的是深拷贝，观测异常 fail-open。内存
+Sink 有记录上限，Redactor 对 Secret-looking key、Bearer/API token、非有限数字、超长内容和未知
+对象 fail-closed。成本按 Usage 与每千 Token 价格确定性计算，拒绝负数、非有限或溢出结果。后续
+OTel adapter 必须保持这些 canonical 字段和脱敏边界；自定义 Sink 应为有界、非阻塞实现。
+
 评估支持 Fake/Replay、Provider Contract、Golden Tasks、安全测试和 Coding Tasks。核心指标：
 
 - 任务成功率、测试通过率和 Patch 正确率；
