@@ -407,6 +407,12 @@ M7e-a 将 Pipeline 接入 Runtime 生命周期：`RunCoordinator` 在 `run.compl
 child span，外部 Worker 恢复时严格解析传入的 W3C `traceparent` 并重新生成 span ID；该上下文只用于
 可观测性关联，不改变 TaskGraph 的权限、预算、Lease、Policy 或 Sandbox。
 
+M7e-b 将 `WorkerLeaseTraceBridge` 放在 RunLeaseStore 与 IPC 适配之间。`WorkerLeaseEnvelope` 只携带
+严格 schema 的 lease identity、expiry、fencing token、attempt 和 W3C `traceparent`；bridge 在取得
+Lease 前解析外部 parent carrier，取得/续租/释放仍调用原有 fenced store。Lease takeover 产生新的
+Worker child span，旧 fencing token 仍然无法续租或释放；跨进程恢复没有 parent carrier 时 fail closed。
+Envelope 是可序列化关联数据，不是授权凭据；IPC/HTTP 通道、认证和网络策略由宿主显式注入。
+
 评估支持 Fake/Replay、Provider Contract、Golden Tasks、安全测试和 Coding Tasks。核心指标：
 
 - 任务成功率、测试通过率和 Patch 正确率；

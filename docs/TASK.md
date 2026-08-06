@@ -229,6 +229,12 @@ Subagent/外部 Worker 创建带 parent span 的 child trace，支持 attempt re
 trace context 当作认证凭据；共享 Pipeline 不在每个 Run 结束时 close，仅在进程/Worker shutdown 时
 由调用方显式 `Telemetry.close()`。
 
+M7e-b 已完成 Lease/IPC trace bridge：`WorkerLeaseEnvelope` 将 `lease_id`、`run_id`、owner、
+fencing token、expiry、attempt 和严格 `traceparent` 组成可 JSON 恢复的 envelope；`WorkerLeaseTraceBridge`
+在 acquire 前校验 parent carrier，acquire/renew/release 始终委托已有 `RunLeaseStore`，不会绕过
+fencing 或把 TraceContext 当作所有权。Lease takeover 可用旧 Worker carrier 创建新 child span；旧
+owner 的 renew/release 仍由 fencing token 拒绝。IPC 传输仍由宿主注入，本步不自动暴露网络路由。
+
 ### 验收
 
 - 任意 Tool Call 可定位到 Session、Run、Model Attempt、Policy、Hook 和 Sandbox；
