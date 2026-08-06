@@ -6,7 +6,8 @@ extra is not present.  Routes delegate to EventStore, RunLeaseStore, and the
 scoped ArtifactStore; no route executes a tool or constructs a sandbox.
 """
 
-from typing import Annotated, Any
+from collections.abc import Callable
+from typing import Annotated, Any, TypeVar
 
 from aiharness.api.worker import WorkerIpcAuthError, WorkerLeaseIpcAdapter
 from aiharness.artifacts import ArtifactAccess, ArtifactStore
@@ -22,6 +23,8 @@ from aiharness.core.errors import (
     StoreUnavailable,
 )
 from aiharness.sessions import EventStore, RunLeaseStore, Session
+
+T = TypeVar("T")
 
 
 def create_app(
@@ -79,7 +82,7 @@ def create_app(
             status = 400
         return HTTPException(status_code=status, detail={"code": exc.code, "message": str(exc)})
 
-    def run(call: Any) -> Any:
+    def run(call: Callable[[], T]) -> T:
         try:
             return call()
         except HarnessError as exc:
@@ -105,7 +108,7 @@ def create_app(
                 detail={"code": "internal_error", "message": "Internal server error"},
             ) from exc
 
-    def artifact_call(call: Any) -> Any:
+    def artifact_call(call: Callable[[], T]) -> T:
         """Map local artifact failures to non-leaky HTTP responses."""
 
         try:

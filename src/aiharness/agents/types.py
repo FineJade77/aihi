@@ -29,6 +29,20 @@ def _text(value: object, name: str, *, max_length: int = 4_096) -> str:
     return result
 
 
+def _int(value: object, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise AgentValidationError(f"{name} must be an integer")
+    return value
+
+
+def _mapping(value: object, name: str) -> dict[str, Any]:
+    """Narrow one snapshot field to a JSON object without copying it."""
+
+    if not isinstance(value, dict):
+        raise AgentValidationError(f"{name} must be a JSON object")
+    return {str(key): item for key, item in value.items()}
+
+
 def _capabilities(value: object) -> frozenset[str]:
     if isinstance(value, str) or not isinstance(value, (set, frozenset, tuple, list)):
         raise AgentValidationError("capabilities must be a collection of strings")
@@ -340,29 +354,23 @@ class TaskSpec:
         parent_task_id = value.get("parent_task_id")
         if parent_task_id is not None and not isinstance(parent_task_id, str):
             raise AgentValidationError("parent_task_id must be a string or null")
-        metadata = value.get("metadata", {})
-        if not isinstance(metadata, dict):
-            raise AgentValidationError("task metadata must be an object")
+        metadata = _mapping(value.get("metadata", {}), "task metadata")
         created_at = value.get("created_at", utc_now())
-        for name in ("depth", "max_depth", "max_children"):
-            raw_value = value.get(name, 0 if name == "depth" else 4 if name == "max_depth" else 8)
-            if isinstance(raw_value, bool) or not isinstance(raw_value, int):
-                raise AgentValidationError(f"task {name} must be an integer")
         if not isinstance(created_at, str):
             raise AgentValidationError("task created_at must be a string")
         return cls(
-            parent_run_id=value["parent_run_id"],
-            objective=value["objective"],
-            budget=AgentBudget.from_dict(value["budget"]),
-            workspace=WorkspaceScope.from_dict(value["workspace"]),
-            task_id=value["task_id"],
-            child_run_id=value["child_run_id"],
+            parent_run_id=_text(value["parent_run_id"], "parent_run_id"),
+            objective=_text(value["objective"], "objective"),
+            budget=AgentBudget.from_dict(_mapping(value["budget"], "task budget")),
+            workspace=WorkspaceScope.from_dict(_mapping(value["workspace"], "task workspace")),
+            task_id=_text(value["task_id"], "task_id"),
+            child_run_id=_text(value["child_run_id"], "child_run_id"),
             parent_task_id=parent_task_id,
-            constraints=tuple(constraints),
-            capabilities=frozenset(capabilities),
-            depth=value.get("depth", 0),
-            max_depth=value.get("max_depth", 4),
-            max_children=value.get("max_children", 8),
+            constraints=tuple(str(item) for item in constraints),
+            capabilities=frozenset(str(item) for item in capabilities),
+            depth=_int(value.get("depth", 0), "task depth"),
+            max_depth=_int(value.get("max_depth", 4), "task max_depth"),
+            max_children=_int(value.get("max_children", 8), "task max_children"),
             metadata=metadata,
             created_at=created_at,
         )
@@ -481,8 +489,8 @@ class TaskNode:
         if not isinstance(updated_at, str):
             raise AgentValidationError("task node updated_at must be a string")
         return cls(
-            spec=TaskSpec.from_dict(value["spec"]),
-            state=AgentState(value.get("state", AgentState.PENDING.value)),
+            spec=TaskSpec.from_dict(_mapping(value["spec"], "task node spec")),
+            state=AgentState(_text(value.get("state", AgentState.PENDING.value), "task state")),
             child_task_ids=tuple(children),
             result=TaskResult.from_dict(raw_result) if isinstance(raw_result, dict) else None,
             reason=reason,

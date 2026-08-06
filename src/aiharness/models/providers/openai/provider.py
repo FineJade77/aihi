@@ -14,6 +14,7 @@ from aiharness.core.types import (
     Message,
     ModelRequest,
     ModelResponse,
+    StopReason,
     TextBlock,
     ThinkingBlock,
     ToolCallBlock,
@@ -314,7 +315,7 @@ def _usage_from_openai(value: dict[str, Any]) -> Usage:
     )
 
 
-def _stop_reason(value: str | None, has_tools: bool) -> str:
+def _stop_reason(value: str | None, has_tools: bool) -> StopReason:
     if value in {"tool_calls", "function_call"} or has_tools:
         return "tool_use"
     if value == "length":

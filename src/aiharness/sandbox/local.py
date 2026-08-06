@@ -18,6 +18,7 @@ import shutil
 import signal
 import sys
 import tempfile
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Protocol
@@ -306,7 +307,7 @@ class LocalIsolatedBackend:
 
     @staticmethod
     @contextmanager
-    def _path_lock(path: Path, *, shared: bool = False):
+    def _path_lock(path: Path, *, shared: bool = False) -> Iterator[None]:
         if fcntl is None:
             yield
             return

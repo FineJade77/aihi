@@ -254,9 +254,7 @@ class Observation:
             trace=TraceContext.from_dict(raw_trace) if isinstance(raw_trace, Mapping) else None,
             attributes=dict(attributes),
             data=dict(data),
-            duration_ms=(
-                float(value["duration_ms"]) if value.get("duration_ms") is not None else None
-            ),
+            duration_ms=_optional_duration(value.get("duration_ms")),
         )
 
 
@@ -459,3 +457,11 @@ def stable_payload_hash(value: object, *, redactor: Redactor | None = None) -> s
     safe = (redactor or Redactor()).redact(value)
     encoded = json.dumps(safe, ensure_ascii=False, sort_keys=True, allow_nan=False).encode()
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _optional_duration(value: object) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int | float | str):
+        raise TelemetryError("duration_ms must be numeric")
+    return float(value)

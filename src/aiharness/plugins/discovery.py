@@ -55,7 +55,7 @@ class PluginDiscovery:
 
     def discover(self) -> tuple[PluginCandidate, ...]:
         candidates: list[PluginCandidate] = []
-        seen: set[tuple[str, str]] = set()
+        seen: set[str] = set()
         for root in self.roots:
             if not root.exists():
                 continue
@@ -179,7 +179,7 @@ class PluginDiscovery:
                 continue
             files.append(path)
         for path in sorted(files, key=lambda item: item.relative_to(plugin_root).as_posix()):
-            relative = path.relative_to(plugin_root).as_posix().encode("utf-8")
+            relative_bytes = path.relative_to(plugin_root).as_posix().encode("utf-8")
             file_descriptor = -1
             try:
                 file_descriptor = os.open(
@@ -208,8 +208,8 @@ class PluginDiscovery:
                 os.close(file_descriptor)
                 file_descriptor = -1
                 raise PluginIntegrityError("Plugin content exceeds total size limit")
-            digest.update(len(relative).to_bytes(8, "big"))
-            digest.update(relative)
+            digest.update(len(relative_bytes).to_bytes(8, "big"))
+            digest.update(relative_bytes)
             digest.update(file_size.to_bytes(8, "big"))
             try:
                 with os.fdopen(file_descriptor, "rb") as content_file:

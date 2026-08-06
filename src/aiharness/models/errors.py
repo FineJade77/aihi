@@ -65,6 +65,7 @@ def is_context_length_message(message: str) -> bool:
 
 __all__ = [
     "ProviderContextLengthError",
+    "ProviderFailure",
     "ProviderHTTPError",
     "ProviderProtocolError",
     "ProviderRouteNotFound",

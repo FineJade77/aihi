@@ -14,7 +14,7 @@ from aiharness.core.events import utc_now
 from aiharness.core.ids import new_id
 
 from .errors import MailboxConflict, MailboxError
-from .types import _json_object, _text
+from .types import _json_object, _mapping, _text
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,11 +77,11 @@ class MailboxMessage:
         if not isinstance(created_at, str):
             raise MailboxError("Mailbox created_at must be a string")
         return cls(
-            sender_task_id=value["sender_task_id"],
-            recipient_task_id=value["recipient_task_id"],
-            kind=value["kind"],
+            sender_task_id=_text(value["sender_task_id"], "sender_task_id"),
+            recipient_task_id=_text(value["recipient_task_id"], "recipient_task_id"),
+            kind=_text(value["kind"], "mailbox kind"),
             payload=payload,
-            message_id=value["message_id"],
+            message_id=_text(value["message_id"], "message_id"),
             correlation_id=correlation_id,
             created_at=created_at,
         )
@@ -230,13 +230,12 @@ class Mailbox:
             max_queue_size=max_queue_size,
             max_payload_bytes=max_payload_bytes,
         )
-        raw_messages = snapshot.get("messages", {})
-        raw_queues = snapshot.get("queues", {})
-        raw_inflight = snapshot.get("inflight", {})
+        raw_messages = _mapping(snapshot.get("messages", {}), "mailbox messages")
+        raw_queues = _mapping(snapshot.get("queues", {}), "mailbox queues")
+        raw_inflight = _mapping(snapshot.get("inflight", {}), "mailbox inflight")
         raw_seen = snapshot.get("seen_ids", [])
         if (
-            not all(isinstance(item, dict) for item in (raw_messages, raw_queues, raw_inflight))
-            or not isinstance(raw_seen, list)
+            not isinstance(raw_seen, list)
             or any(not isinstance(item, str) for item in raw_seen)
         ):
             raise MailboxError("Malformed mailbox snapshot")
@@ -251,14 +250,15 @@ class Mailbox:
         if not all(isinstance(value, dict) for value in raw_messages.values()):
             raise MailboxError("Malformed mailbox message")
         mailbox._messages = {
-            key: MailboxMessage.from_dict(value) for key, value in raw_messages.items()
+            key: MailboxMessage.from_dict(_mapping(value, "mailbox message"))
+            for key, value in raw_messages.items()
         }
         if any(key != value.message_id for key, value in mailbox._messages.items()):
             raise MailboxError("Mailbox message key does not match message_id")
-        mailbox._seen_ids = set(raw_seen)
+        mailbox._seen_ids = {str(item) for item in raw_seen}
         if set(mailbox._messages) - mailbox._seen_ids:
             raise MailboxError("Mailbox snapshot lost duplicate-detection state")
-        mailbox._inflight = dict(raw_inflight)
+        mailbox._inflight = {key: str(value) for key, value in raw_inflight.items()}
         for task_id, raw_ids in raw_queues.items():
             if not isinstance(raw_ids, list) or any(not isinstance(item, str) for item in raw_ids):
                 raise MailboxError("Malformed mailbox queue")

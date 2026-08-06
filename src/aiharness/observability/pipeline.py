@@ -254,7 +254,7 @@ class RetryPolicy:
         if retry_index >= 32:
             return self.max_delay_seconds
         try:
-            delay = self.initial_delay_seconds * (2**retry_index)
+            delay = self.initial_delay_seconds * (2.0**retry_index)
         except OverflowError:
             return self.max_delay_seconds
         return min(self.max_delay_seconds, delay)

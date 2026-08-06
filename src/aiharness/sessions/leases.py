@@ -361,7 +361,7 @@ class PostgresRunLeaseStore:
 
     @staticmethod
     def _is_unique_violation(exc: BaseException) -> bool:
-        state = getattr(exc, "sqlstate", None) or getattr(exc, "pgcode", None)
+        state: object = getattr(exc, "sqlstate", None) or getattr(exc, "pgcode", None)
         if state is not None:
             return state == "23505"
         return "unique" in type(exc).__name__.lower()

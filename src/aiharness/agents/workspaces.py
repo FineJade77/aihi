@@ -108,12 +108,12 @@ class WorktreeSpec:
         if not isinstance(created_at, str):
             raise AgentValidationError("worktree.created_at must be a string")
         return cls(
-            task_id=value["task_id"],
-            root=value["root"],
-            base_commit=value["base_commit"],
+            task_id=_text(value["task_id"], "worktree.task_id"),
+            root=_text(value["root"], "worktree.root"),
+            base_commit=_text(value["base_commit"], "worktree.base_commit"),
             read_only=read_only,
-            allowed_paths=tuple(allowed_paths),
-            worktree_id=value["worktree_id"],
+            allowed_paths=tuple(str(item) for item in allowed_paths),
+            worktree_id=_text(value["worktree_id"], "worktree.worktree_id"),
             created_at=created_at,
         )
 
@@ -197,12 +197,12 @@ class PatchArtifact:
         if not isinstance(created_at, str):
             raise AgentValidationError("patch.created_at must be a string")
         return cls(
-            task_id=value["task_id"],
-            base_commit=value["base_commit"],
-            diff_artifact_id=value["diff_artifact_id"],
-            changed_paths=tuple(paths),
-            sha256=value["sha256"],
-            patch_id=value["patch_id"],
+            task_id=_text(value["task_id"], "patch.task_id"),
+            base_commit=_text(value["base_commit"], "patch.base_commit"),
+            diff_artifact_id=_text(value["diff_artifact_id"], "patch.diff_artifact_id"),
+            changed_paths=tuple(str(item) for item in paths),
+            sha256=_text(value["sha256"], "patch.sha256"),
+            patch_id=_text(value["patch_id"], "patch.patch_id"),
             created_at=created_at,
         )
 

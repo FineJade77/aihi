@@ -186,6 +186,7 @@ def _normalize_message(message: Message) -> dict[str, object]:
 def normalize_chunk(chunk: StreamChunk) -> dict[str, object]:
     """Convert a normalized stream chunk to a strict, ID-stable JSON object."""
 
+    normalized: dict[str, object]
     if isinstance(chunk, MessageStart):
         normalized = {"kind": chunk.kind, "model": chunk.model}
     elif isinstance(chunk, BlockStart):

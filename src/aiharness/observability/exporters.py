@@ -43,8 +43,8 @@ class JsonlTelemetrySink:
         self.redactor = redactor or Redactor()
         self.flush = flush
         self._lock = threading.RLock()
-        self._owned = isinstance(target, (str, Path))
-        if self._owned:
+        self._owned = isinstance(target, str | Path)
+        if isinstance(target, str | Path):
             path = Path(target).expanduser().resolve()
             path.parent.mkdir(parents=True, exist_ok=True)
             self._writer: TextIO = path.open("a", encoding="utf-8")

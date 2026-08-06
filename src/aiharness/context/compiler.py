@@ -15,7 +15,13 @@ from aiharness.context.summary import (
 )
 from aiharness.core.errors import ContextWindowExceeded
 from aiharness.core.tokens import estimate_messages_tokens, estimate_text_tokens
-from aiharness.core.types import Message, TextBlock, ToolResultBlock, ToolSpec
+from aiharness.core.types import (
+    ContentBlock,
+    Message,
+    TextBlock,
+    ToolResultBlock,
+    ToolSpec,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -268,7 +274,7 @@ class ContextCompiler:
         artifacts: list[ArtifactRef] = []
         materialized: list[Message] = []
         for message in messages:
-            blocks = []
+            blocks: list[ContentBlock] = []
             for block in message.content:
                 if not isinstance(block, ToolResultBlock):
                     blocks.append(block)

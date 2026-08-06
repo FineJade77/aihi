@@ -7,6 +7,7 @@ import json
 from collections import deque
 from collections.abc import AsyncIterator, Iterable
 from dataclasses import dataclass, field
+from typing import cast
 
 from aiharness.core.ids import new_id
 from aiharness.core.tokens import estimate_messages_tokens, estimate_text_tokens
@@ -15,6 +16,7 @@ from aiharness.core.types import (
     Message,
     ModelRequest,
     ModelResponse,
+    StopReason,
     TextBlock,
     ToolCallBlock,
     Usage,
@@ -28,6 +30,8 @@ from aiharness.models.base import (
     TextDelta,
     ToolInputDelta,
 )
+
+_STOP_REASONS = frozenset({"end_turn", "tool_use", "max_tokens", "refusal", "paused"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,7 +106,9 @@ class FakeProvider:
             yield BlockEnd(index=index)
             index += 1
 
-        stop_reason = step.stop_reason or ("tool_use" if step.tool_calls else "end_turn")
+        stop_reason = _stop_reason(
+            step.stop_reason or ("tool_use" if step.tool_calls else "end_turn")
+        )
         usage = step.usage or Usage(
             input_tokens=estimate_messages_tokens(request.messages),
             output_tokens=estimate_text_tokens(step.text) + len(step.tool_calls) * 8,
@@ -113,7 +119,7 @@ class FakeProvider:
             metadata={"provider": self.name, **step.metadata},
         )
         yield MessageEnd(
-            ModelResponse(message=message, stop_reason=stop_reason, usage=usage)  # type: ignore[arg-type]
+            ModelResponse(message=message, stop_reason=stop_reason, usage=usage)
         )
 
     @staticmethod
@@ -124,3 +130,11 @@ class FakeProvider:
                 prompt = message.text_content
                 break
         return FakeStep(text=f"Fake provider received: {prompt}")
+
+
+def _stop_reason(value: str) -> StopReason:
+    """Reject scripted stop reasons that are not canonical."""
+
+    if value not in _STOP_REASONS:
+        raise ValueError(f"Unknown stop reason: {value!r}")
+    return cast(StopReason, value)

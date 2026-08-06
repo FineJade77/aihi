@@ -108,10 +108,13 @@ class ArtifactRef:
     @classmethod
     def from_dict(cls, value: Mapping[str, object]) -> ArtifactRef:
         metadata = value.get("metadata", {})
+        raw_size = value.get("size_bytes", 0)
+        if isinstance(raw_size, bool) or not isinstance(raw_size, int | float | str):
+            raise ValueError("Artifact size_bytes must be numeric")
         return cls(
             artifact_id=str(value.get("artifact_id", "")),
             media_type=str(value.get("media_type", "application/octet-stream")),
-            size_bytes=int(value.get("size_bytes", 0)),
+            size_bytes=int(raw_size),
             sha256=str(value.get("sha256", "")),
             created_at=str(value.get("created_at", "")),
             metadata=dict(metadata) if isinstance(metadata, Mapping) else {},

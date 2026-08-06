@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -11,6 +12,14 @@ from aiharness.memory.errors import MemoryValidationError
 
 _REDACTED = "[REDACTED_SECRET]"
 _REDACTED_PII = "[REDACTED_PII]"
+
+
+def _keep_secret_name(match: re.Match[str]) -> str:
+    """Redact the value of a ``name = secret`` pair while keeping the name."""
+
+    return f"{match.group(1)}{_REDACTED}"
+
+
 _SECRET_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "private_key",
@@ -82,11 +91,9 @@ class SecretRedactor:
         count = 0
         categories: list[str] = []
         for category, pattern in _SECRET_PATTERNS:
-            if category == "named_secret":
-                def replacement(match: re.Match[str]) -> str:
-                    return f"{match.group(1)}{_REDACTED}"
-            else:
-                replacement = _REDACTED
+            replacement: str | Callable[[re.Match[str]], str] = (
+                _keep_secret_name if category == "named_secret" else _REDACTED
+            )
             text, replacements = pattern.subn(replacement, text)
             if replacements:
                 count += replacements

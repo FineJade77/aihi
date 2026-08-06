@@ -56,9 +56,9 @@ class McpServer:
         method = message.get("method")
         params = message.get("params", {})
         if request_id is None:
-            if not isinstance(method, str):
-                return None
-            return await self._handle_notification(method, params)
+            if isinstance(method, str):
+                await self._handle_notification(method, params)
+            return None
         if isinstance(request_id, bool) or not isinstance(request_id, int | str):
             return self._error(None, -32600, "JSON-RPC request id must be a string or integer")
         if not isinstance(method, str) or not method:

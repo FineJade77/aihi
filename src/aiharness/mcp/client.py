@@ -9,7 +9,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from aiharness.core.types import JsonObject
+from aiharness.core.types import JsonObject, ToolSpec
 from aiharness.mcp.errors import (
     McpDisconnected,
     McpError,
@@ -230,7 +230,7 @@ class McpRemoteTool:
     server_name: str
 
     @property
-    def spec(self):
+    def spec(self) -> ToolSpec:
         exposed_name = f"mcp.{self.server_name}.{self.definition.name}"
         return self.definition.to_tool_spec(exposed_name=exposed_name)
 

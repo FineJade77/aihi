@@ -13,6 +13,7 @@ from aiharness.core.types import (
     Message,
     ModelRequest,
     ModelResponse,
+    StopReason,
     TextBlock,
     ThinkingBlock,
     ToolCallBlock,
@@ -293,7 +294,7 @@ def _usage_from_anthropic(value: dict[str, Any], previous: Usage) -> Usage:
     )
 
 
-def _stop_reason(value: str | None, has_tools: bool) -> str:
+def _stop_reason(value: str | None, has_tools: bool) -> StopReason:
     if value == "tool_use" or (value is None and has_tools):
         return "tool_use"
     if value == "max_tokens":

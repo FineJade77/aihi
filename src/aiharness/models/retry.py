@@ -24,5 +24,5 @@ class RetryPolicy:
             raise ValueError("retry_index cannot be negative")
         return min(
             self.max_delay_seconds,
-            self.initial_delay_seconds * (2**retry_index),
+            self.initial_delay_seconds * (2.0**retry_index),
         )

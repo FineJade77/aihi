@@ -7,7 +7,7 @@ from typing import Any
 from .errors import AgentValidationError
 from .graph import EventSink, TaskGraph
 from .mailbox import Mailbox, MailboxMessage
-from .types import AgentState, TaskNode
+from .types import AgentState, TaskNode, _mapping
 
 
 class SubagentCoordinator:
@@ -96,8 +96,11 @@ class SubagentCoordinator:
         ):
             raise AgentValidationError("Coordinator snapshot is missing graph or mailbox")
         coordinator = cls(event_sink=event_sink)
-        coordinator.graph = TaskGraph.from_snapshot(snapshot["graph"], event_sink=event_sink)
+        coordinator.graph = TaskGraph.from_snapshot(
+            _mapping(snapshot["graph"], "coordinator graph"), event_sink=event_sink
+        )
         coordinator.mailbox = Mailbox.from_snapshot(
-            snapshot["mailbox"], task_exists=coordinator.graph.has_task
+            _mapping(snapshot["mailbox"], "coordinator mailbox"),
+            task_exists=coordinator.graph.has_task,
         )
         return coordinator

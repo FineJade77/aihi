@@ -161,8 +161,8 @@ class AuthorizationState:
             lease_id = event.data.get("lease_id")
             if not isinstance(lease_id, str) or event.run_id is None:
                 raise EventInvariantViolation("Invalid capability lease revocation event")
-            lease = self.leases.get(lease_id)
-            if lease is None or lease.run_id != event.run_id:
+            revoked = self.leases.get(lease_id)
+            if revoked is None or revoked.run_id != event.run_id:
                 raise EventInvariantViolation(f"Unknown capability lease: {lease_id}")
             self.leases.pop(lease_id)
             self.revoked_lease_ids.add(lease_id)

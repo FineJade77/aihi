@@ -16,7 +16,15 @@ from .errors import (
     AgentStateError,
     AgentValidationError,
 )
-from .types import AgentBudget, AgentState, TaskNode, TaskResult, TaskSpec, WorkspaceScope
+from .types import (
+    AgentBudget,
+    AgentState,
+    TaskNode,
+    TaskResult,
+    TaskSpec,
+    WorkspaceScope,
+    _mapping,
+)
 
 EventSink = Callable[[Event], None]
 
@@ -334,18 +342,19 @@ class TaskGraph:
             session_id=session_id,
             event_sink=event_sink,
         )
-        raw_nodes = snapshot["nodes"]
+        raw_nodes = _mapping(snapshot["nodes"], "task graph nodes")
         if any(not isinstance(task_id, str) for task_id in raw_nodes):
             raise AgentValidationError("Task graph node IDs must be strings")
         if not all(isinstance(raw_node, dict) for raw_node in raw_nodes.values()):
             raise AgentValidationError("Task graph nodes must be objects")
         graph._nodes = {
-            str(task_id): TaskNode.from_dict(raw_node) for task_id, raw_node in raw_nodes.items()
+            str(task_id): TaskNode.from_dict(_mapping(raw_node, "task graph node"))
+            for task_id, raw_node in raw_nodes.items()
         }
         roots = snapshot.get("roots", [])
         if not isinstance(roots, list) or any(not isinstance(item, str) for item in roots):
             raise AgentValidationError("Task graph roots must be a list")
-        graph._roots = list(roots)
+        graph._roots = [str(item) for item in roots]
         graph._validate_graph()
         return graph
 
