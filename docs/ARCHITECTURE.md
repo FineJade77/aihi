@@ -272,6 +272,20 @@ Hook 注册必须声明来源、稳定 ID、优先级、超时、失败策略和
 至少包含已通过 Policy 的决定和 Sandbox 描述，可选绑定 Approval 与 Capability Lease。Hook
 不能自行创建治理证据、修改事件输入或绕过 `tools → policy → hooks → sandbox` 链路。
 
+### 9.5 MCP
+
+MCP Client/Server 使用 JSON-RPC 2.0 边界，当前实现覆盖 `initialize`、`tools/list`、
+`tools/call` 和初始化通知；传输通过 `McpTransport` Protocol 注入，内置内存传输仅用于契约测试，
+不把网络或第三方 MCP SDK 引入 Core。Server Tool Schema 必须是对象 JSON Schema，并将
+`readOnlyHint`、`destructiveHint`、`idempotentHint`、`openWorldHint` 映射到 canonical `ToolSpec`。
+
+MCP 远程工具只能通过 `McpRemoteTool` 注册到 `ToolRegistry`，因此调用统一经过
+`tools → policy → hooks → sandbox` 链路；直接 `McpClient.call_tool` 是低层传输 API，不得作为
+Runtime 的模型工具入口。缺少明确 `readOnlyHint=true` 的远程工具按可变更工具处理。
+
+断线重连最多按配置次数执行；只读工具可以重试，可能产生副作用的工具绝不自动重放，避免远端
+已经执行成功但响应丢失时造成重复副作用。连接、协议、远端错误统一映射为稳定 MCP 错误类型。
+
 ## 10. Policy 与 Sandbox
 
 Policy 输出 `ALLOW / DENY / ASK`，同时返回原因、命中的规则、作用域和有效期。硬拒绝优先于

@@ -33,6 +33,8 @@ async for event in harness.run(
 7. 子代理的能力、预算和工作区只能是父 Run 的子集。
 8. Hook 只能消费调用方提供的事件快照和治理证据；有副作用的 Hook 必须经过显式 Trust、Policy
    和 Sandbox，不得自行授予 Approval 或 Capability Lease。
+9. MCP 远程工具必须通过 canonical ToolDispatcher；断线恢复不得盲目重放可能已经产生副作用的
+   `tools/call`。
 
 ## 事件边界
 
