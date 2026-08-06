@@ -104,6 +104,11 @@ def test_discovery_rejects_declared_hash_mismatch_and_symlinks(tmp_path: Path) -
     with pytest.raises(PluginIntegrityError):
         PluginDiscovery((linked_parent,), harness_version="0.1.0").discover()
 
+    linked_discovery_root = tmp_path / "linked-discovery-root"
+    linked_discovery_root.symlink_to(linked_source, target_is_directory=True)
+    with pytest.raises(PluginIntegrityError):
+        PluginDiscovery((linked_discovery_root,), harness_version="0.1.0")
+
     if hasattr(os, "mkfifo"):
         fifo = linked_source / "plugin.pipe"
         os.mkfifo(fifo)

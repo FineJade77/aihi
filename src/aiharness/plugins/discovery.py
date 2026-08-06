@@ -41,7 +41,13 @@ class PluginDiscovery:
     ) -> None:
         if max_manifest_bytes <= 0 or max_file_bytes <= 0 or max_total_bytes <= 0:
             raise ValueError("Plugin discovery size limits must be positive")
-        self.roots = tuple(Path(root).expanduser().resolve() for root in roots)
+        raw_roots = tuple(Path(root).expanduser() for root in roots)
+        for root in raw_roots:
+            if root.is_symlink():
+                raise PluginIntegrityError(
+                    f"Symlinked plugin discovery roots are not allowed: {root}"
+                )
+        self.roots = tuple(root.resolve() for root in raw_roots)
         self.harness_version = SemVer.parse(harness_version)
         self.max_manifest_bytes = max_manifest_bytes
         self.max_file_bytes = max_file_bytes

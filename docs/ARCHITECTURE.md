@@ -248,6 +248,12 @@ Hash，不 import 或执行第三方代码。第三方插件由独立 Plugin Hos
 lockfile；Manifest 或内容 Hash 变化后自动失效。
 真正激活前必须重新 Discovery/Hash 校验候选快照，防止 Trust 记录和 Host 启动之间的 TOCTOU。
 
+Host 激活还必须通过显式 `PluginHostPolicy`：Manifest 的 `capabilities` 和 `permissions` 必须
+分别是当前 Run 允许集合的子集，否则拒绝启动。Host 使用最小环境、无 Shell 的独立进程组和
+有界 JSON-lines JSON-RPC（`aiharness.plugin.v1`）；超时、协议错误、崩溃都会终止整个进程组。
+主进程只持有 `PluginRemoteTool`，Tool 调用仍由 `ToolDispatcher` 统一执行；Plugin Host 不得
+直接授予 Policy、Approval、Capability Lease 或 Sandbox 权限。
+
 ### 9.3 Skills
 
 兼容 `SKILL.md` + 严格 frontmatter。frontmatter 当前只允许 `name`、`description`、

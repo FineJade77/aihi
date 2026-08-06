@@ -129,13 +129,16 @@
 内容 Hash、默认关闭的 Trust Manager 和原子 JSON lockfile；已完成 M5b Skill frontmatter、
 分层发现、作用域遮蔽、显式请求加载、内容 Hash Trust 和原子 JSON lockfile；已完成 M5c
 Hook 生命周期事件、稳定顺序、超时、失败策略和治理上下文；已完成 M5d MCP JSON-RPC
-Client/Server Tool Schema、内存传输、有限重连和只读重试保护。Plugin Host 和 Memory 仍待
-后续切片实现。
+Client/Server Tool Schema、内存传输、有限重连和只读重试保护；已完成 M5e 版本化隔离
+Plugin Host、激活前重新 Hash/Trust 校验、能力/权限子集策略、有界进程生命周期和
+`PluginRemoteTool` 统一 Dispatcher 入口。Memory 仍待后续切片实现。
 
 ### 验收
 
 - 第三方 Plugin 不在主进程直接执行；
 - 项目级 Plugin 默认关闭，启用有明确 Trust 记录；
+- Plugin Host 激活必须显式满足当前 Run 的 capabilities/permissions 子集策略，并在协议错误、
+  超时或崩溃时清理进程组；
 - Hook 无法绕过 Policy 或 Sandbox；
 - Hook 按优先级和注册序号稳定执行，超时与失败策略可观测；有副作用的 Hook 必须显式 Trust
   和 HookGovernance；

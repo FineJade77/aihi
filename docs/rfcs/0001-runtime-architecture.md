@@ -35,6 +35,9 @@ async for event in harness.run(
    和 Sandbox，不得自行授予 Approval 或 Capability Lease。
 9. MCP 远程工具必须通过 canonical ToolDispatcher；断线恢复不得盲目重放可能已经产生副作用的
    `tools/call`。
+10. Plugin 只能在独立的版本化 Plugin Host 子进程中激活；激活前必须重新验证精确 Trust Hash，
+    Manifest capabilities/permissions 必须是当前 Run 显式允许集合的子集，Plugin Tool 仍必须
+    通过 canonical ToolDispatcher。
 
 ## 事件边界
 
