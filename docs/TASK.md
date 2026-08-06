@@ -207,8 +207,13 @@ M7b 已完成脱敏 `TraceBundle`、严格序列号/Run/Tool 生命周期 `Repla
 接入真实 Provider Golden Task、远程 exporter pipeline 或外部评估服务。
 
 M7c 已完成 OTel/JSONL exporter 的可选边界适配（Metric/Cost 保留 unit，数值溢出和缺少 OTel API
-时 fail closed）以及 replay-only `GoldenTask`/`GoldenTaskGrader`；尚未接入真实 Provider Golden
-Task、远程 exporter pipeline 或 CI 评估门禁。
+时 fail closed）以及 replay-only `GoldenTask`/`GoldenTaskGrader`。
+
+M7d-a 已完成离线 Provider Golden Task 与 CI 评估门禁核心：`ProviderGoldenTask` 只接受
+Provider-neutral stream transcript，request fingerprint 在哈希前脱敏且忽略消息/工具调用的临时 ID；
+`ProviderGoldenRunner` 只调用注入的 Provider，不执行 Tool、Policy、Hook 或 Sandbox，异常只输出稳定
+error code；`EvalGate` 生成严格 JSON 的 `GateVerdict`，空数据或低于阈值会失败并可通过
+`EvalGateFailed` 阻断 CI。真实远程 OTel pipeline、批量导出和外部 Provider 不在本步范围。
 
 ### 验收
 

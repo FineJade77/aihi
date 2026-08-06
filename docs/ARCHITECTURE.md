@@ -383,7 +383,14 @@ ReplayResult，分数必须是有限的 `[0,1]` JSON 数值。
 M7c 提供 `JsonlTelemetrySink` 和可选 `OpenTelemetrySink`。Exporter 在边界再次脱敏，Metric/Cost
 保留 canonical `unit`，数值溢出或缺少 OTel API 时 fail closed；核心仍不强制安装 OTel。`GoldenTask`
 与 `GoldenTaskGrader` 只检查 ReplayResult 的事件类型、Run 状态和未完成 Tool，不启动 Provider、Tool
-或 Sandbox。Golden Provider、远程 Export pipeline 和 CI 门禁仍属于后续工作。
+或 Sandbox。
+
+M7d-a 提供离线 `ProviderGoldenTask`、`ProviderTranscript` 和 `ProviderGoldenRunner`。Runner 只消费
+Provider-neutral stream chunks；消息 ID、工具调用 ID 和请求内容不进入可审计 fixture，request
+fingerprint 由脱敏 canonical request 计算。Runner 将 Provider 异常降为稳定 error code，不重试或重放
+任何副作用。`EvalGate` 对 Provider 或 Replay 结果生成严格 JSON `GateVerdict`，空数据、阈值不足和
+失败 case 可在 CI 中阻断。真实远程 Export pipeline、认证、批量重试和外部 Provider 仍须由后续适配层
+提供。
 
 评估支持 Fake/Replay、Provider Contract、Golden Tasks、安全测试和 Coding Tasks。核心指标：
 

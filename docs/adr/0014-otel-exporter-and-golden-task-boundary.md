@@ -1,6 +1,6 @@
 # ADR-0014：可选 OTel Exporter 与 Golden Task 边界
 
-- 状态：Accepted
+- 状态：Accepted（M7d-a 扩展）
 - 日期：2026-08-06
 - 关联：`docs/ARCHITECTURE.md`、`docs/TASK.md`、ADR-0012、ADR-0013
 
@@ -15,6 +15,10 @@
    不代表真实 Coding Task 已执行，也不授予任何 Runtime 权限。
 3. Exporter 失败由上层 Telemetry facade fail-open；需要重试、backpressure、远程认证或持久化的
    pipeline 必须在后续适配层实现，不改变 Event Store 事实源。
+4. `ProviderGoldenTask`/`ProviderGoldenRunner` 是独立的离线 Provider 边界：只消费
+   Provider-neutral stream transcript，不执行 Tool、Policy、Hook、Sandbox，不把消息 ID 或工具调用
+   ID 当作行为断言；请求只用脱敏 canonical fingerprint 关联。`EvalGate` 输出严格 JSON
+   `GateVerdict`，空数据或低于 `min_pass_rate` 时以稳定 `eval_gate_failed` 阻断 CI。
 
 ## 原因
 
@@ -24,5 +28,6 @@
 ## 后续
 
 - 接入真实 OTel SDK、resource/trace propagation、批量导出与限时重试；
-- 增加 Fake/Provider Golden Coding Tasks 和远程评估服务；
-- 将 Golden 结果、成本和安全指标接入 CI 合并门禁。
+- 接入真实 OTel SDK 的 resource/trace propagation、批量导出与限时重试；
+- 增加远程 Provider Golden Coding Tasks 和外部评估服务；
+- 将成本和安全指标接入统一 CI 合并门禁。

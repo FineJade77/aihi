@@ -11,5 +11,9 @@ class EvalValidationError(EvalError):
     code = "eval_validation_error"
 
 
+class EvalGateFailed(EvalError):
+    code = "eval_gate_failed"
+
+
 class ReplayInvariantViolation(EvalError):
     code = "replay_invariant_violation"
