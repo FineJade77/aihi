@@ -2,11 +2,22 @@
 
 状态：Accepted / 实施中
 版本：v0.1
-日期：2026-08-04
+日期：2026-08-06
 
 ## 1. 定位与目标
 
-AIHarness 是面向 Coding Agent 的运行时基础设施。模型只负责生成意图，Harness 负责：
+AIHarness 是面向多种 Agent 的可复用运行时基础设施。模型只负责生成意图，Harness 负责公共
+运行时能力；具体 Agent 产品通过应用层组合 Harness。模型不是系统事实源，事件日志才是。
+
+当前规划分为两层：
+
+- `aiharness`：可嵌入 SDK 和基础 CLI，提供公共协议、实现、安全边界和可恢复运行时；
+- `aicode/`、`personal/` 等应用：直接复用 Harness 的 Provider、Tool、Policy、Sandbox、Runtime
+  和 Context，负责 Prompt、Agent 角色、工具集合、项目规则、交互和产品默认值。
+
+Harness 不复制或内置某个产品 Agent；应用层也不得复制 Harness 实现。
+
+AIHarness 负责：
 
 - 持久化会话、恢复、分支和审计；
 - 上下文预算、自动压缩和大型输出管理；
@@ -22,13 +33,17 @@ AIHarness 是面向 Coding Agent 的运行时基础设施。模型只负责生�
 - 不把第三方插件代码直接加载进 Harness 主进程；
 - 不把 Host 执行描述成真正的安全隔离；
 - 不在第一阶段构建复杂 TUI、聊天渠道或控制台。
+- 不把 Coding Agent、个人助理或其他具体 Agent 的 Prompt、项目规则、角色编排和 CLI 交互写进
+  基础层。
 
 ## 2. 总体拓扑
 
 ```mermaid
 flowchart TB
-    U["CLI / TUI / HTTP API / Python SDK"] --> API["api: Session API"]
-    API --> R["runtime: Run Coordinator"]
+    A1["aicode / personal / other Agents"] --> H["aiharness public SDK"]
+    U["Generic CLI / HTTP API / Python SDK"] --> H
+    H --> API["api: Optional Control Plane"]
+    H --> R["runtime: Run Coordinator"]
     R --> C["context: Context Compiler"]
     C --> M["models: Model Gateway"]
     M --> P1["Anthropic Adapter"]
@@ -37,8 +52,8 @@ flowchart TB
 
     R --> D["tools: Tool Dispatcher"]
     D --> POL["policy: Policy + Approval"]
-    POL --> H["hooks: Lifecycle Hooks"]
-    H --> S["sandbox: Execution Backend"]
+    POL --> HOOKS["hooks: Lifecycle Hooks"]
+    HOOKS --> S["sandbox: Execution Backend"]
     S --> B["Builtin Tools"]
     S --> PH["Plugin Host"]
     S --> MCP["MCP Servers"]
@@ -56,6 +71,18 @@ flowchart TB
 
 控制面决定执行计划和上下文；执行面承载有副作用的工具、Hook 和插件。所有副作用必须
 经过 `tools → policy → hooks → sandbox` 链路。
+
+应用层只负责组装，不建立第二套 Runtime。典型 Coding Agent 组合是：
+
+```text
+aicode config / Prompt / AGENTS.md / terminal approval
+  → aiharness Provider + Context + ToolRegistry + Policy + HostBackend
+  → aiharness RunCoordinator + Session/EventStore
+```
+
+`aicode` 可以直接导入 `aiharness.models.providers`、`aiharness.tools`、`aiharness.policy`、
+`aiharness.sandbox` 和 `aiharness.runtime`；是否注册 Edit/Shell/Test、选择哪个模型、如何展示
+Approval 和何时使用 Skills/Memory/Subagent，由应用自行决定。
 
 ## 3. 工程目录
 
@@ -79,6 +106,12 @@ src/aiharness/
   evals/                # Datasets, replay, graders
   api/                  # FastAPI optional service
   cli/                  # Typer CLI
+aicode/
+  src/aicode/            # Coding Agent composition, CLI and product workflows
+  tests/                 # Coding Agent acceptance and product tests
+personal/
+  src/personal_agent/    # Optional personal Agent composition
+  tests/
 tests/
   unit/
   contract/
@@ -93,7 +126,22 @@ examples/
 ```
 
 依赖方向：`core` 不依赖其他业务包；领域包依赖 `core`；`runtime` 组装依赖；`api/cli`
-只调用公共 Runtime API。Provider、Sandbox、Store 和 Plugin Host 只能通过协议访问。
+只调用公共 Runtime API；`aicode` 和其他应用依赖 `aiharness`，反向依赖一律禁止。Runtime 和领域
+包内部通过 Provider、Sandbox、Store、Plugin Host 等 Protocol 访问实现；应用组合层可以实例化
+Harness 已有的具体实现并注入。`aiharness/agents` 表示 Subagent 协调基础设施，不是用户可执行
+Agent 的应用目录。
+
+### 3.1 Harness 与应用层边界
+
+| 层 | 负责 | 不负责 |
+|---|---|---|
+| `aiharness` | Canonical 类型、Runtime、Session、Provider、Tool、Policy、Sandbox、Context、Memory、Skill、Subagent、Eval、Observability | Coding Prompt、AGENTS.md 产品规则、具体 Agent 角色、终端 UI、产品凭据和应用默认工具集合 |
+| `aicode` | Coding Agent 组装、真实 Provider 配置、Coding 工具选择、项目上下文、Approval UX、Coding Memory/Subagent 工作流 | 复制 Runtime、Provider、Policy、Sandbox 或 Event Store 实现 |
+| `personal/` 等 | 各自 Agent 的 Prompt、角色、工具组合、交互和产品策略 | 直接修改另一个 Agent，或绕过 Harness 的工具/策略/沙箱链路 |
+
+基础实现可以直接复用，不需要搬移或复制：例如 `aicode` 直接实例化已有 Provider，创建
+`ToolRegistry`，注册已有工具，注入 `DefaultPolicyEngine` 和 `HostBackend`，再构造
+`RunCoordinator`。只有跨应用可复用的缺口才进入 Harness H-* Backlog；应用专属逻辑留在应用目录。
 
 ## 4. Runtime 与 Agent Loop
 

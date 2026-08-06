@@ -13,8 +13,10 @@
 
 ## 项目目标
 
-AIHarness 是 Coding Agent 的运行时基础设施，负责会话、上下文、模型适配、工具执行、
-策略、安全、记忆、Skill、Subagent、评估和可观测性。模型不是系统事实源，事件日志才是。
+AIHarness 是可复用的 Agent Harness 基础层，不是某一个具体 Agent 产品。它负责会话、上下文、
+模型适配、工具执行、策略、安全、记忆、Skill、Subagent、评估和可观测性；模型不是系统事实源，
+事件日志才是。Coding Agent、个人助理或其他 Agent 应在 `aicode/`、`personal/` 等应用目录中
+组合这些能力。
 
 ## 目录边界
 
@@ -38,10 +40,22 @@ src/aiharness/
   evals/           # Replay, datasets, graders
   api/             # Optional service API
   cli/             # CLI entry point
+
+aicode/            # Coding Agent application layer (depends on aiharness)
+personal/          # Optional personal Agent application (depends on aiharness)
 ```
 
 依赖方向必须单向：`core` 不导入其他业务包；`runtime` 通过 Protocol 使用 Provider、Store、
-Tool、Policy、Hook 和 Sandbox；业务代码不得直接依赖某个 Provider SDK 或具体后端实现。
+Tool、Policy、Hook 和 Sandbox；`aicode/`、`personal/` 等应用可以直接复用 `aiharness` 已有的
+Provider、Tool、Policy、Sandbox 和 Runtime 实现，但 `aiharness` 不得反向 import 任意应用目录。
+应用之间也不得互相 import。应用负责 Prompt、Agent 角色、工具集合、配置和交互体验；Harness
+负责可复用实现和公共契约。`aiharness/agents/` 是 Subagent TaskGraph/协调基础设施，不代表某个
+面向用户的 Agent 产品。
+
+应用层必须通过稳定的 `aiharness` public API 或明确的 Protocol 组合依赖，不复制 Harness 实现，
+也不得把 Coding-specific Prompt、项目规则、凭据、终端 UI 或产品默认 Policy 写回核心包。若应用
+开发发现 Provider-neutral、可复用的 Harness 缺口，先在 [docs/TASK.md](docs/TASK.md) 的 H-* Backlog
+登记，再补契约、测试和实现；仅服务于单个 Agent 的逻辑留在对应应用目录。
 
 ## 不可破坏的不变式
 
@@ -94,8 +108,12 @@ Runtime 是显式状态机，不把状态藏在不可恢复的局部变量中。
 
 ## 开发流程
 
-按 [TASK.md](docs/TASK.md) 的 M0–M7 顺序推进。每个任务先补契约和测试，再写实现；不要
+按 [TASK.md](docs/TASK.md) 的 M0–M7 和 H-* Backlog 顺序推进。每个任务先补契约和测试，再写实现；不要
 为了提前扩展而创建未接入 Runtime 的空抽象。
+
+开发 `aicode` 或其他 Agent 时，先复用已有 Harness 能力完成应用组合；只有跨 Agent 可复用的缺口
+才修改 `src/aiharness`。应用代码和 Harness 改动必须分别补对应目录的测试；Harness 公共契约或
+安全默认值变化时同步更新 ARCHITECTURE、TASK 和必要的 RFC/ADR。
 
 完成改动前至少运行：
 
