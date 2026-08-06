@@ -161,6 +161,12 @@ Plugin Host、激活前重新 Hash/Trust 校验、能力/权限子集策略、�
 - `api/`：可选 FastAPI Session/Run/Approval/Artifact API。
 - SQLite 到 PostgreSQL 的 Store 适配和 Worker lease。
 
+当前进度：已完成 M6a 子代理治理核心：`TaskSpec`/`TaskResult` canonical 类型、可快照
+`TaskGraph` 状态机、父子 capability/预算/深度/只读 workspace 子集校验、有界结构化 FIFO
+`Mailbox`、显式 ack/in-flight、取消递归收尾和 Interrupted Resume。当前实现仍是进程内协调器，
+没有宣称 Docker 隔离或多 Worker 所有权；下一步在 M6b 接入 Docker 可选后端和 Worktree/Patch
+边界，再接 M6c 服务 API、PostgreSQL 和 Worker lease。
+
 ### 验收
 
 - 子代理权限集合始终是父任务子集；

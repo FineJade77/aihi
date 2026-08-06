@@ -338,9 +338,14 @@ Memory 分为 Working、Episodic、Semantic、Procedural 四层。长期记忆�
 `MemoryService` 默认要求可用的审计事件 Sink；只有明确设置 `audit_required=false` 的离线工具
 才允许 best-effort 写入。
 
-Subagent 是独立 Session/Run，权限只能是父 Run 的子集，拥有独立预算、上下文、工作区或
-Git Worktree。父 Agent 通过结构化 `TaskSpec`、Mailbox 和 `AgentResult` 协作；最大深度、
-并发数、Token、成本和超时都由 Runtime 控制。
+Subagent 是父 Run 下的独立 Task/Run 节点，权限只能是父节点的子集，拥有独立预算、上下文、
+工作区或 Git Worktree。当前基线用可快照的 `TaskGraph` 管理 `PENDING → RUNNING → WAITING →
+COMPLETED/FAILED/CANCELLED/INTERRUPTED` 状态，并通过结构化 `TaskSpec`、有界 FIFO `Mailbox`
+和 `TaskResult` 协作。子任务的 capability、Token/成本/超时/Tool Call 预算、只读工作区和最大
+深度在创建时校验，不能由子代理自行扩大；Mailbox 的发送者和接收者必须属于同一图，消息先进入
+in-flight 状态，消费方显式 ack 后才删除。取消会递归收尾活动后代，Interrupted 只能显式 Resume，
+图和 Mailbox 快照可用于进程重启恢复。M6a 尚不启动真实多 Worker 或 Docker；后续 Worker 必须
+从这些持久化边界恢复，不能把本地线程状态当作事实源。
 
 ## 12. Eval 与 Observability
 
