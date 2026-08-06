@@ -164,6 +164,7 @@ class ReplayResult:
     tool_result_count: int
     pending_tool_call_ids: tuple[str, ...]
     state_sha256: str
+    event_type_counts: dict[str, int] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -176,6 +177,7 @@ class ReplayResult:
             "tool_result_count": self.tool_result_count,
             "pending_tool_call_ids": list(self.pending_tool_call_ids),
             "state_sha256": self.state_sha256,
+            "event_type_counts": dict(sorted(self.event_type_counts.items())),
         }
 
 
@@ -296,6 +298,9 @@ class _ReplayState:
         }
         pending = tuple(sorted(calls - results))
         states = {run_id: machine.state.value for run_id, machine in self.runs.items()}
+        event_type_counts: dict[str, int] = {}
+        for event in self.events:
+            event_type_counts[event.type] = event_type_counts.get(event.type, 0) + 1
         summary = {
             "session_id": self.session_id,
             "event_count": len(self.events),
@@ -305,6 +310,7 @@ class _ReplayState:
             "tool_call_count": len(calls),
             "tool_result_count": len(results),
             "pending_tool_call_ids": list(pending),
+            "event_type_counts": dict(sorted(event_type_counts.items())),
         }
         state_hash = hashlib.sha256(
             json.dumps(summary, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
@@ -319,6 +325,7 @@ class _ReplayState:
             tool_result_count=len(results),
             pending_tool_call_ids=pending,
             state_sha256=state_hash,
+            event_type_counts=event_type_counts,
         )
 
 

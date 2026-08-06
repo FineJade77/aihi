@@ -380,6 +380,11 @@ ReplayEngine 只投影 Run/Tool/Message 状态，不调用 Provider、Tool、Plu
 生命周期、重复终态和 Ephemeral 事件，但允许 Policy 拒绝后仍持久化对应 Tool Result。Grader 只消费
 ReplayResult，分数必须是有限的 `[0,1]` JSON 数值。
 
+M7c 提供 `JsonlTelemetrySink` 和可选 `OpenTelemetrySink`。Exporter 在边界再次脱敏，Metric/Cost
+保留 canonical `unit`，数值溢出或缺少 OTel API 时 fail closed；核心仍不强制安装 OTel。`GoldenTask`
+与 `GoldenTaskGrader` 只检查 ReplayResult 的事件类型、Run 状态和未完成 Tool，不启动 Provider、Tool
+或 Sandbox。Golden Provider、远程 Export pipeline 和 CI 门禁仍属于后续工作。
+
 评估支持 Fake/Replay、Provider Contract、Golden Tasks、安全测试和 Coding Tasks。核心指标：
 
 - 任务成功率、测试通过率和 Patch 正确率；

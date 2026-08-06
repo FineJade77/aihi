@@ -2,6 +2,7 @@
 
 from aiharness.evals.dataset import EvalCase, EvalDataset
 from aiharness.evals.errors import EvalError, EvalValidationError, ReplayInvariantViolation
+from aiharness.evals.golden import GoldenTask, GoldenTaskGrader
 from aiharness.evals.graders import (
     CompositeGrader,
     EventCountGrader,
@@ -23,6 +24,8 @@ __all__ = [
     "EventCountGrader",
     "Grade",
     "Grader",
+    "GoldenTask",
+    "GoldenTaskGrader",
     "ReplayEngine",
     "ReplayInvariantViolation",
     "ReplayResult",

@@ -18,6 +18,9 @@ dependencies = [
 api = [
   "fastapi>=0.115",
 ]
+otel = [
+  "opentelemetry-api>=1.26",
+]
 dev = [
   "mypy>=1.10",
   "pytest>=8.0",

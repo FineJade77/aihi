@@ -198,13 +198,17 @@ bubblewrap 或 macOS Seatbelt 做网络、进程和 workspace 外写约束，能
 当前进度：M7a 已完成不绑定厂商的 `TraceContext`、结构化 `Observation`、`MetricPoint`、
 `CostRecord`、有界 `InMemoryTelemetrySink` 和 `Telemetry` facade；Session 可旁路观察本实例
 追加的持久化 Event，观测故障不会改变 Runtime 结果。Redactor 对常见凭据、非 JSON/非有限值、
-超长内容和未知对象 fail-closed；成本核算拒绝负数、非有限和溢出。尚未声称已接入 OpenTelemetry
-导出器，也尚未覆盖外部 Worker refresh 的事件观察。
+超长内容和未知对象 fail-closed；成本核算拒绝负数、非有限和溢出。M7c 已补充可选 exporter 边界，
+但尚未接入远程 exporter pipeline，也尚未覆盖外部 Worker refresh 的事件观察。
 
 M7b 已完成脱敏 `TraceBundle`、严格序列号/Run/Tool 生命周期 `ReplayEngine`、JSONL
 `EvalDataset`、离线 `EvalRunner` 以及 EventCount/RunState/Composite Grader。TraceBundle 在导出和
 加载时递归冻结并对完整规范化事件计算 SHA-256；Replay 只做状态投影，绝不重新执行副作用。尚未
-接入真实 OTel Exporter、Provider Golden Task 或外部评估服务。
+接入真实 Provider Golden Task、远程 exporter pipeline 或外部评估服务。
+
+M7c 已完成 OTel/JSONL exporter 的可选边界适配（Metric/Cost 保留 unit，数值溢出和缺少 OTel API
+时 fail closed）以及 replay-only `GoldenTask`/`GoldenTaskGrader`；尚未接入真实 Provider Golden
+Task、远程 exporter pipeline 或 CI 评估门禁。
 
 ### 验收
 
