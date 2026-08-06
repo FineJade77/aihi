@@ -137,7 +137,11 @@ class DefaultPolicyEngine:
                     "builtin.sensitive_path",
                 )
 
-        if context.require_isolation and not context.sandbox.filesystem_isolated:
+        if context.require_isolation and not (
+            context.sandbox.filesystem_isolated
+            and context.sandbox.network_isolated
+            and context.sandbox.process_isolated
+        ):
             return Decision(
                 DecisionEffect.DENY,
                 "This policy profile requires full filesystem isolation.",

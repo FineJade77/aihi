@@ -14,6 +14,7 @@ from .errors import (
 from .graph import TaskGraph
 from .mailbox import Mailbox, MailboxMessage
 from .types import AgentBudget, AgentState, TaskNode, TaskResult, TaskSpec, WorkspaceScope
+from .workspaces import PatchArtifact, WorktreePatchBoundary, WorktreeSpec
 
 __all__ = [
     "AgentBudget",
@@ -33,5 +34,8 @@ __all__ = [
     "TaskNode",
     "TaskResult",
     "TaskSpec",
+    "PatchArtifact",
+    "WorktreePatchBoundary",
+    "WorktreeSpec",
     "WorkspaceScope",
 ]

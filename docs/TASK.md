@@ -166,8 +166,10 @@ Plugin Host、激活前重新 Hash/Trust 校验、能力/权限子集策略、�
 `Mailbox`、显式 ack/in-flight、取消递归收尾和 Interrupted Resume。当前实现仍是进程内协调器，
 没有宣称 Docker 隔离或多 Worker 所有权；M6b 已加入可选 `LocalIsolatedBackend`，通过 Linux
 bubblewrap 或 macOS Seatbelt 做网络、进程和 workspace 外写约束，能力不足时 fail closed；它不
-宣称完整文件系统机密隔离。下一步接入 Docker/Worktree/Patch 边界，再接 M6c 服务 API、
-PostgreSQL 和 Worker lease。
+宣称完整文件系统机密隔离。M6c 已加入可注入 runner 的 `DockerBackend`，默认网络关闭、容器根
+只读、workspace 唯一 bind mount、资源上限和 fail-closed；并加入 `WorktreeSpec`、
+`PatchArtifact`、`WorktreePatchBoundary` 契约，暂不自动创建 Worktree 或合并 Patch。下一步接
+M6d 服务 API、PostgreSQL 和 Worker lease。
 
 ### 验收
 

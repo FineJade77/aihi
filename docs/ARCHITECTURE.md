@@ -318,6 +318,14 @@ Approval 与 Capability Lease 都是 append-only 授权事件的投影，并绑�
   隔离的 Policy Profile 只能选择具备 `filesystem_isolated=true` 的后端（通常是 Docker）；
 - 后续可加入 gVisor、Firecracker 或 Kubernetes Worker。
 
+Docker 参数必须以 argv 形式构造，默认 `--network none`、只读容器根、`no-new-privileges`、
+丢弃 capabilities、PID/内存/CPU 上限和独立 `/tmp`；workspace 作为唯一显式 bind mount，事件
+记录 image、network 和 mount 作用域。Docker CLI/Daemon 不可用时构造或执行失败，不回退到 Host。
+Worktree 只表达子任务的 `task_id`、base commit、canonical root 和 allowed paths；PatchArtifact
+只引用外置 diff Artifact、base commit、变更路径和 SHA-256。应用 Patch 前必须通过
+`WorktreePatchBoundary` 校验任务归属、base commit、`.git` 禁止路径和 allowed paths；本步不自动
+创建 Git Worktree、不自动合并 Patch。
+
 执行链：
 
 ```text

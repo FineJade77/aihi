@@ -16,6 +16,9 @@ class SandboxDescriptor:
     filesystem_write_isolated: bool = False
     process_isolated: bool = False
     mechanism: str = "unspecified"
+    image: str | None = None
+    network_mode: str | None = None
+    mount_scope: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -26,6 +29,9 @@ class SandboxDescriptor:
             "filesystem_write_isolated": self.filesystem_write_isolated,
             "process_isolated": self.process_isolated,
             "mechanism": self.mechanism,
+            "image": self.image,
+            "network_mode": self.network_mode,
+            "mount_scope": self.mount_scope,
         }
 
 
