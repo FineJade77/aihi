@@ -379,3 +379,22 @@ in-flight 状态，消费方显式 ack 后才删除。取消会递归收尾活�
 首选 Python 3.11+、asyncio/AnyIO、Pydantic v2、SQLite/PostgreSQL、Typer、可选 FastAPI、
 OpenTelemetry、structlog。第一形态是可嵌入 SDK + CLI；第二形态将 Runtime、Sandbox Worker 和
 Plugin Host 拆分部署。核心不强依赖 LangChain/LangGraph，保持对 Provider 和执行面的控制。
+
+### 13.1 服务化控制面与 Worker Lease
+
+FastAPI 是可选的内部控制面适配器，由 `create_app` 注入 `EventStore`、`RunLeaseStore` 和可选
+`ArtifactStore`。它只暴露 Session 事件读取、Approval 请求/解决、Run lease 和受作用域保护的
+Artifact 查询，不直接调用 Tool、Provider 或 Sandbox；公网部署必须在 Harness 外配置认证、授权、
+TLS、限流和审计。`/sessions/{session_id}/artifacts` 只列出该 Session 的 `session` 作用域 Artifact；
+`run` 作用域 Artifact 必须通过带匹配 `run_id` 的已知 Artifact 查询访问，`persistent` Artifact 不
+通过 Session 路由泄露。
+
+SQLite 和 PostgreSQL 遵循同一个 `EventStore` Protocol。PostgreSQL 适配使用事务内
+`SELECT ... FOR UPDATE` + `expected_seq`，并在查询后结束事务；驱动通过可选 `psycopg` 或注入的
+DB-API connection factory 提供，核心包不强制安装数据库驱动。连接、唯一约束和 JSON 序列化错误
+映射到稳定 Harness 错误，原始事件仍是唯一事实源。
+
+Worker 使用 Run-scoped lease 和单调 fencing token。持有者必须提供 owner 与 token 才能续租或
+释放；过期 lease 可被另一 Worker 接管，旧 Worker 的续租/释放一律拒绝。Lease 不是工具授权，
+每次副作用仍须经过 `tools → policy → hooks → sandbox`，后续多 Worker 实现必须把 lease 状态和
+事件提交放入同一可恢复的控制面。

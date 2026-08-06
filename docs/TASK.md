@@ -168,8 +168,11 @@ Plugin Host、激活前重新 Hash/Trust 校验、能力/权限子集策略、�
 bubblewrap 或 macOS Seatbelt 做网络、进程和 workspace 外写约束，能力不足时 fail closed；它不
 宣称完整文件系统机密隔离。M6c 已加入可注入 runner 的 `DockerBackend`，默认网络关闭、容器根
 只读、workspace 唯一 bind mount、资源上限和 fail-closed；并加入 `WorktreeSpec`、
-`PatchArtifact`、`WorktreePatchBoundary` 契约，暂不自动创建 Worktree 或合并 Patch。下一步接
-M6d 服务 API、PostgreSQL 和 Worker lease。
+`PatchArtifact`、`WorktreePatchBoundary` 契约，暂不自动创建 Worktree 或合并 Patch。M6d 已完成：
+可选 FastAPI 控制面（Session/事件、Approval、Run lease、受作用域 Artifact 查询）、PostgreSQL
+`EventStore` DB-API 适配（事务、`FOR UPDATE`、`expected_seq` 和严格 JSON）以及内存 Run lease
+基线（过期接管、fencing token、stale owner 拒绝）。FastAPI 不直接执行工具；公网认证和授权由
+部署层提供。
 
 ### 验收
 
@@ -178,6 +181,10 @@ M6d 服务 API、PostgreSQL 和 Worker lease。
 - 要求隔离的 Policy Profile 会拒绝 Host，即使 `unsafe=true`；
 - Docker 执行事件可与 Host 执行事件统一回放；
 - 多 Worker 不会同时拥有同一 Run。
+- FastAPI 未安装时核心 SDK 仍可导入，调用 API 工厂得到稳定 `api_unavailable`；API 的未知内部
+  异常不泄露原始错误，Artifact 作用域错误和过期分别得到可区分的 HTTP 错误。
+- PostgreSQL Store 的成功查询结束事务，追加使用 `FOR UPDATE` 与 `expected_seq`；唯一约束竞态、
+  连接失败和非标准 JSON 均有稳定错误映射。
 
 ## M7：评估与可观测性
 

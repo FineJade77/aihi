@@ -15,6 +15,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+api = [
+  "fastapi>=0.115",
+]
 dev = [
   "mypy>=1.10",
   "pytest>=8.0",

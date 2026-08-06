@@ -63,3 +63,23 @@ class SandboxUnavailable(HarnessError):
 
 class SandboxConfigurationError(HarnessError):
     code = "sandbox_configuration_error"
+
+
+class LeaseConflict(HarnessError):
+    """Another worker owns the run, or the caller presented a stale token."""
+
+    code = "run_lease_conflict"
+    retryable = True
+
+
+class LeaseNotFound(HarnessError):
+    code = "run_lease_not_found"
+
+
+class StoreUnavailable(HarnessError):
+    code = "store_unavailable"
+    retryable = True
+
+
+class ApiUnavailable(HarnessError):
+    code = "api_unavailable"
