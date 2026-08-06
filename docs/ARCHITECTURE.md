@@ -330,7 +330,13 @@ Schema Validate
 ## 11. Memory 与 Agents
 
 Memory 分为 Working、Episodic、Semantic、Procedural 四层。长期记忆必须带作用域、来源、
-置信度、时间和可删除标记；写入前做 Secret/PII 清洗、去重和人工可追溯。
+置信度、时间和可删除标记；写入前做 Secret/PII 清洗、去重和人工可追溯。候选抽取与持久写入
+分离：只有显式 `memory.written` 才进入 Durable Store，`memory.candidate` 仅记录待确认提案。
+当前基线提供确定性显式记忆提取器、作用域访问控制、词法检索和 tombstone 删除；Memory
+写入必须带匹配的 `MemoryAccess`，并由 Store 端再次清洗和深拷贝；原始内容不得绕过清洗器
+进入长期记忆。Memory 事件由调用方追加到 Session Event Store。
+`MemoryService` 默认要求可用的审计事件 Sink；只有明确设置 `audit_required=false` 的离线工具
+才允许 best-effort 写入。
 
 Subagent 是独立 Session/Run，权限只能是父 Run 的子集，拥有独立预算、上下文、工作区或
 Git Worktree。父 Agent 通过结构化 `TaskSpec`、Mailbox 和 `AgentResult` 协作；最大深度、

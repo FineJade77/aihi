@@ -131,7 +131,10 @@
 Hook 生命周期事件、稳定顺序、超时、失败策略和治理上下文；已完成 M5d MCP JSON-RPC
 Client/Server Tool Schema、内存传输、有限重连和只读重试保护；已完成 M5e 版本化隔离
 Plugin Host、激活前重新 Hash/Trust 校验、能力/权限子集策略、有界进程生命周期和
-`PluginRemoteTool` 统一 Dispatcher 入口。Memory 仍待后续切片实现。
+`PluginRemoteTool` 统一 Dispatcher 入口；已完成 M5f Memory 的四层 canonical 类型、显式候选
+提取、Secret 清洗、作用域访问、确定性检索、tombstone 删除和 `memory.candidate`/
+`memory.written`/`memory.deleted` 审计事件；Memory 写入要求匹配的 `MemoryAccess`，Store
+边界执行二次清洗和深拷贝。
 
 ### 验收
 
