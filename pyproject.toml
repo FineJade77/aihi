@@ -18,6 +18,9 @@ dependencies = [
 api = [
   "fastapi>=0.115",
 ]
+postgres = [
+  "psycopg[binary]>=3.2",
+]
 otel = [
   "opentelemetry-api>=1.26",
 ]

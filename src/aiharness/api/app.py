@@ -6,8 +6,9 @@ extra is not present.  Routes delegate to EventStore, RunLeaseStore, and the
 scoped ArtifactStore; no route executes a tool or constructs a sandbox.
 """
 
-from typing import Any
+from typing import Annotated, Any
 
+from aiharness.api.worker import WorkerIpcAuthError, WorkerLeaseIpcAdapter
 from aiharness.artifacts import ArtifactAccess, ArtifactStore
 from aiharness.core.errors import (
     ApiUnavailable,
@@ -28,11 +29,12 @@ def create_app(
     lease_store: RunLeaseStore,
     *,
     artifact_store: ArtifactStore | None = None,
+    worker_ipc: WorkerLeaseIpcAdapter | None = None,
 ) -> Any:
     """Build the optional control-plane FastAPI application."""
 
     try:
-        from fastapi import FastAPI, HTTPException, Query
+        from fastapi import Body, FastAPI, Header, HTTPException, Query
         from pydantic import BaseModel, Field, StrictInt
     except ImportError as exc:  # pragma: no cover - exercised without api extra
         raise ApiUnavailable("FastAPI support requires the optional api extra") from exc
@@ -63,7 +65,9 @@ def create_app(
     app = FastAPI(title="AIHarness Control Plane", version="0.1.0")
 
     def error_response(exc: HarnessError) -> HTTPException:
-        if isinstance(exc, (SessionNotFound, LeaseNotFound)):
+        if isinstance(exc, WorkerIpcAuthError):
+            status = 401
+        elif isinstance(exc, (SessionNotFound, LeaseNotFound)):
             status = 404
         elif isinstance(exc, (ConcurrencyConflict, EventConflict, LeaseConflict)):
             status = 409
@@ -218,6 +222,37 @@ def create_app(
         fencing_token: int = Query(..., ge=1),
     ) -> None:
         run(lambda: lease_store.release(lease_id, owner_id, fencing_token))
+
+    if worker_ipc is not None:
+
+        @app.post("/worker/leases/acquire", status_code=201)
+        def acquire_worker_lease(
+            body: Annotated[dict[str, Any], Body()],
+            signature: Annotated[
+                str | None, Header(alias="X-AIHarness-Signature")
+            ] = None,
+        ) -> dict[str, object]:
+            signed = run(lambda: worker_ipc.acquire(body, signature))
+            return signed.to_dict()
+
+        @app.post("/worker/leases/renew")
+        def renew_worker_lease(
+            body: Annotated[dict[str, Any], Body()],
+            signature: Annotated[
+                str | None, Header(alias="X-AIHarness-Signature")
+            ] = None,
+        ) -> dict[str, object]:
+            signed = run(lambda: worker_ipc.renew(body, signature))
+            return signed.to_dict()
+
+        @app.post("/worker/leases/release", status_code=204)
+        def release_worker_lease(
+            body: Annotated[dict[str, Any], Body()],
+            signature: Annotated[
+                str | None, Header(alias="X-AIHarness-Signature")
+            ] = None,
+        ) -> None:
+            run(lambda: worker_ipc.release(body, signature))
 
     @app.get("/sessions/{session_id}/artifacts")
     def list_artifacts(session_id: str) -> list[dict[str, object]]:

@@ -235,6 +235,13 @@ fencing token、expiry、attempt 和严格 `traceparent` 组成可 JSON 恢复�
 fencing 或把 TraceContext 当作所有权。Lease takeover 可用旧 Worker carrier 创建新 child span；旧
 owner 的 renew/release 仍由 fencing token 拒绝。IPC 传输仍由宿主注入，本步不自动暴露网络路由。
 
+M7e-c 已完成显式 Worker IPC 认证边界：`WorkerIpcAuthenticator` 对 canonical JSON 使用可轮换
+key-id 的 HMAC-SHA256 detached signature，`WorkerLeaseIpcAdapter` 在调用 Bridge 前严格校验签名、
+字段和 envelope；FastAPI Worker 路由只有在调用方显式注入 adapter 时才注册。TLS/mTLS 仍由宿主
+传输层负责，签名密钥不进入 envelope、响应或日志。新增 `PostgresRunLeaseStore` 使用事务、行锁、
+fencing sequence 和 current-lease partial unique index；过期 takeover 保留旧行并拒绝 stale owner，
+提供 DB-API contract fake 与 `AIHARNESS_POSTGRES_DSN` 可选 live E2E。
+
 ### 验收
 
 - 任意 Tool Call 可定位到 Session、Run、Model Attempt、Policy、Hook 和 Sandbox；

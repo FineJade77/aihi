@@ -1,6 +1,11 @@
 """Event-sourced sessions and persistence backends."""
 
-from aiharness.sessions.leases import InMemoryRunLeaseStore, RunLease, RunLeaseStore
+from aiharness.sessions.leases import (
+    InMemoryRunLeaseStore,
+    PostgresRunLeaseStore,
+    RunLease,
+    RunLeaseStore,
+)
 from aiharness.sessions.session import Session, project_messages
 from aiharness.sessions.snapshots import InMemorySnapshotStore, SessionSnapshot, SnapshotStore
 from aiharness.sessions.store import (
@@ -16,6 +21,7 @@ __all__ = [
     "InMemorySnapshotStore",
     "SQLiteEventStore",
     "PostgresEventStore",
+    "PostgresRunLeaseStore",
     "InMemoryRunLeaseStore",
     "RunLease",
     "RunLeaseStore",

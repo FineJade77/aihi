@@ -413,6 +413,12 @@ Lease 前解析外部 parent carrier，取得/续租/释放仍调用原有 fence
 Worker child span，旧 fencing token 仍然无法续租或释放；跨进程恢复没有 parent carrier 时 fail closed。
 Envelope 是可序列化关联数据，不是授权凭据；IPC/HTTP 通道、认证和网络策略由宿主显式注入。
 
+M7e-c 在显式注入的 Worker IPC 边界增加 `WorkerIpcAuthenticator` 和
+`WorkerLeaseIpcAdapter`：消息使用 canonical JSON + HMAC-SHA256 detached signature，并以 key-id
+支持轮换；API 路由默认不存在，mTLS/TLS 仍由宿主 transport 终止和校验。`PostgresRunLeaseStore`
+复用同一 `RunLeaseStore` Protocol，事务内使用 `FOR UPDATE`、fencing sequence 和 current-lease
+唯一索引，保留 takeover 前的旧 lease 行以便 stale fencing 可审计和拒绝。
+
 评估支持 Fake/Replay、Provider Contract、Golden Tasks、安全测试和 Coding Tasks。核心指标：
 
 - 任务成功率、测试通过率和 Patch 正确率；
