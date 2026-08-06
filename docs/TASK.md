@@ -201,6 +201,11 @@ bubblewrap 或 macOS Seatbelt 做网络、进程和 workspace 外写约束，能
 超长内容和未知对象 fail-closed；成本核算拒绝负数、非有限和溢出。尚未声称已接入 OpenTelemetry
 导出器，也尚未覆盖外部 Worker refresh 的事件观察。
 
+M7b 已完成脱敏 `TraceBundle`、严格序列号/Run/Tool 生命周期 `ReplayEngine`、JSONL
+`EvalDataset`、离线 `EvalRunner` 以及 EventCount/RunState/Composite Grader。TraceBundle 在导出和
+加载时递归冻结并对完整规范化事件计算 SHA-256；Replay 只做状态投影，绝不重新执行副作用。尚未
+接入真实 OTel Exporter、Provider Golden Task 或外部评估服务。
+
 ### 验收
 
 - 任意 Tool Call 可定位到 Session、Run、Model Attempt、Policy、Hook 和 Sandbox；

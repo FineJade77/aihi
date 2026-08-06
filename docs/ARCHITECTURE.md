@@ -373,6 +373,13 @@ Sink 有记录上限，Redactor 对 Secret-looking key、Bearer/API token、非�
 对象 fail-closed。成本按 Usage 与每千 Token 价格确定性计算，拒绝负数、非有限或溢出结果。后续
 OTel adapter 必须保持这些 canonical 字段和脱敏边界；自定义 Sink 应为有界、非阻塞实现。
 
+M7b 提供 `TraceBundle`、`ReplayEngine`、`EvalDataset`、`EvalRunner` 和确定性 `Grader`。TraceBundle
+只接受显式 `redacted=true` 的单 Session 事件，构造时递归冻结、再次按 canonical Redactor 规范化，
+并对完整规范化 JSON 计算 SHA-256；加载或回放前发现 Hash、Schema、序列号或 Session 不一致即拒绝。
+ReplayEngine 只投影 Run/Tool/Message 状态，不调用 Provider、Tool、Plugin 或 Sandbox；拒绝跨 Run 工具
+生命周期、重复终态和 Ephemeral 事件，但允许 Policy 拒绝后仍持久化对应 Tool Result。Grader 只消费
+ReplayResult，分数必须是有限的 `[0,1]` JSON 数值。
+
 评估支持 Fake/Replay、Provider Contract、Golden Tasks、安全测试和 Coding Tasks。核心指标：
 
 - 任务成功率、测试通过率和 Patch 正确率；
