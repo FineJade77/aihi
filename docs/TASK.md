@@ -242,6 +242,67 @@ key-id 的 HMAC-SHA256 detached signature，`WorkerLeaseIpcAdapter` 在调用 Br
 fencing sequence 和 current-lease partial unique index；过期 takeover 保留旧行并拒绝 stale owner，
 提供 DB-API contract fake 与 `AIHARNESS_POSTGRES_DSN` 可选 live E2E。
 
+## AIHarness 待开发 Backlog
+
+本节是 `aiharness` 基础层的持续任务清单，不是 `aicode` 或其他具体 Agent 的产品需求。当前目标
+优先支持单机终端 Agent；分布式 Worker、mTLS 和生产 PostgreSQL 暂缓，除非部署场景明确需要。
+
+### H-01：公共组合边界与兼容性
+
+- 状态：Planned；优先级：P0；依赖：无；验收：应用只依赖稳定 public API，公共 Schema 有兼容性测试。
+- 为 `aiharness` 整理稳定的 public exports 和 Protocol 文档，避免 Agent 直接依赖内部模块；
+- 固定 Provider、Tool、Policy、Hook、Sandbox、Context、Memory、Skill 和 Subagent 的组合契约；
+- 为应用层提供 Runtime factory/依赖注入约定，但不把 Coding Prompt、工具集合或 Agent 规则写进 Harness；
+- 为公共 Event、Envelope 和 Store Schema 建立版本迁移和兼容性测试。
+
+### H-02：本地运行时完善（当前优先级最高）
+
+- 状态：Planned；优先级：P0；依赖：H-01 的组合约定；验收：终端可 Approval、Resume、取消并恢复完整 Tool 生命周期。
+- 补齐终端 Approval/Resume 的通用 resolver 接口，支持上层 CLI 自己实现交互；
+- 完善 Runtime 对 Memory、Skill、Subagent、Artifact 和 Observability 的可选注入边界；
+- 增加跨进程杀死、SQLite 重启、取消、孤儿 Tool Call 和长会话压缩的综合回归集；
+- 继续保持 Host 默认 `unsafe=false`、副作用链路和事件不变式。
+
+### H-03：PostgreSQL 生产化（部署需要时执行）
+
+- 状态：Deferred；优先级：P2；依赖：H-01、受保护分支的 PostgreSQL 服务；验收：live CI 覆盖迁移、并发 fencing、恢复和 projection rebuild。
+- 将当前可选 `AIHARNESS_POSTGRES_DSN` live E2E 纳入受保护分支 CI；
+- 增加数据库 migration/version table、升级/回滚检查、连接池和重连策略；
+- 验证真实 PostgreSQL 并发 Lease takeover、`FOR UPDATE`、fencing 和 Event Store projection rebuild；
+- 补充备份恢复、数据保留、Artifact GC 和大事件查询的运行手册。
+
+### H-04：部署安全与 Worker Control Plane（分布式场景）
+
+- 状态：Deferred；优先级：P3；依赖：H-03 和明确的远程 Worker 部署；验收：mTLS identity、密钥撤销、重放防护和 Worker 崩溃接管可演练。
+- 接入宿主 transport 的 TLS/mTLS peer identity，并映射到 `worker_id`/`owner_id`；
+- 完成 HMAC 和证书的 active/previous/revoked 轮换、撤销、审计和重放防护；
+- 增加 Worker heartbeat、watchdog、进程重启、Lease 自动续租和 stale owner 接管；
+- 明确 Unix socket、HTTP、队列等 transport 的认证、超时、限流和幂等协议。
+
+### H-05：更强执行隔离（安全场景）
+
+- 状态：Deferred；优先级：P2；依赖：明确的隔离 Profile 和部署适配器；验收：每个后端有 capability matrix、安全回归和失败清理测试。本项属于 ops/deployment adapter，不是单机 Harness 基线。
+- Rootless Docker、seccomp/cgroup、网络 egress 和 Secret Broker 的生产 profile；
+- 评估 gVisor、Firecracker、Kubernetes Worker 等远程后端；
+- 为每个后端补充 capability matrix、资源限制、路径逃逸、进程组和失败清理测试。
+
+### H-06：生产观测与评估
+
+- 状态：Planned；优先级：P1；依赖：H-01；验收：远程观测、Golden/Coding Task 和跨版本回放可在 CI 中阻断回归。
+- 接入 OTel Collector、远程 exporter、采样、cardinality 上限和告警规则；
+- 扩展 Provider Golden、Coding Task、安全回放和跨版本 Event/Context 兼容性门禁；
+- 增加成本预算、失败分类、工具副作用审计和长时间运行稳定性指标。
+
+### 待开发清单维护规则
+
+1. `aicode`、`personal` 或其他 Agent 开发时，只有当缺口是 Provider-neutral、可复用且不携带具体
+   Agent Prompt/Policy 时，才提升为 `aiharness` 任务；否则留在对应 Agent 目录。
+2. 任何 Harness 改动必须在同一变更中更新本节状态、契约/安全测试，并在破坏公共 Schema 或默认值
+   时新增或更新 ADR/RFC。
+3. Agent 开发过程中发现 Harness 缺口，可以先记录为 `H-*`，完成后回填实现文件、测试、ADR 和
+   验收结果；不得创建第二份相互冲突的任务清单。
+4. 每个任务仍遵守本文件顶部的“先契约和测试、再实现、最后 subagent review 与全量门禁”流程。
+
 ### 验收
 
 - 任意 Tool Call 可定位到 Session、Run、Model Attempt、Policy、Hook 和 Sandbox；
