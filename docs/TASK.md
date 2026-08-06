@@ -127,14 +127,17 @@
 
 当前进度：已完成 M5a Plugin Manifest、SemVer/Harness 版本约束、无执行 Discovery、确定性
 内容 Hash、默认关闭的 Trust Manager 和原子 JSON lockfile；已完成 M5b Skill frontmatter、
-分层发现、作用域遮蔽、显式请求加载、内容 Hash Trust 和原子 JSON lockfile。Plugin Host、Hook、
-MCP 和 Memory 仍待后续切片实现。
+分层发现、作用域遮蔽、显式请求加载、内容 Hash Trust 和原子 JSON lockfile；已完成 M5c
+Hook 生命周期事件、稳定顺序、超时、失败策略和治理上下文。Plugin Host、MCP 和 Memory
+仍待后续切片实现。
 
 ### 验收
 
 - 第三方 Plugin 不在主进程直接执行；
 - 项目级 Plugin 默认关闭，启用有明确 Trust 记录；
 - Hook 无法绕过 Policy 或 Sandbox；
+- Hook 按优先级和注册序号稳定执行，超时与失败策略可观测；有副作用的 Hook 必须显式 Trust
+  和 HookGovernance；
 - Skill 正文未加载时不进入模型上下文；
 - 未显式请求、未信任或内容发生变化的 Skill 必须拒绝加载；
 - MCP 工具与内置工具使用同一 Policy/Hook/Sandbox 链路；

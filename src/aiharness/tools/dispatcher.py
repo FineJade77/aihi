@@ -10,7 +10,7 @@ from typing import Any
 from aiharness.core.awaits import await_cancelable
 from aiharness.core.errors import HarnessError, ToolInputError, ToolNotFound
 from aiharness.core.types import ToolCallBlock
-from aiharness.hooks import HookBus
+from aiharness.hooks import HookBus, HookGovernance
 from aiharness.policy import Approval, Decision, DecisionEffect, PermissionContext, PolicyEngine
 from aiharness.tools.base import ToolContext, ToolResult, validate_tool_input
 from aiharness.tools.registry import ToolRegistry
@@ -128,8 +128,20 @@ class ToolDispatcher:
             "input": dict(call.input),
             "sandbox": permission.sandbox.to_dict(),
         }
+        hook_governance = HookGovernance(
+            run_id=permission.run_id,
+            policy_allowed=decision.effect == DecisionEffect.ALLOW,
+            sandbox=permission.sandbox.to_dict(),
+        )
         try:
-            await await_cancelable(self.hooks.emit("tool.before", hook_payload), cancel_event)
+            await await_cancelable(
+                self.hooks.emit(
+                    "tool.before",
+                    hook_payload,
+                    governance=hook_governance,
+                ),
+                cancel_event,
+            )
             result = await await_cancelable(
                 asyncio.wait_for(
                     tool.run(call.input, context), timeout=max(0.01, tool.spec.timeout_seconds)
@@ -144,6 +156,7 @@ class ToolDispatcher:
                         "is_error": result.is_error,
                         "metadata": dict(result.metadata),
                     },
+                    governance=hook_governance,
                 ),
                 cancel_event,
             )

@@ -31,6 +31,8 @@ async for event in harness.run(
 5. 进程崩溃后从事件恢复，不从临时内存猜测状态。
 6. Host 执行必须显式 `unsafe=true`，并写入 `run.started/tool.started`。
 7. 子代理的能力、预算和工作区只能是父 Run 的子集。
+8. Hook 只能消费调用方提供的事件快照和治理证据；有副作用的 Hook 必须经过显式 Trust、Policy
+   和 Sandbox，不得自行授予 Approval 或 Capability Lease。
 
 ## 事件边界
 

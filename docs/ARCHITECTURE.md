@@ -264,7 +264,13 @@ Skill 按 `builtin < user < project < workspace` 分层发现，高层同名 Ski
 
 生命周期包括 `RunStart`、`BeforeModel`、`AfterModel`、`BeforeTool`、`AfterTool`、
 `PolicyDecision`、`BeforeCompact`、`AfterCompact`、`Subagent*` 和 `RunStop`。
-Hook 有优先级、超时、失败策略和只读/可修改声明。Hook 自己也必须经过 Policy 与 Sandbox。
+Hook 注册必须声明来源、稳定 ID、优先级、超时、失败策略和只读/可修改属性；执行顺序为
+`priority` 升序、注册序号升序。每个 Hook 都收到独立的不可变事件快照，超时会取消在飞任务。
+失败策略只有 `fail_fast` 和 `continue`，结果包含逐 Hook 的成功、耗时和错误码。
+
+有副作用的 Hook 必须显式 Trust，并且只能在调用方提供的 `HookGovernance` 中执行；治理证据
+至少包含已通过 Policy 的决定和 Sandbox 描述，可选绑定 Approval 与 Capability Lease。Hook
+不能自行创建治理证据、修改事件输入或绕过 `tools → policy → hooks → sandbox` 链路。
 
 ## 10. Policy 与 Sandbox
 
