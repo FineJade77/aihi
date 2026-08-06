@@ -155,6 +155,9 @@ class RunCoordinator:
                 )
             )
             return RunResult(rid, machine.state, error=str(error))
+        finally:
+            if self.telemetry is not None:
+                self.telemetry.flush()
 
     async def resume(self, session: Session, **kwargs: Any) -> RunResult:
         return await self.run(session, user_message=None, **kwargs)

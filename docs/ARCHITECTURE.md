@@ -400,6 +400,13 @@ M7d-b 提供 `OtelBatchPipeline` 和 `OtlpHttpTransport`。Pipeline 将 `Observa
 负责 resource、span、metric 和 log envelope，HTTP client 可注入以便离线契约测试；Runtime 不自动
 打开远程网络出口。
 
+M7e-a 将 Pipeline 接入 Runtime 生命周期：`RunCoordinator` 在 `run.completed`、`run.failed` 或
+`run.interrupted` 事件追加后统一调用 `Telemetry.flush()`；flush 失败只作为观测侧失败，不改变已
+持久化的 Run 结果。共享 sink 不会在单个 Run 中关闭，进程或 Worker 退出时由宿主显式调用
+`Telemetry.close()`。`WorkerTraceManager` 使用父 Run TraceContext 为每个 Worker attempt 创建新的
+child span，外部 Worker 恢复时严格解析传入的 W3C `traceparent` 并重新生成 span ID；该上下文只用于
+可观测性关联，不改变 TaskGraph 的权限、预算、Lease、Policy 或 Sandbox。
+
 评估支持 Fake/Replay、Provider Contract、Golden Tasks、安全测试和 Coding Tasks。核心指标：
 
 - 任务成功率、测试通过率和 Patch 正确率；

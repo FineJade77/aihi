@@ -33,6 +33,7 @@ from aiharness.observability.telemetry import (
     TraceContext,
     stable_payload_hash,
 )
+from aiharness.observability.worker import WorkerTrace, WorkerTraceManager
 
 __all__ = [
     "CostRecord",
@@ -61,5 +62,7 @@ __all__ = [
     "TraceContext",
     "RetryPolicy",
     "W3CTracePropagator",
+    "WorkerTrace",
+    "WorkerTraceManager",
     "stable_payload_hash",
 ]

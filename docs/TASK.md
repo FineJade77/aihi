@@ -222,6 +222,13 @@ M7d-b 已完成 `OtelBatchPipeline`：资源元数据在导出前统一脱敏，
 映射 resource、spans、metrics 和 logs。Runtime 仍通过 Telemetry facade fail-open，远程网络只存在
 于显式配置的 pipeline transport。
 
+M7e-a 已完成本地 Runtime/Worker 生命周期接入：`RunCoordinator` 在 completed/failed/interrupted
+terminal event 写入后调用 `Telemetry.flush()`，flush 故障保持 fail-open；`WorkerTraceManager` 为
+Subagent/外部 Worker 创建带 parent span 的 child trace，支持 attempt refresh、从外部
+`traceparent` carrier 恢复和 headers 生成。Worker trace 不参与权限、Lease 或 Sandbox 决策，也不把
+trace context 当作认证凭据；共享 Pipeline 不在每个 Run 结束时 close，仅在进程/Worker shutdown 时
+由调用方显式 `Telemetry.close()`。
+
 ### 验收
 
 - 任意 Tool Call 可定位到 Session、Run、Model Attempt、Policy、Hook 和 Sandbox；

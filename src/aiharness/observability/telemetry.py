@@ -422,6 +422,28 @@ class Telemetry:
         except Exception:
             return
 
+    def flush(self) -> bool:
+        """Flush an optional asynchronous sink without affecting Runtime."""
+
+        try:
+            flush = getattr(self.sink, "flush", None)
+            if callable(flush):
+                flush()
+            return True
+        except Exception:
+            return False
+
+    def close(self) -> bool:
+        """Close an optional sink at process/worker shutdown, fail-open."""
+
+        try:
+            close = getattr(self.sink, "close", None)
+            if callable(close):
+                close()
+            return True
+        except Exception:
+            return False
+
     def _record_fail_open(self, observation: Observation) -> None:
         try:
             safe = Observation.from_dict(observation.to_dict(redactor=self.redactor))
