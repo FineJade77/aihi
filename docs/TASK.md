@@ -215,6 +215,13 @@ Provider-neutral stream transcript，request fingerprint 在哈希前脱敏且�
 error code；`EvalGate` 生成严格 JSON 的 `GateVerdict`，空数据或低于阈值会失败并可通过
 `EvalGateFailed` 阻断 CI。真实远程 OTel pipeline、批量导出和外部 Provider 不在本步范围。
 
+M7d-b 已完成 `OtelBatchPipeline`：资源元数据在导出前统一脱敏，`W3CTracePropagator` 提供严格
+`traceparent` 注入/解析，队列有界并显式支持 `raise/drop_newest/drop_oldest` 背压；批量导出仅按
+配置的有限次数重试可重试传输错误，耗尽后以稳定错误码失败并统计丢弃批次。`BearerTokenAuth` 不
+把凭据放入 resource 或异常；`OtlpHttpTransport` 提供可注入 HTTP client 的 OTLP/HTTP JSON 适配，
+映射 resource、spans、metrics 和 logs。Runtime 仍通过 Telemetry facade fail-open，远程网络只存在
+于显式配置的 pipeline transport。
+
 ### 验收
 
 - 任意 Tool Call 可定位到 Session、Run、Model Attempt、Policy、Hook 和 Sandbox；

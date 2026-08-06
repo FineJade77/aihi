@@ -392,6 +392,14 @@ fingerprint 由脱敏 canonical request 计算。Runner 将 Provider 异常降�
 失败 case 可在 CI 中阻断。真实远程 Export pipeline、认证、批量重试和外部 Provider 仍须由后续适配层
 提供。
 
+M7d-b 提供 `OtelBatchPipeline` 和 `OtlpHttpTransport`。Pipeline 将 `Observation` 再次脱敏后放入有界
+队列，背压策略必须显式选择 `raise`、`drop_newest` 或 `drop_oldest`；批量传输只对标记为 retryable
+的错误做有限指数退避，重试耗尽以稳定错误码结束并记录丢弃数，不能阻塞 Event Store。`OTelResource`
+统一 service/environment 属性，`W3CTracePropagator` 严格校验 W3C `traceparent`；Bearer token 只
+存在于发送时的 Authorization header，不进入 Observation、resource 或错误详情。OTLP/HTTP JSON 适配
+负责 resource、span、metric 和 log envelope，HTTP client 可注入以便离线契约测试；Runtime 不自动
+打开远程网络出口。
+
 评估支持 Fake/Replay、Provider Contract、Golden Tasks、安全测试和 Coding Tasks。核心指标：
 
 - 任务成功率、测试通过率和 Patch 正确率；

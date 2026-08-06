@@ -27,7 +27,5 @@
 
 ## 后续
 
-- 接入真实 OTel SDK、resource/trace propagation、批量导出与限时重试；
-- 接入真实 OTel SDK 的 resource/trace propagation、批量导出与限时重试；
 - 增加远程 Provider Golden Coding Tasks 和外部评估服务；
 - 将成本和安全指标接入统一 CI 合并门禁。
