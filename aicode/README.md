@@ -4,6 +4,9 @@
 Runtime 和 Session 实现。应用层只负责配置、Coding Tool 组合、CLI 和后续项目上下文工作流，
 不复制 Harness 代码。
 
+所有依赖只能来自 `from aiharness import ...`；深层子模块导入由
+`tests/test_import_boundary.py` 阻断。
+
 ## 当前骨架
 
 - `src/aicode/config.py`：Provider、模型、workspace、数据库和 Host unsafe 配置；

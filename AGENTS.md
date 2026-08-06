@@ -53,7 +53,8 @@ Provider、Tool、Policy、Sandbox 和 Runtime 实现，但 `aiharness` 不得�
 负责可复用实现和公共契约。`aiharness/agents/` 是 Subagent TaskGraph/协调基础设施，不代表某个
 面向用户的 Agent 产品。
 
-应用层必须通过稳定的 `aiharness` public API 或明确的 Protocol 组合依赖，不复制 Harness 实现，
+应用层只能 `from aiharness import ...`（顶层 `__all__` 是唯一受支持的组合面，子模块路径一律
+视为内部实现），不复制 Harness 实现，
 也不得把 Coding-specific Prompt、项目规则、凭据、终端 UI 或产品默认 Policy 写回核心包。若应用
 开发发现 Provider-neutral、可复用的 Harness 缺口，先在 [docs/TASK.md](docs/TASK.md) 的 H-* Backlog
 登记，再补契约、测试和实现；仅服务于单个 Agent 的逻辑留在对应应用目录。

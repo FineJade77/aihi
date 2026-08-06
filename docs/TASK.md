@@ -249,8 +249,11 @@ fencing sequence 和 current-lease partial unique index；过期 takeover 保留
 
 ### H-01：公共组合边界与兼容性
 
-- 状态：Planned；优先级：P0；依赖：无；验收：应用只依赖稳定 public API，公共 Schema 有兼容性测试。
-- 为 `aiharness` 整理稳定的 public exports 和 Protocol 文档，避免 Agent 直接依赖内部模块；
+- 状态：In Progress；优先级：P0；依赖：无；验收：应用只依赖稳定 public API，公共 Schema 有兼容性测试。
+- ✅ 顶层 `aiharness.__all__` 作为唯一组合面；`aicode` 全部改为 `from aiharness import ...`；
+  AST import 边界测试 + 公共 API 契约测试（导出可解析/有序、不拉入可选依赖）；
+  `agents`/`memory`/`skills`/`plugins`/`mcp`/`evals`/`api`/`cli` 暂不导出，等 H-02 的 Runtime 注入点；
+- 待办：为公共 Event、Envelope 和 Store Schema 建立版本迁移和兼容性测试；
 - 固定 Provider、Tool、Policy、Hook、Sandbox、Context、Memory、Skill 和 Subagent 的组合契约；
 - 为应用层提供 Runtime factory/依赖注入约定，但不把 Coding Prompt、工具集合或 Agent 规则写进 Harness；
 - 为公共 Event、Envelope 和 Store Schema 建立版本迁移和兼容性测试。

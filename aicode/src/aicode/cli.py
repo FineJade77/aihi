@@ -18,11 +18,17 @@ import typer
 from aicode.app import build_runtime
 from aicode.approvals import TerminalApprovalResolver
 from aicode.config import AICodeConfig
-from aiharness.core.errors import EventInvariantViolation, SessionNotFound
-from aiharness.core.types import Message
-from aiharness.policy import ApprovalResolver, PermissionMode
-from aiharness.runtime import RunCoordinator, RunResult
-from aiharness.sessions import Session, SQLiteEventStore
+from aiharness import (
+    ApprovalResolver,
+    EventInvariantViolation,
+    Message,
+    PermissionMode,
+    RunCoordinator,
+    RunResult,
+    Session,
+    SessionNotFound,
+    SQLiteEventStore,
+)
 
 app = typer.Typer(no_args_is_help=True, help="Local Coding Agent composed from AIHarness.")
 

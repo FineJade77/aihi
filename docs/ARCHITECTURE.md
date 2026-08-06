@@ -143,6 +143,18 @@ Agent 的应用目录。
 `ToolRegistry`，注册已有工具，注入 `DefaultPolicyEngine` 和 `HostBackend`，再构造
 `RunCoordinator`。只有跨应用可复用的缺口才进入 Harness H-* Backlog；应用专属逻辑留在应用目录。
 
+#### 公共 API 边界
+
+应用只能 `from aiharness import ...`：顶层 `aiharness/__init__.py` 的 `__all__` 是**唯一**受支持
+的组合面，只能通过子模块路径访问的一切都是内部实现，可以在没有 ADR 的情况下变更。
+`aicode/tests/test_import_boundary.py` 用 AST 扫描强制这条规则，
+`tests/contract/test_public_api.py` 保证导出集合可解析、有序，且导入公共 API 不会拉进任何可选
+依赖（`fastapi`、`psycopg`、`opentelemetry`）。
+
+`agents`、`memory`、`skills`、`plugins`、`mcp`、`evals`、`api`、`cli` **刻意不导出**：它们尚未
+可注入 `RunCoordinator`，因此不存在可承诺的组合契约。把其中任何一个提升为公共 API，等同于新增
+组合契约，需要 ADR 和对应的 Runtime 注入点（TASK.md H-02）。
+
 ## 4. Runtime 与 Agent Loop
 
 一次用户请求对应一个 `Run`，一次会话可以有多个 Run。Runtime 是可恢复状态机：

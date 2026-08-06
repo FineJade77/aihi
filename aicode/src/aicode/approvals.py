@@ -13,7 +13,7 @@ from collections.abc import Callable
 
 import typer
 
-from aiharness.policy import ApprovalOutcome, ApprovalRequest
+from aiharness import ApprovalOutcome, ApprovalRequest
 
 _GRANT = {"y", "yes", "a", "allow"}
 _DENY = {"n", "no", "d", "deny"}
