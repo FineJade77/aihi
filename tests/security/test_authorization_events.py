@@ -191,7 +191,11 @@ async def test_runtime_rejects_lease_from_another_run(tmp_path: Path) -> None:
         require_capability_lease=True,
     )
 
-    assert result.state == RunState.COMPLETED
+    # Another run's lease never authorizes this run: the tool stays unexecuted
+    # and the run suspends for an explicit approval instead.
+    assert result.state == RunState.WAITING_APPROVAL
     assert not (tmp_path / "blocked.txt").exists()
-    tool_result = session.messages[-2].tool_results[0]
-    assert tool_result.metadata["error_code"] == "permission_approval_required"
+    assert not any(event.type == "tool.started" for event in session.events)
+    approval_event = next(event for event in session.events if event.type == "approval.requested")
+    assert approval_event.run_id == "current-run"
+    assert approval_event.data["rule_id"] == "capability.lease_required"

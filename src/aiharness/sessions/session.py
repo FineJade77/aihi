@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import copy
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -222,16 +222,22 @@ class Session:
         requested_by: str,
         ttl_seconds: float | None = None,
         run_id: str,
+        metadata: dict[str, Any] | None = None,
     ) -> Approval:
         approval = Approval.issue(
             scope, requested_by, run_id=run_id, ttl_seconds=ttl_seconds
         )
+        data: dict[str, Any] = {"approval": approval.to_dict(), "requested_by": requested_by}
+        for key, value in (metadata or {}).items():
+            if key in data:
+                raise EventInvariantViolation(f"Approval metadata cannot override {key!r}")
+            data[key] = value
         self.append(
             Event(
                 type="approval.requested",
                 session_id=self.id,
                 run_id=run_id,
-                data={"approval": approval.to_dict(), "requested_by": requested_by},
+                data=data,
             )
         )
         return approval
@@ -324,8 +330,18 @@ class Session:
             )
         )
 
-    def repair_orphan_tool_calls(self, *, run_id: str) -> list[Event]:
-        orphans = self.orphan_tool_calls
+    def repair_orphan_tool_calls(
+        self, *, run_id: str, exclude: Collection[str] = ()
+    ) -> list[Event]:
+        """Synthesize error results for tool calls whose execution state was lost.
+
+        ``exclude`` keeps deliberately suspended calls open: a run waiting for an
+        approval has not lost its execution state and must still be executable
+        after resume.
+        """
+
+        excluded = frozenset(exclude)
+        orphans = tuple(call for call in self.orphan_tool_calls if call.id not in excluded)
         if not orphans:
             return []
         results = tuple(

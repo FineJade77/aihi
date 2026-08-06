@@ -148,17 +148,18 @@ Agent 的应用目录。
 一次用户请求对应一个 `Run`，一次会话可以有多个 Run。Runtime 是可恢复状态机：
 
 ```text
-ACCEPTED
-  → CONTEXT_COMPILED
-  → MODEL_STREAMING
-  → MODEL_COMPLETED
-  → TOOL_CALLS_PROPOSED
-  → POLICY_EVALUATED
-  → APPROVAL_PENDING / TOOL_EXECUTING
-  → TOOL_RESULTS_COMMITTED
-  → CONTEXT_COMPILED
-  → COMPLETED / FAILED / CANCELLED / INTERRUPTED
+CREATED
+  → RUNNING            (context compiled, model streaming, model completed)
+  → WAITING_TOOL       (tool calls proposed, policy evaluated)
+  → WAITING_APPROVAL   (policy returned ASK; suspended and resumable)
+  → WAITING_TOOL       (approval granted or denied)
+  → RUNNING
+  → COMPLETED / FAILED / CANCELLED
 ```
+
+`WAITING_APPROVAL` 是唯一的非终态停机点：Run 追加 `run.suspended` 后返回，不写终态事件，
+挂起的 Tool Call 保持未配对，由后续 `resume` 执行。恢复时追加 `run.resumed` 而不是第二个
+`run.started`，因此恢复后的会话仍可 Replay。
 
 核心顺序不可交换：
 
@@ -173,6 +174,9 @@ ACCEPTED
 取消流程必须收尾所有在飞任务，给未完成 Tool Call 合成错误结果，并追加
 `run.interrupted`。进程直接退出时，Session Load 会扫描未配对调用并生成
 `session.repaired`。不得自动重放未知是否已产生副作用的工具。
+
+主动挂起与崩溃必须区分：等待 Approval 的 Tool Call 没有丢失执行状态，孤儿修复必须跳过
+`run.suspended` 记录的 `pending_tool_call_ids`，由 Resume 真正执行它们。
 
 ## 5. 核心契约
 
@@ -202,7 +206,8 @@ event_id, session_id, run_id, seq, type, schema_version, created_at, data
 
 ```text
 session.created / session.forked / session.repaired
-run.started / run.completed / run.failed / run.interrupted
+run.started / run.resumed / run.suspended
+run.completed / run.failed / run.interrupted
 user.message / assistant.message / tool.result
 model.requested / model.completed / usage.recorded
 tool.requested / tool.started / tool.completed
@@ -345,6 +350,17 @@ Runtime 的模型工具入口。缺少明确 `readOnlyHint=true` 的远程工具
 Policy 输出 `ALLOW / DENY / ASK`，同时返回原因、命中的规则、作用域和有效期。硬拒绝优先于
 组织、工作区、用户和会话临时授权。路径要 canonicalize，并检查 symlink escape；命令工具
 不能只靠字符串黑名单。
+
+`mutates` 与「执行进程」是两条独立的授权轴。声明 `process.exec` 能力的工具一律需要显式
+Approval：`accept_edits` 只覆盖工作区编辑，`plan` 同时拒绝两者，只有人的显式 Approval
+能授权执行。放行分支的 `rule_id` 必须如实反映依据（`mode.accept_edits`、`approval.granted`、
+`default.read_only`），审批率和拒绝率指标直接由这些事件派生。
+
+Policy 返回 `ASK` 时 Runtime 必须挂起而不是伪造 Tool Result：追加 `approval.requested`、
+进入 `WAITING_APPROVAL`，并把决定交给注入的 `ApprovalResolver`
+（`GRANTED / DENIED / DEFERRED`）。未注入时默认 `DEFERRED`，即 Run 挂起等待带外解决，
+既不自动批准也不自动拒绝。Resolver 属于应用层（终端交互、控制面轮询），Harness 只定义契约。
+批准 `capability.lease_required` 会签发一张 run-scoped Capability Lease。
 
 Approval 与 Capability Lease 都是 append-only 授权事件的投影，并绑定单个 `run_id`。
 两者在过期或撤销后失效；Runtime 在每次工具调用前从 Session 事件重建有效授权，不能把

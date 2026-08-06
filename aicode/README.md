@@ -8,11 +8,30 @@ Runtime 和 Session 实现。应用层只负责配置、Coding Tool 组合、CLI
 
 - `src/aicode/config.py`：Provider、模型、workspace、数据库和 Host unsafe 配置；
 - `src/aicode/app.py`：组装现有 Harness 能力的 `build_runtime`；
+- `src/aicode/approvals.py`：终端 Approval UX（Harness 只定义 Resolver 契约）；
 - `src/aicode/cli.py`：独立 `aicode` CLI，支持 Fake/真实 Provider 配置和持久化 Session；
 - `tests/`：应用层组合契约测试。
 
-当前 `--accept-edits` 是显式的本地开发开关；交互式 Approval/Resume、`AGENTS.md`/Skill 注入、
-Memory 和真实 Subagent 工作流属于后续 H-02 与应用层任务。
+## Approval 流程
+
+需要批准的工具不会被伪造成失败，Run 会挂起（退出码 `2`）：
+
+```bash
+aicode run "重构这个模块" --unsafe-host          # 挂起并打印 approval_id / run_id
+aicode approve <session> <approval_id>          # 或 --deny
+aicode resume <session> --run <run_id> --unsafe-host
+```
+
+在终端内直接回答：
+
+```bash
+aicode run "重构这个模块" --unsafe-host -i       # y=批准 n=拒绝 其他=挂起
+```
+
+`--accept-edits` 只自动放行工作区编辑；`shell` / `run_tests` 这类执行进程的工具
+仍然逐次需要批准。批准一次后，该工具在当前 Run 内不再询问。
+
+`AGENTS.md`/Skill 注入、Memory 和真实 Subagent 工作流仍属于后续 H-02 与应用层任务。
 
 在仓库根目录进行本地验证：
 

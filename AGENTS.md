@@ -10,6 +10,7 @@
 6. [ADR-0002](docs/adr/0002-event-store-and-snapshots.md)
 7. [ADR-0003](docs/adr/0003-plugin-host-isolation.md)
 8. [ADR-0004](docs/adr/0004-artifact-lifecycle-and-scope.md)
+9. [ADR-0020](docs/adr/0020-approval-suspension-and-execution-scope.md)
 
 ## 项目目标
 
@@ -60,7 +61,12 @@ Provider、Tool、Policy、Sandbox 和 Runtime 实现，但 `aiharness` 不得�
 ## 不可破坏的不变式
 
 - Assistant Tool Call 必须在工具执行前持久化。
-- 每个 Tool Call 必须有唯一 Tool Result，包括拒绝、取消和恢复结果。
+- 每个 Tool Call 必须有唯一 Tool Result，包括拒绝、取消和恢复结果；等待 Approval 的调用
+  例外，它保持未配对直到 Resume 执行或拒绝它。
+- Policy 返回 `ASK` 时必须挂起 Run（`WAITING_APPROVAL` + `run.suspended`），不得伪造
+  Tool Result 让模型继续；默认（无 Resolver）行为是挂起，不是自动批准或拒绝。
+- 执行进程是独立于 `mutates` 的授权轴：`accept_edits` 只覆盖工作区编辑，
+  声明 `process.exec` 的工具必须有显式 Approval。放行事件的 `rule_id` 必须如实反映依据。
 - 原始 Event 永不被压缩覆盖；Compaction 只生成新的 Context View。
 - 所有副作用必须经过 `tools → policy → hooks → sandbox` 链路。
 - Provider Fallback 不得盲目重放可能已经产生副作用的工具。
@@ -122,7 +128,8 @@ python3 -m compileall -q src
 python3 -m pytest
 ```
 
-若环境已安装开发依赖，再运行 `ruff check .` 和 `mypy`。新增 Provider、Store、Sandbox、
+若环境已安装开发依赖，再运行 `ruff check .` 和 `mypy`（`mypy --strict` 当前为零错误，
+新增代码必须保持零错误；`psycopg`/`opentelemetry` 等可选依赖已在 `pyproject.toml` 中豁免）。新增 Provider、Store、Sandbox、
 Tool 或 Plugin Host 必须补对应的 contract test；涉及安全行为必须补 `tests/security/`。
 
 ## 变更与安全

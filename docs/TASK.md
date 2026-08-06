@@ -257,8 +257,13 @@ fencing sequence 和 current-lease partial unique index；过期 takeover 保留
 
 ### H-02：本地运行时完善（当前优先级最高）
 
-- 状态：Planned；优先级：P0；依赖：H-01 的组合约定；验收：终端可 Approval、Resume、取消并恢复完整 Tool 生命周期。
-- 补齐终端 Approval/Resume 的通用 resolver 接口，支持上层 CLI 自己实现交互；
+- 状态：In Progress；优先级：P0；依赖：H-01 的组合约定；验收：终端可 Approval、Resume、取消并恢复完整 Tool 生命周期。
+- ✅ Approval Resolver 与挂起态（ADR-0020）：`RunState.WAITING_APPROVAL`、`run.suspended`/
+  `run.resumed`、`ApprovalResolver` Protocol、默认挂起、Resume 执行挂起的 Tool Call；
+  `aicode` 提供终端 Resolver 与 `run -i` / `approve` / `resume`；
+- ✅ Execution 授权轴（ADR-0020）：`accept_edits` 不再放行 `process.exec` 工具，
+  放行事件的 `rule_id` 与依据一致；
+- 待办：一次性 Approval（`approval.consumed` 事件与投影），当前批准在本 Run 内对该工具持续有效；
 - 完善 Runtime 对 Memory、Skill、Subagent、Artifact 和 Observability 的可选注入边界；
 - 增加跨进程杀死、SQLite 重启、取消、孤儿 Tool Call 和长会话压缩的综合回归集；
 - 继续保持 Host 默认 `unsafe=false`、副作用链路和事件不变式。

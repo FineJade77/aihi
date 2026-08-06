@@ -13,18 +13,48 @@ from aiharness.core.awaits import await_cancelable
 from aiharness.core.errors import ContextWindowExceeded
 from aiharness.core.events import Event
 from aiharness.core.ids import new_id
-from aiharness.core.types import Message, ModelRequest, ModelResponse, ToolResultBlock
+from aiharness.core.types import (
+    Message,
+    ModelRequest,
+    ModelResponse,
+    ToolCallBlock,
+    ToolResultBlock,
+    ToolSpec,
+)
 from aiharness.hooks import HookBus
 from aiharness.models.base import MessageEnd, Provider, StreamChunk
 from aiharness.models.errors import ProviderContextLengthError
 from aiharness.observability import Telemetry
-from aiharness.policy import DefaultPolicyEngine, PermissionContext, PermissionMode, PolicyEngine
+from aiharness.policy import (
+    Approval,
+    ApprovalOutcome,
+    ApprovalRequest,
+    ApprovalResolver,
+    DecisionEffect,
+    DefaultPolicyEngine,
+    PermissionContext,
+    PermissionMode,
+    PolicyEngine,
+    SuspendingApprovalResolver,
+    resolver_id,
+)
 from aiharness.runtime.state import RunState, RunStateMachine
 from aiharness.sandbox.base import SandboxBackend
 from aiharness.sessions.session import Session
-from aiharness.tools.base import ToolContext
-from aiharness.tools.dispatcher import ToolDispatcher
+from aiharness.tools.base import ToolContext, ToolResult
+from aiharness.tools.dispatcher import DispatchResult, ToolDispatcher
 from aiharness.tools.registry import ToolRegistry
+
+_RUN_LIFECYCLE_EVENTS = frozenset(
+    {
+        "run.started",
+        "run.resumed",
+        "run.suspended",
+        "run.completed",
+        "run.failed",
+        "run.interrupted",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +63,21 @@ class RunResult:
     state: RunState
     response: ModelResponse | None = None
     error: str | None = None
+    pending_approval_id: str | None = None
+    pending_tool_call_ids: tuple[str, ...] = ()
+
+    @property
+    def suspended(self) -> bool:
+        return self.state == RunState.WAITING_APPROVAL
+
+
+class _RunSuspended(Exception):
+    """Internal signal: the run stopped cleanly while waiting for an approval."""
+
+    def __init__(self, approval_id: str, pending_tool_call_ids: tuple[str, ...]) -> None:
+        super().__init__(f"Run suspended waiting for approval {approval_id}")
+        self.approval_id = approval_id
+        self.pending_tool_call_ids = pending_tool_call_ids
 
 
 class RunCoordinator:
@@ -48,6 +93,9 @@ class RunCoordinator:
         artifact_store: ArtifactStore | None = None,
         summary_generator: SummaryGenerator | None = None,
         telemetry: Telemetry | None = None,
+        approval_resolver: ApprovalResolver | None = None,
+        approval_ttl_seconds: float | None = None,
+        capability_lease_ttl_seconds: float = 300.0,
         context_window: int | None = None,
         context_safety_margin: int = 256,
     ) -> None:
@@ -64,9 +112,18 @@ class RunCoordinator:
         self.context_compiler = context_compiler or ContextCompiler(
             summary_generator=summary_generator
         )
+        if approval_ttl_seconds is not None and approval_ttl_seconds <= 0:
+            raise ValueError("approval_ttl_seconds must be positive")
+        if capability_lease_ttl_seconds <= 0:
+            raise ValueError("capability_lease_ttl_seconds must be positive")
         self.artifact_store = artifact_store
         self.summary_generator = summary_generator
         self.telemetry = telemetry
+        # Deferring is the safe default: without an injected resolver the run
+        # suspends instead of silently granting or denying a human decision.
+        self.approval_resolver = approval_resolver or SuspendingApprovalResolver()
+        self.approval_ttl_seconds = approval_ttl_seconds
+        self.capability_lease_ttl_seconds = capability_lease_ttl_seconds
         self.context_window = context_window
         self.context_safety_margin = context_safety_margin
 
@@ -89,9 +146,13 @@ class RunCoordinator:
         machine = RunStateMachine()
         if user_message is not None:
             session.add_message(user_message, run_id=rid)
+        suspended_calls = self._suspended_tool_call_ids(session, rid)
+        already_started = any(
+            event.type == "run.started" and event.run_id == rid for event in session.events
+        )
         session.append(
             Event(
-                type="run.started",
+                type="run.resumed" if already_started else "run.started",
                 session_id=session.id,
                 run_id=rid,
                 data={
@@ -107,7 +168,7 @@ class RunCoordinator:
         )
         try:
             self._transition(session, rid, machine, RunState.RUNNING)
-            session.repair_orphan_tool_calls(run_id=rid)
+            session.repair_orphan_tool_calls(run_id=rid, exclude=suspended_calls)
             response = await self._loop(
                 session,
                 rid,
@@ -118,6 +179,7 @@ class RunCoordinator:
                 system_prompt=system_prompt,
                 max_output_tokens=max_output_tokens,
                 cancel_event=cancel_event,
+                pending_tool_call_ids=suspended_calls,
             )
             self._transition(session, rid, machine, RunState.COMPLETED)
             session.append(
@@ -129,6 +191,28 @@ class RunCoordinator:
                 )
             )
             return RunResult(rid, machine.state, response=response)
+        except _RunSuspended as suspended:
+            # A suspension is not a failure: no terminal event is written and the
+            # pending tool calls stay open so a later run can execute them.
+            session.append(
+                Event(
+                    type="run.suspended",
+                    session_id=session.id,
+                    run_id=rid,
+                    data={
+                        "state": machine.state.value,
+                        "reason": "approval_required",
+                        "approval_id": suspended.approval_id,
+                        "pending_tool_call_ids": list(suspended.pending_tool_call_ids),
+                    },
+                )
+            )
+            return RunResult(
+                rid,
+                machine.state,
+                pending_approval_id=suspended.approval_id,
+                pending_tool_call_ids=suspended.pending_tool_call_ids,
+            )
         except asyncio.CancelledError:
             self._repair_after_interrupt(session, rid)
             if machine.state not in {RunState.COMPLETED, RunState.FAILED, RunState.CANCELLED}:
@@ -159,8 +243,10 @@ class RunCoordinator:
             if self.telemetry is not None:
                 self.telemetry.flush()
 
-    async def resume(self, session: Session, **kwargs: Any) -> RunResult:
-        return await self.run(session, user_message=None, **kwargs)
+    async def resume(self, session: Session, *, run_id: str, **kwargs: Any) -> RunResult:
+        """Continue an interrupted or approval-suspended run from persisted events."""
+
+        return await self.run(session, user_message=None, run_id=run_id, **kwargs)
 
     async def _loop(
         self,
@@ -174,10 +260,27 @@ class RunCoordinator:
         system_prompt: str,
         max_output_tokens: int,
         cancel_event: asyncio.Event | None,
+        pending_tool_call_ids: tuple[str, ...] = (),
     ) -> ModelResponse:
         context_retry_used = False
+        pending_calls = self._pending_calls(session, pending_tool_call_ids)
         while True:
             await self._check_cancel(cancel_event)
+            if pending_calls:
+                # Resume path: finish the tool calls that were suspended before
+                # asking the model for anything new.
+                self._transition(session, run_id, machine, RunState.WAITING_TOOL)
+                await self._execute_tool_calls(
+                    session,
+                    run_id,
+                    pending_calls,
+                    machine=machine,
+                    permission_mode=permission_mode,
+                    require_capability_lease=require_capability_lease,
+                    cancel_event=cancel_event,
+                )
+                self._transition(session, run_id, machine, RunState.RUNNING)
+                pending_calls = ()
             session.refresh()
             capabilities = self.provider.capabilities(model)
             effective_output_tokens = min(max_output_tokens, capabilities.max_output)
@@ -247,50 +350,269 @@ class RunCoordinator:
             if not response.message.tool_calls:
                 return response
             self._transition(session, run_id, machine, RunState.WAITING_TOOL)
-            for call in response.message.tool_calls:
-                await self._check_cancel(cancel_event)
-                session.refresh()
-                authorization = session.authorization
-                permission = PermissionContext(
-                    cwd=session.cwd,
-                    mode=permission_mode,
-                    sandbox=self.sandbox.descriptor,
-                    leases=authorization.active_leases(run_id),
-                    approvals=authorization.active_approvals(run_id),
-                    require_capability_lease=require_capability_lease,
-                    run_id=run_id,
-                )
-                context = ToolContext(
-                    cwd=str(session.cwd),
-                    session_id=session.id,
-                    run_id=run_id,
-                    sandbox=self.sandbox,
-                )
-                result = await self.dispatcher.dispatch(
+            await self._execute_tool_calls(
+                session,
+                run_id,
+                response.message.tool_calls,
+                machine=machine,
+                permission_mode=permission_mode,
+                require_capability_lease=require_capability_lease,
+                cancel_event=cancel_event,
+            )
+            self._transition(session, run_id, machine, RunState.RUNNING)
+
+    async def _execute_tool_calls(
+        self,
+        session: Session,
+        run_id: str,
+        calls: tuple[ToolCallBlock, ...],
+        *,
+        machine: RunStateMachine,
+        permission_mode: PermissionMode,
+        require_capability_lease: bool,
+        cancel_event: asyncio.Event | None,
+    ) -> None:
+        for index, call in enumerate(calls):
+            await self._check_cancel(cancel_event)
+            session.refresh()
+            try:
+                result = await self._dispatch_with_approval(
+                    session,
+                    run_id,
                     call,
-                    context=context,
-                    permission=permission,
-                    event_sink=lambda name, data: self._append_tool_event(
-                        session, run_id, name, data
-                    ),
+                    machine=machine,
+                    permission_mode=permission_mode,
+                    require_capability_lease=require_capability_lease,
                     cancel_event=cancel_event,
                 )
-                metadata = {**result.result.metadata, "tool_name": call.name}
-                session.add_message(
-                    Message(
-                        role="user",
-                        content=(
-                            ToolResultBlock(
-                                tool_call_id=call.id,
-                                content=result.result.content,
-                                is_error=result.result.is_error,
-                                metadata=metadata,
-                            ),
+            except _RunSuspended as suspended:
+                # Every call from here on is still unexecuted and must survive
+                # the suspension without a synthesized result.
+                raise _RunSuspended(
+                    suspended.approval_id,
+                    tuple(item.id for item in calls[index:]),
+                ) from None
+            metadata = {**result.result.metadata, "tool_name": call.name}
+            session.add_message(
+                Message(
+                    role="user",
+                    content=(
+                        ToolResultBlock(
+                            tool_call_id=call.id,
+                            content=result.result.content,
+                            is_error=result.result.is_error,
+                            metadata=metadata,
                         ),
                     ),
-                    run_id=run_id,
+                ),
+                run_id=run_id,
+            )
+
+    async def _dispatch_with_approval(
+        self,
+        session: Session,
+        run_id: str,
+        call: ToolCallBlock,
+        *,
+        machine: RunStateMachine,
+        permission_mode: PermissionMode,
+        require_capability_lease: bool,
+        cancel_event: asyncio.Event | None,
+    ) -> DispatchResult:
+        result = await self._dispatch(
+            session,
+            run_id,
+            call,
+            permission_mode=permission_mode,
+            require_capability_lease=require_capability_lease,
+            cancel_event=cancel_event,
+        )
+        decision = result.decision
+        if result.started or decision is None or decision.effect != DecisionEffect.ASK:
+            return result
+
+        approval = self._pending_approval_for_call(session, run_id, call.id)
+        if approval is None:
+            approval = session.request_approval(
+                call.name,
+                requested_by="policy",
+                run_id=run_id,
+                ttl_seconds=self.approval_ttl_seconds,
+                metadata={
+                    "tool_call_id": call.id,
+                    "tool_name": call.name,
+                    "rule_id": decision.rule_id,
+                    "reason": decision.reason,
+                },
+            )
+        self._transition(session, run_id, machine, RunState.WAITING_APPROVAL)
+        spec = self._tool_spec(call.name)
+        request = ApprovalRequest(
+            approval_id=approval.approval_id,
+            session_id=session.id,
+            run_id=run_id,
+            tool_call_id=call.id,
+            tool_name=call.name,
+            tool_input=dict(call.input),
+            reason=decision.reason,
+            rule_id=decision.rule_id,
+            required_capabilities=spec.required_capabilities if spec is not None else (),
+            sandbox=self.sandbox.descriptor.to_dict(),
+        )
+        outcome = ApprovalOutcome(
+            await await_cancelable(self.approval_resolver.resolve(request), cancel_event)
+        )
+        if outcome == ApprovalOutcome.DEFERRED:
+            raise _RunSuspended(approval.approval_id, (call.id,))
+
+        granted = outcome == ApprovalOutcome.GRANTED
+        session.resolve_approval(
+            approval.approval_id,
+            approved=granted,
+            resolved_by=resolver_id(self.approval_resolver),
+            run_id=run_id,
+        )
+        self._transition(session, run_id, machine, RunState.WAITING_TOOL)
+        if not granted:
+            return self._denied(call, f"Approval denied for tool {call.name}.")
+        if decision.rule_id == "capability.lease_required" and spec is not None:
+            session.issue_capability_lease(
+                run_id=run_id,
+                capabilities=spec.required_capabilities,
+                ttl_seconds=self.capability_lease_ttl_seconds,
+                issued_by="approval",
+            )
+        session.refresh()
+        retried = await self._dispatch(
+            session,
+            run_id,
+            call,
+            permission_mode=permission_mode,
+            require_capability_lease=require_capability_lease,
+            cancel_event=cancel_event,
+        )
+        if not retried.started and retried.decision is not None:
+            if retried.decision.effect == DecisionEffect.ASK:
+                # A granted approval that still does not satisfy the policy must
+                # not loop; report it instead of asking the human again.
+                return self._denied(
+                    call,
+                    f"Approval was granted but policy still requires {retried.decision.rule_id}.",
+                    error_code="permission_approval_ineffective",
                 )
-            self._transition(session, run_id, machine, RunState.RUNNING)
+        return retried
+
+    async def _dispatch(
+        self,
+        session: Session,
+        run_id: str,
+        call: ToolCallBlock,
+        *,
+        permission_mode: PermissionMode,
+        require_capability_lease: bool,
+        cancel_event: asyncio.Event | None,
+    ) -> DispatchResult:
+        authorization = session.authorization
+        permission = PermissionContext(
+            cwd=session.cwd,
+            mode=permission_mode,
+            sandbox=self.sandbox.descriptor,
+            leases=authorization.active_leases(run_id),
+            approvals=authorization.active_approvals(run_id),
+            require_capability_lease=require_capability_lease,
+            run_id=run_id,
+        )
+        context = ToolContext(
+            cwd=str(session.cwd),
+            session_id=session.id,
+            run_id=run_id,
+            sandbox=self.sandbox,
+        )
+        return await self.dispatcher.dispatch(
+            call,
+            context=context,
+            permission=permission,
+            event_sink=lambda name, data: self._append_tool_event(session, run_id, name, data),
+            cancel_event=cancel_event,
+        )
+
+    def _tool_spec(self, name: str) -> ToolSpec | None:
+        tool = self.registry.get(name)
+        return None if tool is None else tool.spec
+
+    @staticmethod
+    def _denied(
+        call: ToolCallBlock,
+        content: str,
+        *,
+        error_code: str = "permission_denied",
+    ) -> DispatchResult:
+        return DispatchResult(
+            tool_call_id=call.id,
+            tool_name=call.name,
+            result=ToolResult(content=content, is_error=True, metadata={"error_code": error_code}),
+        )
+
+    @staticmethod
+    def _pending_approval_for_call(
+        session: Session, run_id: str, tool_call_id: str
+    ) -> Approval | None:
+        """Reuse an approval that is still pending for this exact tool call."""
+
+        pending = session.authorization.pending_approvals
+        for event in reversed(session.events):
+            if event.type != "approval.requested" or event.run_id != run_id:
+                continue
+            if event.data.get("tool_call_id") != tool_call_id:
+                continue
+            raw = event.data.get("approval")
+            if not isinstance(raw, dict):
+                continue
+            approval = pending.get(str(raw.get("approval_id")))
+            if approval is not None and approval.active():
+                return approval
+        return None
+
+    @staticmethod
+    def suspended_runs(session: Session) -> tuple[str, ...]:
+        """Run ids whose last lifecycle event suspended them for an approval."""
+
+        last: dict[str, str] = {}
+        order: list[str] = []
+        for event in session.events:
+            if event.run_id is None or event.type not in _RUN_LIFECYCLE_EVENTS:
+                continue
+            if event.run_id not in last:
+                order.append(event.run_id)
+            last[event.run_id] = event.type
+        return tuple(run_id for run_id in order if last[run_id] == "run.suspended")
+
+    @staticmethod
+    def _suspended_tool_call_ids(session: Session, run_id: str) -> tuple[str, ...]:
+        """Tool calls left open by a previous approval suspension of this run."""
+
+        for event in reversed(session.events):
+            if event.run_id != run_id or event.type not in _RUN_LIFECYCLE_EVENTS:
+                continue
+            if event.type != "run.suspended":
+                return ()
+            raw = event.data.get("pending_tool_call_ids", [])
+            if not isinstance(raw, list):
+                return ()
+            return tuple(str(item) for item in raw)
+        return ()
+
+    @staticmethod
+    def _pending_calls(
+        session: Session, tool_call_ids: tuple[str, ...]
+    ) -> tuple[ToolCallBlock, ...]:
+        if not tool_call_ids:
+            return ()
+        wanted = set(tool_call_ids)
+        calls: list[ToolCallBlock] = []
+        for message in session.messages:
+            calls.extend(call for call in message.tool_calls if call.id in wanted)
+        return tuple(calls)
 
     def _persist_compiled_context(
         self, session: Session, run_id: str, compiled: CompiledContext

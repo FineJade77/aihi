@@ -134,12 +134,14 @@ def resume(
         )
         before_seq = current.head_seq
         coordinator = _coordinator(current, unsafe_host=unsafe_host)
-        result = asyncio.run(
-            coordinator.resume(
-                current,
-                model=model or str(current.metadata.get("model", "fake-model")),
+        resolved_model = model or str(current.metadata.get("model", "fake-model"))
+        suspended = coordinator.suspended_runs(current)
+        if suspended:
+            result = asyncio.run(
+                coordinator.resume(current, run_id=suspended[0], model=resolved_model)
             )
-        )
+        else:
+            result = asyncio.run(coordinator.run(current, model=resolved_model))
         _print_events(current, after_seq=before_seq)
         if result.error is not None:
             raise typer.Exit(code=1)

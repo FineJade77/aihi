@@ -100,6 +100,10 @@ class DefaultPolicyEngine:
     _sensitive_components = frozenset(
         {".ssh", ".aws", ".config", ".azure", ".gnupg", ".docker", ".kube"}
     )
+    # Executing a process can rewrite the workspace, reach the network and spawn
+    # further processes, so it is never covered by an edit-oriented permission
+    # mode. It is a separate authorization axis from ``ToolSpec.mutates``.
+    _execution_capabilities = frozenset({"process.exec"})
 
     def evaluate(
         self,
@@ -148,10 +152,14 @@ class DefaultPolicyEngine:
                 "sandbox.full_isolation_required",
             )
 
-        if context.mode == PermissionMode.PLAN and spec.mutates:
+        requires_execution = bool(
+            self._execution_capabilities.intersection(spec.required_capabilities)
+        )
+
+        if context.mode == PermissionMode.PLAN and (spec.mutates or requires_execution):
             return Decision(
                 DecisionEffect.DENY,
-                "Mutating tools are disabled in plan mode.",
+                "Mutating and process-executing tools are disabled in plan mode.",
                 "mode.plan.read_only",
             )
         if context.mode == PermissionMode.BYPASS:
@@ -168,21 +176,35 @@ class DefaultPolicyEngine:
                 "The tool requires an active capability lease.",
                 "capability.lease_required",
             )
-        if spec.mutates and context.is_approved(spec.name):
+        if (spec.mutates or requires_execution) and context.is_approved(spec.name):
             return Decision(
                 DecisionEffect.ALLOW,
-                "An active approval grant allows this mutating tool.",
+                "An active approval grant allows this privileged tool.",
                 "approval.granted",
-            )
-        if spec.mutates and context.mode != PermissionMode.ACCEPT_EDITS:
-            return Decision(
-                DecisionEffect.ASK,
-                "This tool can mutate external state and requires approval.",
-                "default.mutation_requires_approval",
             )
         unsafe_note = (
             " The selected Host backend is explicitly unsafe." if context.sandbox.unsafe else ""
         )
+        if requires_execution:
+            return Decision(
+                DecisionEffect.ASK,
+                "Running a process always requires explicit approval; accept-edits only "
+                "covers workspace edits." + unsafe_note,
+                "default.execution_requires_approval",
+            )
+        if spec.mutates:
+            if context.mode != PermissionMode.ACCEPT_EDITS:
+                return Decision(
+                    DecisionEffect.ASK,
+                    "This tool can mutate external state and requires approval.",
+                    "default.mutation_requires_approval",
+                )
+            return Decision(
+                DecisionEffect.ALLOW,
+                "Accept-edits mode allows workspace mutation without process execution."
+                + unsafe_note,
+                "mode.accept_edits",
+            )
         return Decision(
             DecisionEffect.ALLOW,
             "Read-only tool allowed by the default policy." + unsafe_note,

@@ -8,7 +8,7 @@ from aicode.config import AICodeConfig
 from aiharness.models.base import Provider
 from aiharness.models.providers import AnthropicProvider, OpenAICompatibleProvider, OpenAIProvider
 from aiharness.models.providers.fake import FakeProvider
-from aiharness.policy import DefaultPolicyEngine
+from aiharness.policy import ApprovalResolver, DefaultPolicyEngine
 from aiharness.runtime import RunCoordinator
 from aiharness.sandbox.base import SandboxBackend
 from aiharness.sandbox.host import HostBackend
@@ -58,8 +58,14 @@ def build_tool_registry() -> ToolRegistry:
     )
 
 
-def build_runtime(config: AICodeConfig) -> AICodeRuntime:
-    """Assemble aicode from existing Harness implementations."""
+def build_runtime(
+    config: AICodeConfig, *, approval_resolver: ApprovalResolver | None = None
+) -> AICodeRuntime:
+    """Assemble aicode from existing Harness implementations.
+
+    Without a resolver the Harness default applies: a run that needs approval
+    suspends instead of guessing the answer.
+    """
 
     provider = build_provider(config)
     sandbox = HostBackend(config.workspace, unsafe=config.unsafe_host)
@@ -69,6 +75,7 @@ def build_runtime(config: AICodeConfig) -> AICodeRuntime:
         registry=registry,
         sandbox=sandbox,
         policy=DefaultPolicyEngine(),
+        approval_resolver=approval_resolver,
     )
     return AICodeRuntime(
         coordinator=coordinator,

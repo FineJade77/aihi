@@ -108,13 +108,14 @@ async def test_default_policy_asks_before_mutating_tool_execution(tmp_path: Path
         session, model="fake-model", user_message=Message.text("user", "change")
     )
 
-    assert result.state == RunState.COMPLETED
-    assert (
-        session.messages[-2].tool_results[0].metadata["error_code"]
-        == "permission_approval_required"
-    )
+    # Without an approval resolver the run suspends instead of executing the
+    # tool or fabricating a permission error for the model.
+    assert result.state == RunState.WAITING_APPROVAL
+    assert result.suspended is True
     approval_event = next(event for event in session.events if event.type == "approval.requested")
     approval_id = str(approval_event.data["approval"]["approval_id"])
+    assert result.pending_approval_id == approval_id
+    assert session.authorization.pending_approval(approval_id) is not None
     assert session.authorization.approval(approval_id) is not None
     assert approval_event.run_id is not None
     session.resolve_approval(
@@ -125,3 +126,8 @@ async def test_default_policy_asks_before_mutating_tool_execution(tmp_path: Path
     )
     assert session.authorization.active_approvals(approval_event.run_id)
     assert not any(event.type == "tool.started" for event in session.events)
+    # The suspended tool call stays open so a resumed run can still execute it.
+    assert not session.messages[-1].tool_results
+    assert result.pending_tool_call_ids == tuple(
+        call.id for call in session.messages[-1].tool_calls
+    )

@@ -222,6 +222,21 @@ class _ReplayState:
                 raise ReplayInvariantViolation(f"Duplicate run.started: {event.run_id}")
             self.runs[event.run_id] = RunStateMachine()
             return
+        if event.type == "run.resumed":
+            if event.run_id not in self.runs:
+                raise ReplayInvariantViolation(f"run.resumed before run.started: {event.run_id}")
+            # A resumed run restarts its state machine from the persisted events.
+            self.runs[event.run_id] = RunStateMachine()
+            return
+        if event.type == "run.suspended":
+            machine = self.runs.get(event.run_id)
+            if machine is None:
+                raise ReplayInvariantViolation("Run suspended before run.started")
+            if machine.state != RunState.WAITING_APPROVAL:
+                raise ReplayInvariantViolation(
+                    "Run suspended without entering the waiting_approval state"
+                )
+            return
         if event.type == "run.state_changed":
             machine = self.runs.get(event.run_id)
             if machine is None:
