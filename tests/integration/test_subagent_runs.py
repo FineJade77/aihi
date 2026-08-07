@@ -323,3 +323,27 @@ async def test_a_child_cannot_be_more_permissive_than_its_parent(tmp_path: Path)
     assert seen == []
     denied = session.messages[-2].tool_results[0]
     assert denied.metadata["error_code"] == "permission_denied"
+
+
+@pytest.mark.asyncio
+async def test_a_child_session_remembers_its_parent_after_a_reload(tmp_path: Path) -> None:
+    """The link is persisted metadata, not an in-memory decoration."""
+
+    parent, session, store, _ = build(
+        tmp_path,
+        parent_steps=[
+            FakeStep.call_tool("task", {"objective": "read the code"}),
+            FakeStep(text="done"),
+        ],
+        child_steps=[FakeStep(text=CHILD_ANSWER)],
+    )
+    result = await parent.run(
+        session, model="fake-model", user_message=Message.text("user", "delegate")
+    )
+    child_id = str(session.messages[-2].tool_results[0].metadata["session_id"])
+
+    reloaded = Session.load(store, child_id)
+
+    assert reloaded.metadata["parent_session_id"] == session.id
+    assert reloaded.metadata["parent_run_id"] == result.run_id
+    assert reloaded.metadata["task_id"]

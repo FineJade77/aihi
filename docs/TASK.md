@@ -286,10 +286,11 @@ PostgreSQL 生产化、Worker Control Plane 与部署安全、生产隔离 profi
 
 ### H-10：Session 分支
 
-- 状态：Planned；优先级：P1；验收：可从任意序号派生子会话，父会话不可变，两侧都能独立回放。
-- `session.forked` 在事件目录里但**从未实现**，ARCHITECTURE §6 却在描述它；
-- 事件溯源已具备条件：父 Session + 起始序号即可表达分支；
-- 对 Coding Agent 的价值是「从这一步换个方案重试」。
+- 状态：Done；验收：可从任意序号派生子会话，父会话不可变，两侧都能独立回放。
+- ✅ `Session.fork(at_seq=...)`：复制前缀成为普通会话，父不被写入，两侧独立回放；
+- ✅ `session.forked` 从 legacy 转为 durable，冻结语料新增分支会话；
+- ✅ `Session.create(metadata=...)`：分支与子代理的父链接**持久化**，不再只存在于内存
+  —— 原先 `subagent_session_factory` 的链接重载后即丢失。
 
 ### H-11：Hook 的应用层入口
 

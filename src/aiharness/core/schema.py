@@ -34,6 +34,7 @@ DURABLE_EVENT_TYPES: frozenset[str] = frozenset(
     {
         "session.created",
         "session.repaired",
+        "session.forked",
         "run.started",
         "run.resumed",
         "run.suspended",
@@ -74,7 +75,7 @@ EPHEMERAL_EVENT_TYPES: frozenset[str] = frozenset({"model.chunk"})
 
 #: Types the projection still understands but nothing writes any more. They stay
 #: readable so old sessions keep replaying; they are not part of the corpus.
-LEGACY_EVENT_TYPES: frozenset[str] = frozenset({"message.added", "session.forked"})
+LEGACY_EVENT_TYPES: frozenset[str] = frozenset({"message.added"})
 
 KNOWN_EVENT_TYPES: frozenset[str] = (
     DURABLE_EVENT_TYPES | EPHEMERAL_EVENT_TYPES | LEGACY_EVENT_TYPES

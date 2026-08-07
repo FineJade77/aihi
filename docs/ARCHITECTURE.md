@@ -269,7 +269,12 @@ subagent.started / subagent.completed
 - 大型输出、Diff、附件和日志：Artifact Store；
 - Snapshot：按事件数量或时间生成，只用于加速 Load，不取代事件。
 
-Branch 通过父 Session + 起始序号表达；父会话不可变，子会话只追加自己的事件。
+Branch 通过 `Session.fork(at_seq=...)` 表达：父会话不被写入，子会话复制该前缀成为一个**普通
+会话** —— 序号从 1 连续、单写者、可独立回放。复制体是新记录（事件 id 全局唯一），但保留原
+`run_id` 与 `created_at`，因为「何时发生」是事实。分支关系同时写入子会话元数据
+（`parent_session_id`/`forked_at_seq`）和 `session.forked` 事件。
+在未完成的 Tool Call 中间 fork 是允许的，子会话会带一个孤儿调用，由下一次 Run 按既有的
+丢失执行状态流程修复。
 
 ## 7. 上下文与自动压缩
 

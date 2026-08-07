@@ -1050,6 +1050,67 @@
         }
       ],
       "session_id": "ses-golden-b"
+    },
+    {
+      "events": [
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "cwd": "/tmp/golden",
+            "forked_at_seq": 2,
+            "model": "fake-model",
+            "parent_session_id": "ses-golden-a",
+            "provider": "fake"
+          },
+          "ephemeral": false,
+          "id": "evt-c-01",
+          "run_id": null,
+          "schema_version": 1,
+          "seq": 1,
+          "session_id": "ses-golden-c",
+          "type": "session.created"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "copied_event_count": 1,
+            "forked_at_seq": 2,
+            "parent_session_id": "ses-golden-a"
+          },
+          "ephemeral": false,
+          "id": "evt-c-02",
+          "run_id": null,
+          "schema_version": 1,
+          "seq": 2,
+          "session_id": "ses-golden-c",
+          "type": "session.forked"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "message": {
+              "content": [
+                {
+                  "kind": "text",
+                  "stable_prefix": false,
+                  "text": "write a.txt"
+                }
+              ],
+              "id": "msg-cu",
+              "metadata": {},
+              "role": "user"
+            }
+          },
+          "ephemeral": false,
+          "id": "evt-c-03",
+          "run_id": "run-a",
+          "schema_version": 1,
+          "seq": 3,
+          "session_id": "ses-golden-c",
+          "type": "user.message"
+        }
+      ],
+      "session_id": "ses-golden-c"
     }
   ]
 }

@@ -87,15 +87,25 @@ class Session:
         provider: str,
         model: str,
         session_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
         event_observer: Callable[[Event], None] | None = None,
     ) -> Session:
         resolved_cwd = str(Path(cwd).resolve())
         sid = session_id or new_id("ses")
-        metadata: dict[str, Any] = {
+        # Reserved keys are the session's identity; extras (such as a fork or
+        # subagent parent link) are persisted with it rather than living only in
+        # memory, so a reloaded session still knows where it came from.
+        extra = {
+            key: value
+            for key, value in (metadata or {}).items()
+            if key not in {"cwd", "provider", "model", "harness_version"}
+        }
+        metadata = {
             "cwd": resolved_cwd,
             "provider": provider,
             "model": model,
             "harness_version": "0.1.0",
+            **extra,
         }
         store.create_session(sid, metadata)
         event = Event(type="session.created", session_id=sid, data=metadata)
@@ -131,6 +141,74 @@ class Session:
             _messages=project_messages(events),
             _event_observers=[event_observer] if event_observer is not None else [],
         )
+
+    def fork(
+        self,
+        *,
+        at_seq: int,
+        session_id: str | None = None,
+        event_observer: Callable[[Event], None] | None = None,
+    ) -> Session:
+        """Branch this session at `at_seq` into a new, independent session.
+
+        The parent is never written to. The child copies the prefix so it stays
+        a normal session: contiguous sequence numbers, its own single writer,
+        and replayable on its own. Copies are new records — the store keeps
+        event ids globally unique — but they keep the original `run_id` and
+        `created_at`, because when something happened is a fact.
+
+        Forking inside an unfinished tool call is allowed and leaves the child
+        with an orphan call, which the next run repairs like any other lost
+        execution state.
+        """
+
+        if not isinstance(at_seq, bool) and isinstance(at_seq, int) and at_seq >= 1:
+            pass
+        else:
+            raise EventInvariantViolation("Fork point must be a positive sequence number")
+        if at_seq > self.head_seq:
+            raise EventInvariantViolation(
+                f"Cannot fork at {at_seq}: session head is {self.head_seq}"
+            )
+        prefix = [
+            event
+            for event in self._events
+            if event.seq is not None and event.seq <= at_seq and event.type != "session.created"
+        ]
+        child = Session.create(
+            self.store,
+            cwd=self.cwd,
+            provider=str(self.metadata.get("provider", "")),
+            model=str(self.metadata.get("model", "")),
+            session_id=session_id,
+            metadata={"parent_session_id": self.id, "forked_at_seq": at_seq},
+            event_observer=event_observer,
+        )
+        child.append_many(
+            [
+                Event(
+                    type="session.forked",
+                    session_id=child.id,
+                    data={
+                        "parent_session_id": self.id,
+                        "forked_at_seq": at_seq,
+                        "copied_event_count": len(prefix),
+                    },
+                ),
+                *(
+                    Event(
+                        type=event.type,
+                        session_id=child.id,
+                        run_id=event.run_id,
+                        data=copy.deepcopy(event.data),
+                        created_at=event.created_at,
+                        schema_version=event.schema_version,
+                    )
+                    for event in prefix
+                ),
+            ]
+        )
+        return child
 
     def add_event_observer(self, observer: Callable[[Event], None]) -> None:
         if not callable(observer):

@@ -90,21 +90,18 @@ def subagent_session_factory(store: EventStore, *, provider: str, model: str) ->
     """Create each child run its own session, linked back to the parent."""
 
     def factory(spec: TaskSpec, context: ToolContext) -> Session:
-        session = Session.create(
+        return Session.create(
             store,
             cwd=spec.workspace.root,
             provider=provider,
             model=model,
-        )
-        session.metadata.update(
-            {
+            metadata={
                 "parent_session_id": context.session_id,
                 "parent_run_id": context.run_id,
                 "task_id": spec.task_id,
                 "depth": spec.depth,
-            }
+            },
         )
-        return session
 
     return factory
 
