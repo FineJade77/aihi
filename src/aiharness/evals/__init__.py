@@ -28,9 +28,16 @@ from aiharness.evals.provider_golden import (
 )
 from aiharness.evals.replay import ReplayEngine, ReplayResult, TraceBundle
 from aiharness.evals.runner import EvalCaseResult, EvalRunner
+from aiharness.evals.trace_graph import (
+    Delegation,
+    GraphReplayResult,
+    TraceGraph,
+    replay_graph,
+)
 
 __all__ = [
     "CompositeGrader",
+    "Delegation",
     "EvalCase",
     "EvalCaseResult",
     "EvalDataset",
@@ -40,22 +47,25 @@ __all__ = [
     "EvalRunner",
     "EvalValidationError",
     "EventCountGrader",
-    "Grade",
-    "Grader",
+    "GateVerdict",
     "GoldenTask",
     "GoldenTaskGrader",
-    "GateVerdict",
-    "ReplayEngine",
-    "ReplayInvariantViolation",
-    "ReplayResult",
-    "ProviderGoldenResult",
+    "Grade",
+    "Grader",
+    "GraphReplayResult",
     "ProviderGoldenCase",
+    "ProviderGoldenResult",
     "ProviderGoldenRunner",
     "ProviderGoldenTask",
     "ProviderTranscript",
-    "normalize_chunk",
-    "request_fingerprint",
-    "run_provider_golden",
+    "ReplayEngine",
+    "ReplayInvariantViolation",
+    "ReplayResult",
     "RunStateGrader",
     "TraceBundle",
+    "TraceGraph",
+    "normalize_chunk",
+    "replay_graph",
+    "request_fingerprint",
+    "run_provider_golden",
 ]

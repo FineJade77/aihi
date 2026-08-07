@@ -140,14 +140,18 @@ class ChildRunSubagentRunner:
         cancel_event = asyncio.Event()
         budget_state = _ToolCallBudget(spec.budget.max_tool_calls, cancel_event)
         session.add_event_observer(budget_state.observe)
+        # These two records are *about* the child run, not steps of it: the
+        # completion is written after the run's terminal event, and replay
+        # rightly refuses events that follow a terminal one. So they carry the
+        # child run id in the payload and stay session-scoped.
         session.append(
             Event(
                 type="subagent.started",
                 session_id=session.id,
-                run_id=spec.child_run_id,
                 data={
                     "task_id": spec.task_id,
                     "objective": spec.objective,
+                    "child_run_id": spec.child_run_id,
                     "parent_session_id": context.session_id,
                     "parent_run_id": context.run_id,
                     "budget": spec.budget.to_dict(),
@@ -218,9 +222,9 @@ class ChildRunSubagentRunner:
             Event(
                 type="subagent.completed",
                 session_id=session.id,
-                run_id=spec.child_run_id,
                 data={
                     "task_id": spec.task_id,
+                    "child_run_id": spec.child_run_id,
                     "parent_session_id": context.session_id,
                     "parent_run_id": context.run_id,
                     "result": result.to_dict(),

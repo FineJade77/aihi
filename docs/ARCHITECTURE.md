@@ -537,6 +537,12 @@ Redactor 对 Secret-looking key、Bearer/API token、非有限数字、超长内
 `TraceBundle` 只接受显式 `redacted=true` 的**单 Session** 事件，构造时递归冻结、按 canonical
 Redactor 规范化，并对完整规范化 JSON 计算 SHA-256；Hash、Schema、序列号或 Session 不一致即拒绝。
 
+委派到子代理的运行跨越两个会话，因此 `TraceGraph` 把多个单会话 Bundle 组合起来并**校验**它们
+之间的链接（父会话归属、父 Run 存在、任务不重复、委派必须有结果），`replay_graph()` 输出统一的
+`Delegation` 结构；`TraceBundle` 本身仍是单会话的（ADR-0027）。`subagent.started` /
+`subagent.completed` 是会话级记录，`run_id=None`、子 Run id 放在 payload，因为它们描述某个
+子 Run 而不属于它。
+
 `ReplayEngine` 只投影 Run/Tool/Message 状态，**绝不**调用 Provider、Tool、Plugin 或 Sandbox；
 拒绝跨 Run 的工具生命周期、重复终态和 Ephemeral 事件，但允许 Policy 拒绝后仍持久化对应 Tool
 Result。`Grader` 只消费 `ReplayResult`，分数必须是有限的 `[0,1]` JSON 数值。

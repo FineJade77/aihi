@@ -312,6 +312,12 @@ fencing sequence 和 current-lease partial unique index；过期 takeover 保留
 - 状态：Done（ADR-0026）；`register_mcp_tools`/`register_plugin_tools`、`StdioMcpTransport`、
   `aicode` 的 `AICODE_MCP` 声明式接入；`Tool.spec` 改为只读属性以容纳远程工具的计算属性。
 
+### H-08：父子会话联合回放
+
+- 状态：Done（ADR-0027）；`TraceGraph`/`replay_graph` 组合单会话 Bundle 并校验委派链接；
+  修正 subagent 记录为会话级，使子会话可独立回放。
+- 待办：多层嵌套委派的递归结构；从真实运行生成兼容性语料（当前 fixture 与写入端靠人工同步）。
+
 ### 待开发清单维护规则
 
 1. `aicode`、`personal` 或其他 Agent 开发时，只有当缺口是 Provider-neutral、可复用且不携带具体
