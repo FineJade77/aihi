@@ -2,7 +2,11 @@
 
 状态：Accepted / 实施中
 版本：v0.1
-日期：2026-08-06
+日期：2026-08-07
+
+本文件只描述**稳定契约**：不变式、边界和协议。里程碑顺序与完成进度属于
+[TASK.md](TASK.md)，单次决策的取舍属于 `docs/adr/`。任何以「当前 Mx 提供…」开头的段落
+都说明它写错了地方。
 
 ## 1. 定位与目标
 
@@ -387,7 +391,7 @@ Hook 注册必须声明来源、稳定 ID、优先级、超时、失败策略和
 
 ### 9.5 MCP
 
-MCP Client/Server 使用 JSON-RPC 2.0 边界，当前实现覆盖 `initialize`、`tools/list`、
+MCP Client/Server 使用 JSON-RPC 2.0 边界，方法集为 `initialize`、`tools/list`、
 `tools/call` 和初始化通知；传输通过 `McpTransport` Protocol 注入，内置内存传输仅用于契约测试，
 不把网络或第三方 MCP SDK 引入 Core。Server Tool Schema 必须是对象 JSON Schema，并将
 `readOnlyHint`、`destructiveHint`、`idempotentHint`、`openWorldHint` 映射到 canonical `ToolSpec`。
@@ -468,20 +472,21 @@ Schema Validate
 Memory 分为 Working、Episodic、Semantic、Procedural 四层。长期记忆必须带作用域、来源、
 置信度、时间和可删除标记；写入前做 Secret/PII 清洗、去重和人工可追溯。候选抽取与持久写入
 分离：只有显式 `memory.written` 才进入 Durable Store，`memory.candidate` 仅记录待确认提案。
-当前基线提供确定性显式记忆提取器、作用域访问控制、词法检索和 tombstone 删除；Memory
+提取器是确定性的显式抽取，检索为词法检索，删除为 tombstone。Memory
 写入必须带匹配的 `MemoryAccess`，并由 Store 端再次清洗和深拷贝；原始内容不得绕过清洗器
 进入长期记忆。Memory 事件由调用方追加到 Session Event Store。
 `MemoryService` 默认要求可用的审计事件 Sink；只有明确设置 `audit_required=false` 的离线工具
 才允许 best-effort 写入。
 
 Subagent 是父 Run 下的独立 Task/Run 节点，权限只能是父节点的子集，拥有独立预算、上下文、
-工作区或 Git Worktree。当前基线用可快照的 `TaskGraph` 管理 `PENDING → RUNNING → WAITING →
+工作区或 Git Worktree。可快照的 `TaskGraph` 管理 `PENDING → RUNNING → WAITING →
 COMPLETED/FAILED/CANCELLED/INTERRUPTED` 状态，并通过结构化 `TaskSpec`、有界 FIFO `Mailbox`
 和 `TaskResult` 协作。子任务的 capability、Token/成本/超时/Tool Call 预算、只读工作区和最大
 深度在创建时校验，不能由子代理自行扩大；Mailbox 的发送者和接收者必须属于同一图，消息先进入
 in-flight 状态，消费方显式 ack 后才删除。取消会递归收尾活动后代，Interrupted 只能显式 Resume，
-图和 Mailbox 快照可用于进程重启恢复。M6a 尚不启动真实多 Worker 或 Docker；后续 Worker 必须
-从这些持久化边界恢复，不能把本地线程状态当作事实源。
+图和 Mailbox 快照可用于进程重启恢复。子代理在本进程内以子 Run 执行（见下）；分布式 Worker
+与 Docker 隔离是可选部署适配，任何此类 Worker 都必须从这些持久化边界恢复，不能把本地线程
+状态当作事实源。
 
 子代理的执行入口是工具 `task`（`required_capabilities=("agent.spawn",)`、`mutates=True`），
 因此 Plan 模式直接拒绝派生，默认模式需要 Approval。子 Run 在**独立 Session** 中执行以保持单写者
@@ -491,61 +496,66 @@ in-flight 状态，消费方显式 ack 后才删除。取消会递归收尾活�
 
 ## 12. Eval 与 Observability
 
+本节描述稳定契约。各里程碑的交付顺序与当前进度见 [TASK.md](TASK.md)，具体决策见对应 ADR。
+
+### 12.1 Trace 与 Observation
+
 每个 Session、Run、Model Attempt、Tool Call、Policy Decision、Hook、Sandbox 和 Compaction
-都带 Trace Context。使用 OpenTelemetry 输出 Trace、Metrics 和结构化日志，敏感字段先脱敏。
+都带 Trace Context。canonical 类型是 `TraceContext`、`Observation`、`MetricPoint`、`CostRecord`
+和 `TelemetrySink` Protocol，均不绑定厂商。
 
-当前 M7a 提供不绑定厂商的 `TraceContext`、`Observation`、`MetricPoint`、`CostRecord` 和
-`TelemetrySink` Protocol。`Telemetry` 通过 Session 的已持久化 Event observer 旁路记录事件，
-不会改变事件顺序、Policy 或 Sandbox 决策；observer 收到的是深拷贝，观测异常 fail-open。内存
-Sink 有记录上限，Redactor 对 Secret-looking key、Bearer/API token、非有限数字、超长内容和未知
-对象 fail-closed。成本按 Usage 与每千 Token 价格确定性计算，拒绝负数、非有限或溢出结果。后续
-OTel adapter 必须保持这些 canonical 字段和脱敏边界；自定义 Sink 应为有界、非阻塞实现。
+- `Telemetry` 通过 Session 的已持久化 Event observer **旁路**记录，不改变事件顺序、Policy 或
+  Sandbox 决策；observer 收到深拷贝，观测异常 fail-open；
+- `ephemeral=True` 的事件不进入观测记录，否则有界 sink 会被 token delta 挤爆（ADR-0021）；
+- `RunCoordinator` 在 Run 的每个出口（完成、失败、打断、放弃、挂起）flush 一次；flush 失败只是
+  观测侧失败，不改变已持久化的 Run 结果。共享 sink 不在单个 Run 中关闭，进程退出时由宿主调用
+  `Telemetry.close()`；
+- 自定义 Sink 必须是有界、非阻塞实现。
 
-M7b 提供 `TraceBundle`、`ReplayEngine`、`EvalDataset`、`EvalRunner` 和确定性 `Grader`。TraceBundle
-只接受显式 `redacted=true` 的单 Session 事件，构造时递归冻结、再次按 canonical Redactor 规范化，
-并对完整规范化 JSON 计算 SHA-256；加载或回放前发现 Hash、Schema、序列号或 Session 不一致即拒绝。
-ReplayEngine 只投影 Run/Tool/Message 状态，不调用 Provider、Tool、Plugin 或 Sandbox；拒绝跨 Run 工具
-生命周期、重复终态和 Ephemeral 事件，但允许 Policy 拒绝后仍持久化对应 Tool Result。Grader 只消费
-ReplayResult，分数必须是有限的 `[0,1]` JSON 数值。
+### 12.2 脱敏与成本
 
-M7c 提供 `JsonlTelemetrySink` 和可选 `OpenTelemetrySink`。Exporter 在边界再次脱敏，Metric/Cost
-保留 canonical `unit`，数值溢出或缺少 OTel API 时 fail closed；核心仍不强制安装 OTel。`GoldenTask`
-与 `GoldenTaskGrader` 只检查 ReplayResult 的事件类型、Run 状态和未完成 Tool，不启动 Provider、Tool
-或 Sandbox。
+Redactor 对 Secret-looking key、Bearer/API token、非有限数字、超长内容和未知对象 **fail-closed**。
+成本按 Usage 与每千 Token 价格确定性计算，拒绝负数、非有限和溢出结果。任何 exporter 都必须在
+边界再次脱敏，并保留 canonical `unit`。
 
-M7d-a 提供离线 `ProviderGoldenTask`、`ProviderTranscript` 和 `ProviderGoldenRunner`。Runner 只消费
-Provider-neutral stream chunks；消息 ID、工具调用 ID 和请求内容不进入可审计 fixture，request
-fingerprint 由脱敏 canonical request 计算。Runner 将 Provider 异常降为稳定 error code，不重试或重放
-任何副作用。`EvalGate` 对 Provider 或 Replay 结果生成严格 JSON `GateVerdict`，空数据、阈值不足和
-失败 case 可在 CI 中阻断。真实远程 Export pipeline、认证、批量重试和外部 Provider 仍须由后续适配层
-提供。
+### 12.3 Exporter 与远程管线
 
-M7d-b 提供 `OtelBatchPipeline` 和 `OtlpHttpTransport`。Pipeline 将 `Observation` 再次脱敏后放入有界
-队列，背压策略必须显式选择 `raise`、`drop_newest` 或 `drop_oldest`；批量传输只对标记为 retryable
-的错误做有限指数退避，重试耗尽以稳定错误码结束并记录丢弃数，不能阻塞 Event Store。`OTelResource`
-统一 service/environment 属性，`W3CTracePropagator` 严格校验 W3C `traceparent`；Bearer token 只
-存在于发送时的 Authorization header，不进入 Observation、resource 或错误详情。OTLP/HTTP JSON 适配
-负责 resource、span、metric 和 log envelope，HTTP client 可注入以便离线契约测试；Runtime 不自动
-打开远程网络出口。
+核心不强制安装 OpenTelemetry；缺少 OTel API 或数值溢出时 fail closed。
 
-M7e-a 将 Pipeline 接入 Runtime 生命周期：`RunCoordinator` 在 `run.completed`、`run.failed` 或
-`run.interrupted` 事件追加后统一调用 `Telemetry.flush()`；flush 失败只作为观测侧失败，不改变已
-持久化的 Run 结果。共享 sink 不会在单个 Run 中关闭，进程或 Worker 退出时由宿主显式调用
-`Telemetry.close()`。`WorkerTraceManager` 使用父 Run TraceContext 为每个 Worker attempt 创建新的
-child span，外部 Worker 恢复时严格解析传入的 W3C `traceparent` 并重新生成 span ID；该上下文只用于
-可观测性关联，不改变 TaskGraph 的权限、预算、Lease、Policy 或 Sandbox。
+`OtelBatchPipeline` 把再次脱敏后的 `Observation` 放入有界队列，背压策略必须显式选择
+`raise`、`drop_newest` 或 `drop_oldest`；批量传输只对标记 retryable 的错误做有限指数退避，
+重试耗尽以稳定错误码结束并记录丢弃数，**不能阻塞 Event Store**。`W3CTracePropagator` 严格校验
+`traceparent`；Bearer token 只存在于发送时的 Authorization header，不进入 Observation、resource
+或错误详情。Runtime 不自动打开远程网络出口，HTTP client 可注入以便离线契约测试。
 
-M7e-b 将 `WorkerLeaseTraceBridge` 放在 RunLeaseStore 与 IPC 适配之间。`WorkerLeaseEnvelope` 只携带
-严格 schema 的 lease identity、expiry、fencing token、attempt 和 W3C `traceparent`；bridge 在取得
-Lease 前解析外部 parent carrier，取得/续租/释放仍调用原有 fenced store。Lease takeover 产生新的
-Worker child span，旧 fencing token 仍然无法续租或释放；跨进程恢复没有 parent carrier 时 fail closed。
-Envelope 是可序列化关联数据，不是授权凭据；IPC/HTTP 通道、认证和网络策略由宿主显式注入。
+### 12.4 Replay 与 Eval
 
-M7e-c 在显式注入的 Worker IPC 边界增加 `WorkerIpcAuthenticator` 和
-`WorkerLeaseIpcAdapter`：消息使用 canonical JSON + HMAC-SHA256 detached signature，并以 key-id
-支持轮换；API 路由默认不存在，mTLS/TLS 仍由宿主 transport 终止和校验。`PostgresRunLeaseStore`
-复用同一 `RunLeaseStore` Protocol，事务内使用 `FOR UPDATE`、fencing sequence 和 current-lease
-唯一索引，保留 takeover 前的旧 lease 行以便 stale fencing 可审计和拒绝。
+`TraceBundle` 只接受显式 `redacted=true` 的**单 Session** 事件，构造时递归冻结、按 canonical
+Redactor 规范化，并对完整规范化 JSON 计算 SHA-256；Hash、Schema、序列号或 Session 不一致即拒绝。
+
+`ReplayEngine` 只投影 Run/Tool/Message 状态，**绝不**调用 Provider、Tool、Plugin 或 Sandbox；
+拒绝跨 Run 的工具生命周期、重复终态和 Ephemeral 事件，但允许 Policy 拒绝后仍持久化对应 Tool
+Result。`Grader` 只消费 `ReplayResult`，分数必须是有限的 `[0,1]` JSON 数值。
+
+离线 Provider 评估同理：`ProviderGoldenRunner` 只消费 Provider-neutral stream chunks，消息 ID
+和工具调用 ID 不进入可审计 fixture，request fingerprint 由脱敏 canonical request 计算；Provider
+异常降为稳定 error code，不重试也不重放任何副作用。`EvalGate` 输出严格 JSON `GateVerdict`，
+空数据、阈值不足和失败 case 都可在 CI 中阻断。
+
+### 12.5 Worker 关联
+
+Worker 相关的 Trace 结构只用于**可观测性关联**，不承载授权：
+
+- `WorkerTraceManager` 用父 Run 的 TraceContext 为每次 Worker attempt 创建 child span；跨进程
+  恢复时严格解析传入的 `traceparent` 并重新生成 span ID，没有 parent carrier 时 fail closed；
+- `WorkerLeaseEnvelope` 只携带 lease identity、expiry、fencing token、attempt 和 `traceparent`；
+  它是可序列化关联数据，**不是授权凭据**。取得/续租/释放仍走 fenced store，takeover 后旧 fencing
+  token 依然无法续租或释放；
+- Worker IPC 使用 canonical JSON + HMAC-SHA256 detached signature 并支持 key-id 轮换；
+  mTLS/TLS 由宿主 transport 终止和校验，API 路由默认不存在；
+- 这些结构都不改变 TaskGraph 的权限、预算、Lease、Policy 或 Sandbox。
+
+### 12.6 指标
 
 评估支持 Fake/Replay、Provider Contract、Golden Tasks、安全测试和 Coding Tasks。核心指标：
 

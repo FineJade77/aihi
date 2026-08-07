@@ -127,7 +127,8 @@ Runtime 是显式状态机，不把状态藏在不可恢复的局部变量中。
 
 开发 `aicode` 或其他 Agent 时，先复用已有 Harness 能力完成应用组合；只有跨 Agent 可复用的缺口
 才修改 `src/aiharness`。应用代码和 Harness 改动必须分别补对应目录的测试；Harness 公共契约或
-安全默认值变化时同步更新 ARCHITECTURE、TASK 和必要的 RFC/ADR。
+安全默认值变化时同步更新 ARCHITECTURE、TASK 和必要的 RFC/ADR。ARCHITECTURE 只写稳定契约，
+里程碑进度写进 TASK，单次取舍写进 ADR；不要把「当前 Mx 提供…」写进架构文档。
 
 完成改动前至少运行：
 
