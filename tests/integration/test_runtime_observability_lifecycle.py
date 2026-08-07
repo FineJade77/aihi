@@ -7,13 +7,7 @@ import pytest
 from aiharness.core.errors import ProviderFailure
 from aiharness.core.types import Message
 from aiharness.models.providers.fake import FakeProvider, FakeStep
-from aiharness.observability import (
-    Telemetry,
-    TelemetryError,
-    TraceContext,
-    W3CTracePropagator,
-    WorkerTraceManager,
-)
+from aiharness.observability import Telemetry
 from aiharness.runtime import RunCoordinator, RunState
 from aiharness.sandbox import HostBackend
 from aiharness.sessions import InMemoryEventStore, Session
@@ -77,28 +71,9 @@ async def test_runtime_flushes_shared_telemetry_after_success_and_failure(tmp_pa
     assert failure_session.events[-1].type == "run.failed"
 
 
-def test_telemetry_flush_is_fail_open_and_worker_trace_refresh_is_child_span() -> None:
-    telemetry = Telemetry(_FlushSink(fail=True))
-    assert telemetry.flush() is False
-    parent = telemetry.trace_for_run("run-parent")
-    manager = WorkerTraceManager(telemetry)
-    first = manager.start("worker-1", "run-parent")
-    assert first.attempt == 1
-    assert first.trace.trace_id == parent.trace_id
-    assert first.trace.parent_span_id == parent.span_id
-    assert first.headers()["traceparent"] == first.traceparent
+def test_telemetry_flush_is_fail_open() -> None:
+    """A failing sink is an observability problem, never a run problem."""
 
-    incoming_parent = TraceContext("a" * 32, "b" * 16, sampled=True)
-    refreshed = manager.refresh_from_carrier(
-        "worker-1", "run-parent", W3CTracePropagator.inject(incoming_parent)
-    )
-    assert refreshed.attempt == 2
-    assert refreshed.trace.trace_id == incoming_parent.trace_id
-    assert refreshed.trace.parent_span_id == incoming_parent.span_id
-    assert refreshed.trace.span_id != first.trace.span_id
-    with pytest.raises(TelemetryError):
-        manager.refresh("worker-1", "another-run")
-    with pytest.raises(TelemetryError):
-        manager.refresh_from_carrier("worker-1", "run-parent", {})
-    with pytest.raises(TelemetryError):
-        manager.start("worker-2", "run-parent", parent_trace=False)  # type: ignore[arg-type]
+    telemetry = Telemetry(_FlushSink(fail=True))
+
+    assert telemetry.flush() is False

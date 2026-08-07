@@ -4,11 +4,8 @@ import json
 from aiharness.observability import (
     ExporterUnavailable,
     JsonlTelemetrySink,
-    MetricPoint,
     Observation,
     ObservationKind,
-    OpenTelemetrySink,
-    TraceContext,
 )
 
 
@@ -73,15 +70,3 @@ def test_jsonl_sink_is_strict_and_redacted() -> None:
     assert payload["data"]["authorization"] == "[REDACTED]"
     assert "secret-token" not in output.getvalue()
     assert ExporterUnavailable.code == "exporter_unavailable"
-
-
-def test_otel_sink_maps_event_and_metric_without_otel_dependency() -> None:
-    tracer = _Tracer()
-    meter = _Meter()
-    sink = OpenTelemetrySink(tracer=tracer, meter=meter)
-    trace = TraceContext.new()
-    sink.record(Observation(kind=ObservationKind.EVENT, name="run.started", trace=trace))
-    sink.record(MetricPoint("tool.calls", 2, unit="count").to_observation())
-    assert tracer.spans[0].events[0][0] == "event"
-    assert tracer.spans[0].attributes["trace_id"] == trace.trace_id
-    assert meter.instruments[0].values[0][0] == 2

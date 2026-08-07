@@ -181,33 +181,29 @@ class StdioMcpTransport:
         self._process = None
         if process is None:
             return
+        # Order matters twice over. Closing a BufferedReader while a thread is
+        # blocked in readline() deadlocks on the buffer lock, so the process has
+        # to die first. And the descriptors must be closed through the file
+        # objects that own them: an os.close() here would be closed a second
+        # time when Popen is finalized, by which point the number may belong to
+        # an unrelated file.
         if process.poll() is None:
             self._signal_process_group(process, signal.SIGTERM)
-        # Closing a BufferedReader whose readline runs in the executor deadlocks
-        # on the reader lock, so close the descriptors directly instead.
-        for stream in (process.stdin, process.stdout):
-            self._close_stream_fd(stream)
-        try:
-            await asyncio.to_thread(process.wait, timeout=self.stop_timeout_seconds)
-        except subprocess.TimeoutExpired:
-            self._signal_process_group(process, signal.SIGKILL)
             try:
                 await asyncio.to_thread(process.wait, timeout=self.stop_timeout_seconds)
             except subprocess.TimeoutExpired:
+                self._signal_process_group(process, signal.SIGKILL)
+                try:
+                    await asyncio.to_thread(process.wait, timeout=self.stop_timeout_seconds)
+                except subprocess.TimeoutExpired:
+                    pass
+        for stream in (process.stdin, process.stdout):
+            if stream is None:
+                continue
+            try:
+                stream.close()
+            except (OSError, ValueError, RuntimeError):
                 pass
-
-    @staticmethod
-    def _close_stream_fd(stream: object) -> None:
-        if stream is None:
-            return
-        try:
-            descriptor = stream.fileno()  # type: ignore[attr-defined]
-        except (OSError, ValueError, AttributeError):
-            return
-        try:
-            os.close(descriptor)
-        except OSError:
-            pass
 
     @staticmethod
     def _signal_process_group(process: subprocess.Popen[bytes], sig: signal.Signals) -> None:

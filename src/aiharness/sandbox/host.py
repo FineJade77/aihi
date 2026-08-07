@@ -14,6 +14,7 @@ from pathlib import Path
 
 from aiharness.core.errors import SandboxViolation, UnsafeHostNotAcknowledged
 from aiharness.sandbox.base import CommandResult, SandboxDescriptor
+from aiharness.sandbox.walk import glob_paths
 
 
 class HostBackend:
@@ -64,6 +65,15 @@ class HostBackend:
         if max_chars <= 0:
             raise SandboxViolation("max_chars must be positive")
         return await asyncio.to_thread(self._read_text_sync, resolved, max_chars)
+
+    async def list_paths(self, pattern: str, *, limit: int) -> tuple[str, ...]:
+        """Workspace-relative files matching a glob, bounded and symlink-safe."""
+
+        try:
+            matches = await asyncio.to_thread(glob_paths, self._root, pattern, limit=limit)
+        except ValueError as error:
+            raise SandboxViolation(str(error)) from error
+        return tuple(str(match.relative_to(self._root)) for match in matches)
 
     async def write_text(
         self,

@@ -154,7 +154,7 @@ def test_cli_accept_edits_still_suspends_before_running_a_command(
     script(
         monkeypatch,
         [
-            FakeStep.call_tool("shell", {"argv": ["touch", str(marker)]}),
+            FakeStep.call_tool("bash", {"command": f"touch {marker}"}),
             FakeStep(text="done"),
         ],
     )

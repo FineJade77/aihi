@@ -17,6 +17,17 @@ Runtime 和 Session 实现。应用层只负责配置、Coding Tool 组合、CLI
 - `src/aicode/cli.py`：独立 `aicode` CLI，支持 Fake/真实 Provider 配置和持久化 Session；
 - `tests/`：应用层组合契约测试。
 
+## 工具
+
+| 类别 | 工具 | 授权 |
+|---|---|---|
+| 只读 | `read_file` `glob` `grep` | 免审批，可并行 |
+| 写入 | `write_file` `edit_file` | `--accept-edits` 可覆盖 |
+| 执行 | `bash` | 永远逐次审批；`--plan` 直接拒绝 |
+
+`bash` 接收命令字符串，管道和 `&&` 正常工作；每次调用是独立的 shell，`cd` 不保留。
+查找代码请用 `glob`/`grep` —— 它们不需要审批，不会打断你。
+
 ## 模型路由
 
 所有模型请求经过 `ModelGateway`（即使只有一个 Provider）：有界重试 + 请求截止时间，

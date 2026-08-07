@@ -420,34 +420,29 @@ class PluginHost:
         self._process = None
         if process is None:
             return
+        # End the process before touching its pipes: closing a BufferedReader
+        # whose readline runs in the executor deadlocks on the buffer lock, and
+        # SIGKILL always delivers the EOF that wakes it. Close through the file
+        # objects rather than os.close(), because Popen finalization closes the
+        # same descriptors again -- by then the number may belong to another
+        # file, and closing it would corrupt an unrelated one.
         if process.poll() is None:
             self._signal_process_group(process, signal.SIGTERM)
-        # Closing a BufferedReader while its readline runs in the executor can
-        # deadlock on the reader lock.  Close the underlying descriptors
-        # directly so cancellation wakes the reader without waiting on it.
-        for stream in (process.stdin, process.stdout):
-            self._close_stream_fd(stream)
-        try:
-            await asyncio.to_thread(process.wait, timeout=self.stop_timeout_seconds)
-        except subprocess.TimeoutExpired:
-            self._signal_process_group(process, signal.SIGKILL)
             try:
                 await asyncio.to_thread(process.wait, timeout=self.stop_timeout_seconds)
             except subprocess.TimeoutExpired:
+                self._signal_process_group(process, signal.SIGKILL)
+                try:
+                    await asyncio.to_thread(process.wait, timeout=self.stop_timeout_seconds)
+                except subprocess.TimeoutExpired:
+                    pass
+        for stream in (process.stdin, process.stdout):
+            if stream is None:
+                continue
+            try:
+                stream.close()
+            except (OSError, ValueError, RuntimeError):
                 pass
-
-    @staticmethod
-    def _close_stream_fd(stream: Any) -> None:
-        if stream is None:
-            return
-        try:
-            descriptor = stream.fileno()
-        except (OSError, ValueError):
-            return
-        try:
-            os.close(descriptor)
-        except OSError:
-            pass
 
     @staticmethod
     def _signal_process_group(process: subprocess.Popen[bytes], sig: signal.Signals) -> None:

@@ -29,6 +29,7 @@ except ImportError:  # pragma: no cover - Windows does not provide fcntl.
     fcntl = None  # type: ignore[assignment]
 
 from aiharness.core.errors import SandboxConfigurationError, SandboxUnavailable, SandboxViolation
+from aiharness.sandbox.walk import glob_paths
 
 from .base import CommandResult, SandboxDescriptor
 
@@ -247,6 +248,15 @@ class LocalIsolatedBackend:
         if not isinstance(max_chars, int) or isinstance(max_chars, bool) or max_chars <= 0:
             raise SandboxViolation("max_chars must be a positive integer")
         return await asyncio.to_thread(self._read_text_sync, resolved, max_chars)
+
+    async def list_paths(self, pattern: str, *, limit: int) -> tuple[str, ...]:
+        """Workspace-relative files matching a glob, bounded and symlink-safe."""
+
+        try:
+            matches = await asyncio.to_thread(glob_paths, self._root, pattern, limit=limit)
+        except ValueError as error:
+            raise SandboxViolation(str(error)) from error
+        return tuple(str(match.relative_to(self._root)) for match in matches)
 
     async def write_text(
         self,

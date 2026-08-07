@@ -72,6 +72,10 @@ class PolicyEngine(Protocol):
 class DefaultPolicyEngine:
     """Small fail-safe policy that can later be backed by a richer rule IR."""
 
+    # A heuristic, not a security boundary (ADR-0028). It catches the plain
+    # forms an agent writes by accident; quoting or indirection defeats it. The
+    # real controls are the approval every `process.exec` tool requires and the
+    # sandbox that runs it.
     _sensitive_patterns = (
         "*/.ssh/*",
         "*/.aws/credentials",

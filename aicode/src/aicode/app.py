@@ -13,12 +13,15 @@ from aiharness import (
     AgentBudget,
     AnthropicProvider,
     ApprovalResolver,
+    BashTool,
     ChildRunSubagentRunner,
     DefaultPolicyEngine,
     EditFileTool,
     EventStore,
     FakeProvider,
     FileArtifactStore,
+    GlobTool,
+    GrepTool,
     HostBackend,
     JsonlTelemetrySink,
     ModelGateway,
@@ -28,10 +31,8 @@ from aiharness import (
     Provider,
     ReadFileTool,
     RunCoordinator,
-    RunTestsTool,
     RuntimeExtensions,
     SandboxBackend,
-    ShellTool,
     SkillDiscovery,
     SkillIndexContributor,
     SkillRoot,
@@ -92,10 +93,11 @@ def build_tool_registry() -> ToolRegistry:
 
     return ToolRegistry(
         [
+            BashTool(),
             EditFileTool(),
+            GlobTool(),
+            GrepTool(),
             ReadFileTool(),
-            RunTestsTool(),
-            ShellTool(),
             WriteFileTool(),
         ]
     )

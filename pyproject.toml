@@ -15,15 +15,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-api = [
-  "fastapi>=0.115",
-]
-postgres = [
-  "psycopg[binary]>=3.2",
-]
-otel = [
-  "opentelemetry-api>=1.26",
-]
 dev = [
   "mypy>=1.10",
   "pytest>=8.0",
@@ -54,8 +45,3 @@ python_version = "3.11"
 strict = true
 packages = ["aiharness"]
 mypy_path = "src"
-
-# Optional extras: the core package must type-check without them installed.
-[[tool.mypy.overrides]]
-module = ["psycopg.*", "opentelemetry.*"]
-ignore_missing_imports = true

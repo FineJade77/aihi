@@ -56,6 +56,8 @@ class SandboxBackend(Protocol):
 
     async def read_text(self, path: str | Path, *, max_chars: int) -> tuple[str, bool]: ...
 
+    async def list_paths(self, pattern: str, *, limit: int) -> tuple[str, ...]: ...
+
     async def write_text(
         self,
         path: str | Path,

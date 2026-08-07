@@ -3,22 +3,6 @@
 from aiharness.observability.exporters import (
     ExporterUnavailable,
     JsonlTelemetrySink,
-    OpenTelemetrySink,
-)
-from aiharness.observability.pipeline import (
-    BackpressurePolicy,
-    BearerTokenAuth,
-    ExportRetryExhausted,
-    ExportStats,
-    OTelBatchPipeline,
-    OTelPipelineError,
-    OTelResource,
-    OTelTransportError,
-    OtlpHttpTransport,
-    PipelineBackpressure,
-    PipelineClosed,
-    RetryPolicy,
-    W3CTracePropagator,
 )
 from aiharness.observability.telemetry import (
     CostRecord,
@@ -33,45 +17,22 @@ from aiharness.observability.telemetry import (
     TraceContext,
     stable_payload_hash,
 )
-from aiharness.observability.worker import (
-    WorkerLeaseEnvelope,
-    WorkerLeaseTraceBridge,
-    WorkerLeaseTraceError,
-    WorkerTrace,
-    WorkerTraceManager,
-)
 
 __all__ = [
     "CostRecord",
-    "BackpressurePolicy",
-    "BearerTokenAuth",
     "ExporterUnavailable",
-    "ExportRetryExhausted",
-    "ExportStats",
     "InMemoryTelemetrySink",
     "JsonlTelemetrySink",
     "MetricPoint",
     "Observation",
     "ObservationKind",
-    "OpenTelemetrySink",
-    "OTelBatchPipeline",
-    "OTelPipelineError",
-    "OTelResource",
-    "OTelTransportError",
-    "OtlpHttpTransport",
-    "PipelineBackpressure",
-    "PipelineClosed",
     "Redactor",
     "Telemetry",
     "TelemetryError",
     "TelemetrySink",
     "TraceContext",
     "RetryPolicy",
-    "W3CTracePropagator",
     "WorkerTrace",
-    "WorkerTraceManager",
-    "WorkerLeaseEnvelope",
-    "WorkerLeaseTraceBridge",
     "WorkerLeaseTraceError",
     "stable_payload_hash",
 ]

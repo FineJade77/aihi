@@ -146,10 +146,11 @@ from aiharness.sessions import EventStore, InMemoryEventStore, Session, SQLiteEv
 from aiharness.skills import SkillDiscovery, SkillIndexContributor, SkillRoot, SkillScope
 from aiharness.tools import Tool, ToolContext, ToolRegistry, ToolResult
 from aiharness.tools.builtin import (
+    BashTool,
     EditFileTool,
+    GlobTool,
+    GrepTool,
     ReadFileTool,
-    RunTestsTool,
-    ShellTool,
     WriteFileTool,
 )
 
@@ -163,6 +164,7 @@ __all__ = [
     "ArtifactAccess",
     "ArtifactPolicy",
     "ArtifactStore",
+    "BashTool",
     "Capabilities",
     "CapabilityLease",
     "ChildRunSubagentRunner",
@@ -183,6 +185,8 @@ __all__ = [
     "FakeProvider",
     "FileArtifactStore",
     "FileTrustStore",
+    "GlobTool",
+    "GrepTool",
     "HarnessError",
     "HookBus",
     "HostBackend",
@@ -235,7 +239,6 @@ __all__ = [
     "RunRecorder",
     "RunResult",
     "RunState",
-    "RunTestsTool",
     "RuntimeExtensions",
     "SPAWN_CAPABILITY",
     "SQLiteEventStore",
@@ -244,7 +247,6 @@ __all__ = [
     "SandboxViolation",
     "Session",
     "SessionNotFound",
-    "ShellTool",
     "SkillDiscovery",
     "SkillIndexContributor",
     "SkillRoot",

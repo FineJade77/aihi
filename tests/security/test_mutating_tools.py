@@ -16,7 +16,7 @@ from aiharness.policy import (
 )
 from aiharness.sandbox import HostBackend
 from aiharness.tools import ToolContext, ToolDispatcher, ToolRegistry
-from aiharness.tools.builtin import EditFileTool, RunTestsTool, ShellTool, WriteFileTool
+from aiharness.tools.builtin import BashTool, EditFileTool, WriteFileTool
 
 
 def context(tmp_path: Path) -> ToolContext:
@@ -106,16 +106,16 @@ async def test_edit_file_requires_exact_match_and_rejects_stale_digest(tmp_path:
 @pytest.mark.asyncio
 async def test_shell_and_test_tools_enforce_timeout_and_output_limits(tmp_path: Path) -> None:
     tool_context = context(tmp_path)
-    shell = ShellTool()
+    shell = BashTool()
     success = await shell.run(
-        {"argv": [sys.executable, "-c", "print('ok')"], "max_output_chars": 2}, tool_context
+        {"command": f"{sys.executable} -c \"print('ok')\"", "max_output_chars": 2}, tool_context
     )
     assert success.is_error is False
     assert success.metadata["stdout_truncated"] is True
 
     timed_out = await shell.run(
         {
-            "argv": [sys.executable, "-c", "import time; time.sleep(1)"],
+            "command": f"{sys.executable} -c 'import time; time.sleep(1)'",
             "timeout_seconds": 0.05,
         },
         tool_context,
@@ -123,9 +123,8 @@ async def test_shell_and_test_tools_enforce_timeout_and_output_limits(tmp_path: 
     assert timed_out.is_error is True
     assert timed_out.metadata["timed_out"] is True
 
-    tests = RunTestsTool()
-    failed = await tests.run(
-        {"argv": [sys.executable, "-c", "raise SystemExit(3)"]}, tool_context
+    failed = await shell.run(
+        {"command": f"{sys.executable} -c 'raise SystemExit(3)'"}, tool_context
     )
     assert failed.is_error is True
     assert failed.metadata["exit_code"] == 3
@@ -234,10 +233,12 @@ async def test_host_backend_read_does_not_require_directory_write_access(tmp_pat
     assert truncated is False
 
 
-def test_policy_denies_sensitive_paths_in_direct_argv(tmp_path: Path) -> None:
+def test_policy_denies_obvious_sensitive_paths_in_a_command(tmp_path: Path) -> None:
+    """A heuristic, not a boundary: it catches the plain form only (ADR-0028)."""
+
     decision = DefaultPolicyEngine().evaluate(
-        ShellTool.spec,
-        {"argv": ["cat", "~/.ssh/id_rsa"]},
+        BashTool.spec,
+        {"argv": ["/bin/bash", "-c", "cat ~/.ssh/id_rsa"]},
         permission(tmp_path, mode=PermissionMode.BYPASS),
     )
     assert decision.effect.value == "deny"

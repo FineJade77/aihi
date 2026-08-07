@@ -20,10 +20,11 @@ def test_aicode_runtime_reuses_harness_and_requires_explicit_host_ack(tmp_path) 
     runtime = build_runtime(AICodeConfig(workspace=tmp_path, unsafe_host=True))
     assert runtime.provider.name == "fake"
     assert {spec.name for spec in runtime.registry.specs} == {
+        "bash",
         "edit_file",
+        "glob",
+        "grep",
         "read_file",
-        "run_tests",
-        "shell",
         "write_file",
     }
     assert runtime.sandbox.descriptor.unsafe is True

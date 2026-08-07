@@ -344,6 +344,11 @@ Provider 重放，避免半个回合被另一个模型重写；不可重试的�
 每个工具声明名称、描述、JSON Schema、是否修改外部状态、并发安全、能力需求、超时和
 幂等策略。所有输入先校验和规范化，再进入 Policy。
 
+内建工具按授权分三类，名字与语义一致（ADR-0028）：只读的 `read_file`/`glob`/`grep`
+（免审批、可并行）、写入的 `write_file`/`edit_file`（`accept_edits` 覆盖）、执行的 `bash`
+（声明 `process.exec`，永远逐次审批）。`bash` 接收命令字符串并显式 exec bash，
+`SandboxBackend.run_command(argv)` 契约不变，任何地方都不使用 `shell=True`。
+
 同一条 Assistant 消息里连续的**只读且并发安全**工具调用会并行执行；`mutates=True`、
 未声明 `concurrency_safe` 或未注册的工具一律单独执行，保证可观察的顺序。无论是否并行，
 Tool Result 都按调用顺序提交；并行组中若有调用需要 Approval，已完成的结果照常落盘，
@@ -410,8 +415,10 @@ Runtime 的模型工具入口。缺少明确 `readOnlyHint=true` 的远程工具
 ## 10. Policy 与 Sandbox
 
 Policy 输出 `ALLOW / DENY / ASK`，同时返回原因、命中的规则、作用域和有效期。硬拒绝优先于
-组织、工作区、用户和会话临时授权。路径要 canonicalize，并检查 symlink escape；命令工具
-不能只靠字符串黑名单。
+组织、工作区、用户和会话临时授权。路径要 canonicalize，并检查 symlink escape。
+
+命令内容的敏感路径检查是**启发式而非安全边界**：它拦得住 `cat ~/.ssh/id_rsa`，拦不住引号
+拼接。命令类工具的真实边界是「每次执行都需要显式审批」加上沙箱约束（ADR-0028）。
 
 `mutates` 与「执行进程」是两条独立的授权轴。声明 `process.exec` 能力的工具一律需要显式
 Approval：`accept_edits` 只覆盖工作区编辑，`plan` 同时拒绝两者，只有人的显式 Approval

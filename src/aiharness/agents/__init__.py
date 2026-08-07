@@ -1,6 +1,5 @@
 """Governed subagent task graph and coordination primitives."""
 
-from .coordinator import SubagentCoordinator
 from .errors import (
     AgentBudgetExceeded,
     AgentDepthExceeded,
@@ -8,11 +7,8 @@ from .errors import (
     AgentPermissionDenied,
     AgentStateError,
     AgentValidationError,
-    MailboxConflict,
-    MailboxError,
 )
 from .graph import TaskGraph
-from .mailbox import Mailbox, MailboxMessage
 from .subagent import (
     SPAWN_CAPABILITY,
     ChildRunSubagentRunner,
@@ -23,7 +19,6 @@ from .subagent import (
     subagent_session_factory,
 )
 from .types import AgentBudget, AgentState, TaskNode, TaskResult, TaskSpec, WorkspaceScope
-from .workspaces import PatchArtifact, WorktreePatchBoundary, WorktreeSpec
 
 __all__ = [
     "AgentBudget",
@@ -35,14 +30,8 @@ __all__ = [
     "AgentStateError",
     "AgentValidationError",
     "ChildRunSubagentRunner",
-    "Mailbox",
-    "MailboxConflict",
-    "MailboxError",
-    "MailboxMessage",
-    "PatchArtifact",
     "SPAWN_CAPABILITY",
     "SubagentAuthority",
-    "SubagentCoordinator",
     "SubagentRunner",
     "SubagentTool",
     "TaskGraph",
@@ -50,8 +39,6 @@ __all__ = [
     "TaskResult",
     "TaskSpec",
     "WorkspaceScope",
-    "WorktreePatchBoundary",
-    "WorktreeSpec",
     "restrict_registry",
     "subagent_session_factory",
 ]
