@@ -253,7 +253,8 @@ fencing sequence 和 current-lease partial unique index；过期 takeover 保留
 - ✅ 顶层 `aiharness.__all__` 作为唯一组合面；`aicode` 全部改为 `from aiharness import ...`；
   AST import 边界测试 + 公共 API 契约测试（导出可解析/有序、不拉入可选依赖）；
   `agents`/`memory`/`skills`/`plugins`/`mcp`/`evals`/`api`/`cli` 暂不导出，等 H-02 的 Runtime 注入点；
-- 待办：为公共 Event、Envelope 和 Store Schema 建立版本迁移和兼容性测试；
+- ✅ Event 信封版本、迁移钩子（fail closed）、事件类型目录（durable/ephemeral/legacy）和
+  冻结 v1 会话语料的兼容性测试；H-01 完成。
 - 固定 Provider、Tool、Policy、Hook、Sandbox、Context、Memory、Skill 和 Subagent 的组合契约；
 - 为应用层提供 Runtime factory/依赖注入约定，但不把 Coding Prompt、工具集合或 Agent 规则写进 Harness；
 - 为公共 Event、Envelope 和 Store Schema 建立版本迁移和兼容性测试。

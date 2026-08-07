@@ -262,15 +262,17 @@ class SQLiteEventStore:
                 (session_id, after_seq),
             ).fetchall()
         return [
-            Event(
-                id=str(row["event_id"]),
-                type=str(row["event_type"]),
-                session_id=session_id,
-                run_id=str(row["run_id"]) if row["run_id"] is not None else None,
-                seq=int(row["seq"]),
-                created_at=str(row["created_at"]),
-                schema_version=int(row["schema_version"]),
-                data=json.loads(str(row["data_json"])),
+            Event.from_dict(
+                {
+                    "id": str(row["event_id"]),
+                    "type": str(row["event_type"]),
+                    "session_id": session_id,
+                    "run_id": row["run_id"],
+                    "seq": int(row["seq"]),
+                    "created_at": str(row["created_at"]),
+                    "schema_version": int(row["schema_version"]),
+                    "data": json.loads(str(row["data_json"])),
+                }
             )
             for row in rows
         ]
@@ -480,15 +482,17 @@ class PostgresEventStore:
         if not isinstance(payload, dict):
             raise StoreUnavailable("PostgreSQL event data is not a JSON object")
         run_id = cls._row_value(row, "run_id", 3)
-        return Event(
-            id=str(cls._row_value(row, "event_id", 1)),
-            type=str(cls._row_value(row, "event_type", 2)),
-            session_id=session_id,
-            run_id=str(run_id) if run_id is not None else None,
-            seq=int(cls._row_value(row, "seq", 0)),
-            created_at=str(cls._row_value(row, "created_at", 4)),
-            schema_version=int(cls._row_value(row, "schema_version", 5)),
-            data=dict(payload),
+        return Event.from_dict(
+            {
+                "id": str(cls._row_value(row, "event_id", 1)),
+                "type": str(cls._row_value(row, "event_type", 2)),
+                "session_id": session_id,
+                "run_id": run_id,
+                "seq": int(cls._row_value(row, "seq", 0)),
+                "created_at": str(cls._row_value(row, "created_at", 4)),
+                "schema_version": int(cls._row_value(row, "schema_version", 5)),
+                "data": dict(payload),
+            }
         )
 
     def create_session(

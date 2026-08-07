@@ -226,6 +226,19 @@ event_id, session_id, run_id, seq, type, schema_version, created_at, data
 
 事件是事实源；Projection、Snapshot、Trace 和 Eval 都从事件产生。
 
+`schema_version` 版本化的是**信封**（每个事件共有的记录结构），不是单个事件类型的 payload。
+兼容性规则（`core/schema.py`）：
+
+- 新增事件类型、为 `data` 增加可选字段是加法变更，不需要升版本；读取方必须容忍未知类型；
+- 删除/重命名字段或改变既有字段含义，必须升信封版本并同时注册迁移；
+- 读取方遇到不认识的信封版本必须拒绝，而不是当作当前版本解析（`UnsupportedEventSchema`）。
+
+事件类型分三类：`DURABLE_EVENT_TYPES`（写入且持久化，必须被冻结语料覆盖）、
+`EPHEMERAL_EVENT_TYPES`（只经 `Session.emit` 给 observer，无兼容性义务）、
+`LEGACY_EVENT_TYPES`（投影仍能读，但已无写入方）。
+`tests/contract/test_event_compatibility.py` 用一份冻结的 v1 会话语料同时守住三件事：
+语料覆盖全部 durable 类型、源码中出现的字面量事件类型都在目录内、旧会话的投影与回放结果不漂移。
+
 推荐事件类型：
 
 ```text

@@ -144,6 +144,9 @@ Tool 或 Plugin Host 必须补对应的 contract test；涉及安全行为必须
 
 - 不覆盖或回滚用户已有修改。
 - 破坏事件 Schema、公共 Protocol 或安全默认值时，必须新增或更新 RFC/ADR。
+- 新增 durable 事件类型必须同时登记进 `core/schema.py` 的 `DURABLE_EVENT_TYPES` 并补进
+  `tests/fixtures/session_schema_v1.json` 冻结语料，否则兼容性测试失败。
+- 改变既有事件字段含义必须升 `EVENT_SCHEMA_VERSION` 并注册对应迁移。
 - 不提交 API Key、Token、凭据、完整环境变量或未经脱敏的模型/工具输出。
 - 删除文件前确认其不再被 README、代码或文档引用；本项目只使用正式的
   `docs/TASK.md` 任务文档。

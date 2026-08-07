@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from aiharness.core.ids import new_id
+from aiharness.core.schema import EVENT_SCHEMA_VERSION, upgrade_event_payload
 
 
 def utc_now() -> str:
@@ -23,7 +24,7 @@ class Event:
     seq: int | None = None
     created_at: str = field(default_factory=utc_now)
     ephemeral: bool = False
-    schema_version: int = 1
+    schema_version: int = EVENT_SCHEMA_VERSION
 
     def persisted(self, seq: int) -> Event:
         return replace(self, seq=seq, ephemeral=False)
@@ -43,6 +44,9 @@ class Event:
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> Event:
+        # Fail closed on an envelope this harness does not understand rather
+        # than read a future payload as if it were current.
+        value = upgrade_event_payload(value)
         seq = value.get("seq")
         return cls(
             id=str(value["id"]),
@@ -52,6 +56,6 @@ class Event:
             seq=int(seq) if seq is not None else None,
             created_at=str(value["created_at"]),
             ephemeral=bool(value.get("ephemeral", False)),
-            schema_version=int(value.get("schema_version", 1)),
+            schema_version=int(value.get("schema_version", EVENT_SCHEMA_VERSION)),
             data=dict(value.get("data", {})),
         )

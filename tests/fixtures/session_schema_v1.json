@@ -1,0 +1,1053 @@
+{
+  "schema_version": 1,
+  "sessions": [
+    {
+      "events": [
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "cwd": "/tmp/golden",
+            "model": "fake-model",
+            "provider": "fake"
+          },
+          "ephemeral": false,
+          "id": "evt-en-a-01",
+          "run_id": null,
+          "schema_version": 1,
+          "seq": 1,
+          "session_id": "ses-golden-a",
+          "type": "session.created"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "message": {
+              "content": [
+                {
+                  "kind": "text",
+                  "stable_prefix": false,
+                  "text": "write a.txt"
+                }
+              ],
+              "id": "msg-u",
+              "metadata": {},
+              "role": "user"
+            }
+          },
+          "ephemeral": false,
+          "id": "evt-en-a-02",
+          "run_id": "run-a",
+          "schema_version": 1,
+          "seq": 2,
+          "session_id": "ses-golden-a",
+          "type": "user.message"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "model": "fake-model",
+            "provider": "fake",
+            "sandbox": "host",
+            "unsafe": true
+          },
+          "ephemeral": false,
+          "id": "evt-en-a-03",
+          "run_id": "run-a",
+          "schema_version": 1,
+          "seq": 3,
+          "session_id": "ses-golden-a",
+          "type": "run.started"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "state": "running"
+          },
+          "ephemeral": false,
+          "id": "evt-en-a-04",
+          "run_id": "run-a",
+          "schema_version": 1,
+          "seq": 4,
+          "session_id": "ses-golden-a",
+          "type": "run.state_changed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "message": {
+              "content": [
+                {
+                  "id": "call-a",
+                  "input": {
+                    "path": "a.txt"
+                  },
+                  "kind": "tool_call",
+                  "name": "write_file"
+                }
+              ],
+              "id": "msg-a",
+              "metadata": {},
+              "role": "assistant"
+            }
+          },
+          "ephemeral": false,
+          "id": "evt-en-a-05",
+          "run_id": "run-a",
+          "schema_version": 1,
+          "seq": 5,
+          "session_id": "ses-golden-a",
+          "type": "assistant.message"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "state": "waiting_tool"
+          },
+          "ephemeral": false,
+          "id": "evt-en-a-06",
+          "run_id": "run-a",
+          "schema_version": 1,
+          "seq": 6,
+          "session_id": "ses-golden-a",
+          "type": "run.state_changed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "input": {
+              "path": "a.txt"
+            },
+            "tool_call_id": "call-a",
+            "tool_name": "write_file"
+          },
+          "ephemeral": false,
+          "id": "evt-en-a-07",
+          "run_id": "run-a",
+          "schema_version": 1,
+          "seq": 7,
+          "session_id": "ses-golden-a",
+          "type": "tool.requested"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "effect": "ask",
+            "reason": "needs approval",
+            "rule_id": "default.mutation_requires_approval",
+            "tool_call_id": "call-a",
+            "tool_name": "write_file"
+          },
+          "ephemeral": false,
+          "id": "evt-en-a-08",
+          "run_id": "run-a",
+          "schema_version": 1,
+          "seq": 8,
+          "session_id": "ses-golden-a",
+          "type": "policy.decided"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "approval": {
+              "approval_id": "approval-1",
+              "expires_at": null,
+              "granted_by": "policy",
+              "one_shot": true,
+              "run_id": "run-a",
+              "scope": "write_file"
+            },
+            "reason": "needs approval",
+            "requested_by": "policy",
+            "rule_id": "default.mutation_requires_approval",
+            "tool_call_id": "call-a",
+            "tool_name": "write_file"
+          },
+          "ephemeral": false,
+          "id": "evt-en-a-09",
+          "run_id": "run-a",
+          "schema_version": 1,
+          "seq": 9,
+          "session_id": "ses-golden-a",
+          "type": "approval.requested"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "state": "waiting_approval"
+          },
+          "ephemeral": false,
+          "id": "evt-en-a-10",
+          "run_id": "run-a",
+          "schema_version": 1,
+          "seq": 10,
+          "session_id": "ses-golden-a",
+          "type": "run.state_changed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "approval_id": "approval-1",
+            "pending_tool_call_ids": [
+              "call-a"
+            ],
+            "reason": "approval_required",
+            "state": "waiting_approval"
+          },
+          "ephemeral": false,
+          "id": "evt-en-a-11",
+          "run_id": "run-a",
+          "schema_version": 1,
+          "seq": 11,
+          "session_id": "ses-golden-a",
+          "type": "run.suspended"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "approval": {
+              "approval_id": "approval-1",
+              "expires_at": null,
+              "granted_by": "policy",
+              "one_shot": true,
+              "run_id": "run-a",
+              "scope": "write_file"
+            },
+            "approval_id": "approval-1",
+            "one_shot": true,
+            "resolved_by": "operator",
+            "status": "granted"
+          },
+          "ephemeral": false,
+          "id": "evt-en-a-12",
+          "run_id": "run-a",
+          "schema_version": 1,
+          "seq": 12,
+          "session_id": "ses-golden-a",
+          "type": "approval.resolved"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "model": "fake-model",
+            "provider": "fake",
+            "sandbox": "host",
+            "unsafe": true
+          },
+          "ephemeral": false,
+          "id": "evt-en-a-13",
+          "run_id": "run-a",
+          "schema_version": 1,
+          "seq": 13,
+          "session_id": "ses-golden-a",
+          "type": "run.resumed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "state": "running"
+          },
+          "ephemeral": false,
+          "id": "evt-en-a-14",
+          "run_id": "run-a",
+          "schema_version": 1,
+          "seq": 14,
+          "session_id": "ses-golden-a",
+          "type": "run.state_changed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "state": "waiting_tool"
+          },
+          "ephemeral": false,
+          "id": "evt-en-a-15",
+          "run_id": "run-a",
+          "schema_version": 1,
+          "seq": 15,
+          "session_id": "ses-golden-a",
+          "type": "run.state_changed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "issued_by": "approval",
+            "lease": {
+              "capabilities": [
+                "filesystem.write"
+              ],
+              "expires_at": "2099-01-01T00:00:00+00:00",
+              "lease_id": "lease-1",
+              "run_id": "run-a"
+            }
+          },
+          "ephemeral": false,
+          "id": "evt-en-a-16",
+          "run_id": "run-a",
+          "schema_version": 1,
+          "seq": 16,
+          "session_id": "ses-golden-a",
+          "type": "capability.lease.issued"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "sandbox": "host",
+            "tool_call_id": "call-a",
+            "tool_name": "write_file",
+            "unsafe": true
+          },
+          "ephemeral": false,
+          "id": "evt-en-a-17",
+          "run_id": "run-a",
+          "schema_version": 1,
+          "seq": 17,
+          "session_id": "ses-golden-a",
+          "type": "tool.started"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "is_error": false,
+            "metadata": {},
+            "tool_call_id": "call-a",
+            "tool_name": "write_file"
+          },
+          "ephemeral": false,
+          "id": "evt-en-a-18",
+          "run_id": "run-a",
+          "schema_version": 1,
+          "seq": 18,
+          "session_id": "ses-golden-a",
+          "type": "tool.completed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "approval_id": "approval-1",
+            "scope": "write_file"
+          },
+          "ephemeral": false,
+          "id": "evt-en-a-19",
+          "run_id": "run-a",
+          "schema_version": 1,
+          "seq": 19,
+          "session_id": "ses-golden-a",
+          "type": "approval.consumed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "lease_id": "lease-1",
+            "revoked_by": "runtime"
+          },
+          "ephemeral": false,
+          "id": "evt-en-a-20",
+          "run_id": "run-a",
+          "schema_version": 1,
+          "seq": 20,
+          "session_id": "ses-golden-a",
+          "type": "capability.lease.revoked"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "message": {
+              "content": [
+                {
+                  "content": "written",
+                  "is_error": false,
+                  "kind": "tool_result",
+                  "metadata": {},
+                  "tool_call_id": "call-a"
+                }
+              ],
+              "id": "msg-r",
+              "metadata": {},
+              "role": "user"
+            }
+          },
+          "ephemeral": false,
+          "id": "evt-en-a-21",
+          "run_id": "run-a",
+          "schema_version": 1,
+          "seq": 21,
+          "session_id": "ses-golden-a",
+          "type": "tool.result"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "artifact": {
+              "artifact_id": "art-1",
+              "created_at": "2026-01-01T00:00:00+00:00",
+              "media_type": "text/plain",
+              "metadata": {},
+              "policy": {
+                "expires_at": null,
+                "retention": "session",
+                "run_id": null,
+                "session_id": "ses-golden-a"
+              },
+              "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+              "size_bytes": 12
+            },
+            "purpose": "context"
+          },
+          "ephemeral": false,
+          "id": "evt-en-a-22",
+          "run_id": "run-a",
+          "schema_version": 1,
+          "seq": 22,
+          "session_id": "ses-golden-a",
+          "type": "artifact.created"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "artifact": {
+              "artifact_id": "art-1",
+              "created_at": "2026-01-01T00:00:00+00:00",
+              "media_type": "text/plain",
+              "metadata": {},
+              "policy": {
+                "expires_at": null,
+                "retention": "session",
+                "run_id": null,
+                "session_id": "ses-golden-a"
+              },
+              "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+              "size_bytes": 12
+            },
+            "reason": "expired"
+          },
+          "ephemeral": false,
+          "id": "evt-en-a-23",
+          "run_id": "run-a",
+          "schema_version": 1,
+          "seq": 23,
+          "session_id": "ses-golden-a",
+          "type": "artifact.deleted"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "candidate": {
+              "candidate_id": "memcand-1",
+              "confidence": 0.8,
+              "content": "uses make check",
+              "created_at": "2026-01-01T00:00:00+00:00",
+              "deleted_at": null,
+              "kind": "semantic",
+              "memory_id": "mem-1",
+              "metadata": {},
+              "run_id": "run-a",
+              "scope": "session",
+              "scope_id": "ses-golden-a",
+              "session_id": "ses-golden-a",
+              "source": "assistant",
+              "updated_at": "2026-01-01T00:00:00+00:00"
+            }
+          },
+          "ephemeral": false,
+          "id": "evt-en-a-24",
+          "run_id": "run-a",
+          "schema_version": 1,
+          "seq": 24,
+          "session_id": "ses-golden-a",
+          "type": "memory.candidate"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "record": {
+              "confidence": 0.8,
+              "content": "uses make check",
+              "created_at": "2026-01-01T00:00:00+00:00",
+              "deleted_at": null,
+              "kind": "semantic",
+              "memory_id": "mem-1",
+              "metadata": {},
+              "run_id": "run-a",
+              "scope": "session",
+              "scope_id": "ses-golden-a",
+              "session_id": "ses-golden-a",
+              "source": "assistant",
+              "updated_at": "2026-01-01T00:00:00+00:00"
+            }
+          },
+          "ephemeral": false,
+          "id": "evt-en-a-25",
+          "run_id": "run-a",
+          "schema_version": 1,
+          "seq": 25,
+          "session_id": "ses-golden-a",
+          "type": "memory.written"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "memory_id": "mem-1",
+            "reason": "requested"
+          },
+          "ephemeral": false,
+          "id": "evt-en-a-26",
+          "run_id": "run-a",
+          "schema_version": 1,
+          "seq": 26,
+          "session_id": "ses-golden-a",
+          "type": "memory.deleted"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "node": {
+              "depth": 1,
+              "objective": "read the code",
+              "state": "pending",
+              "task_id": "task-1"
+            }
+          },
+          "ephemeral": false,
+          "id": "evt-en-a-27",
+          "run_id": "run-a",
+          "schema_version": 1,
+          "seq": 27,
+          "session_id": "ses-golden-a",
+          "type": "subagent.spawned"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "depth": 1,
+            "objective": "read the code",
+            "parent_run_id": "run-a",
+            "parent_session_id": "ses-golden-a",
+            "task_id": "task-1"
+          },
+          "ephemeral": false,
+          "id": "evt-en-a-28",
+          "run_id": "run-a",
+          "schema_version": 1,
+          "seq": 28,
+          "session_id": "ses-golden-a",
+          "type": "subagent.started"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "parent_run_id": "run-a",
+            "parent_session_id": "ses-golden-a",
+            "result": {
+              "error": null,
+              "metrics": {},
+              "output_artifact_ids": [],
+              "state": "completed",
+              "summary": "read it",
+              "task_id": "task-1"
+            },
+            "task_id": "task-1"
+          },
+          "ephemeral": false,
+          "id": "evt-en-a-29",
+          "run_id": "run-a",
+          "schema_version": 1,
+          "seq": 29,
+          "session_id": "ses-golden-a",
+          "type": "subagent.completed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "message": {
+              "content": [
+                {
+                  "kind": "text",
+                  "stable_prefix": false,
+                  "text": "all done"
+                }
+              ],
+              "id": "msg-t",
+              "metadata": {},
+              "role": "assistant"
+            }
+          },
+          "ephemeral": false,
+          "id": "evt-en-a-30",
+          "run_id": "run-a",
+          "schema_version": 1,
+          "seq": 30,
+          "session_id": "ses-golden-a",
+          "type": "assistant.message"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "state": "completed"
+          },
+          "ephemeral": false,
+          "id": "evt-en-a-31",
+          "run_id": "run-a",
+          "schema_version": 1,
+          "seq": 31,
+          "session_id": "ses-golden-a",
+          "type": "run.state_changed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "state": "completed"
+          },
+          "ephemeral": false,
+          "id": "evt-en-a-32",
+          "run_id": "run-a",
+          "schema_version": 1,
+          "seq": 32,
+          "session_id": "ses-golden-a",
+          "type": "run.completed"
+        }
+      ],
+      "session_id": "ses-golden-a"
+    },
+    {
+      "events": [
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "cwd": "/tmp/golden",
+            "model": "fake-model",
+            "provider": "fake"
+          },
+          "ephemeral": false,
+          "id": "evt-en-b-01",
+          "run_id": null,
+          "schema_version": 1,
+          "seq": 1,
+          "session_id": "ses-golden-b",
+          "type": "session.created"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "message": {
+              "content": [
+                {
+                  "kind": "text",
+                  "stable_prefix": false,
+                  "text": "house rules"
+                }
+              ],
+              "id": "msg-sys",
+              "metadata": {},
+              "role": "system"
+            }
+          },
+          "ephemeral": false,
+          "id": "evt-en-b-02",
+          "run_id": "run-b",
+          "schema_version": 1,
+          "seq": 2,
+          "session_id": "ses-golden-b",
+          "type": "system.message"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "message": {
+              "content": [
+                {
+                  "kind": "text",
+                  "stable_prefix": false,
+                  "text": "do a thing"
+                }
+              ],
+              "id": "msg-ub",
+              "metadata": {},
+              "role": "user"
+            }
+          },
+          "ephemeral": false,
+          "id": "evt-en-b-03",
+          "run_id": "run-b",
+          "schema_version": 1,
+          "seq": 3,
+          "session_id": "ses-golden-b",
+          "type": "user.message"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "model": "fake-model",
+            "provider": "fake",
+            "sandbox": "host",
+            "unsafe": true
+          },
+          "ephemeral": false,
+          "id": "evt-en-b-04",
+          "run_id": "run-b",
+          "schema_version": 1,
+          "seq": 4,
+          "session_id": "ses-golden-b",
+          "type": "run.started"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "state": "running"
+          },
+          "ephemeral": false,
+          "id": "evt-en-b-05",
+          "run_id": "run-b",
+          "schema_version": 1,
+          "seq": 5,
+          "session_id": "ses-golden-b",
+          "type": "run.state_changed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "after_tokens": 120,
+            "artifact_ids": [],
+            "before_tokens": 900,
+            "prompt_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+            "replaced_message_ids": [
+              "msg-ub"
+            ],
+            "source_seq_end": 3,
+            "source_seq_start": 3,
+            "strategy": "l1_deterministic",
+            "summary": {
+              "content": [
+                {
+                  "kind": "text",
+                  "stable_prefix": false,
+                  "text": "summary of earlier work"
+                }
+              ],
+              "id": "msg-s",
+              "metadata": {
+                "compaction": "l1_deterministic"
+              },
+              "role": "system"
+            },
+            "trigger": "budget",
+            "version": 1
+          },
+          "ephemeral": false,
+          "id": "evt-en-b-06",
+          "run_id": "run-b",
+          "schema_version": 1,
+          "seq": 6,
+          "session_id": "ses-golden-b",
+          "type": "compaction.created"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "message": {
+              "content": [
+                {
+                  "id": "call-b",
+                  "input": {},
+                  "kind": "tool_call",
+                  "name": "missing_tool"
+                }
+              ],
+              "id": "msg-ab",
+              "metadata": {},
+              "role": "assistant"
+            }
+          },
+          "ephemeral": false,
+          "id": "evt-en-b-07",
+          "run_id": "run-b",
+          "schema_version": 1,
+          "seq": 7,
+          "session_id": "ses-golden-b",
+          "type": "assistant.message"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "state": "waiting_tool"
+          },
+          "ephemeral": false,
+          "id": "evt-en-b-08",
+          "run_id": "run-b",
+          "schema_version": 1,
+          "seq": 8,
+          "session_id": "ses-golden-b",
+          "type": "run.state_changed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "input": {},
+            "tool_call_id": "call-b",
+            "tool_name": "missing_tool"
+          },
+          "ephemeral": false,
+          "id": "evt-en-b-09",
+          "run_id": "run-b",
+          "schema_version": 1,
+          "seq": 9,
+          "session_id": "ses-golden-b",
+          "type": "tool.requested"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "error_code": "tool_not_found",
+            "tool_call_id": "call-b",
+            "tool_name": "missing_tool"
+          },
+          "ephemeral": false,
+          "id": "evt-en-b-10",
+          "run_id": "run-b",
+          "schema_version": 1,
+          "seq": 10,
+          "session_id": "ses-golden-b",
+          "type": "tool.rejected"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "message": {
+              "content": [
+                {
+                  "content": "Unknown tool",
+                  "is_error": true,
+                  "kind": "tool_result",
+                  "metadata": {
+                    "error_code": "tool_not_found"
+                  },
+                  "tool_call_id": "call-b"
+                }
+              ],
+              "id": "msg-rb",
+              "metadata": {},
+              "role": "user"
+            }
+          },
+          "ephemeral": false,
+          "id": "evt-en-b-11",
+          "run_id": "run-b",
+          "schema_version": 1,
+          "seq": 11,
+          "session_id": "ses-golden-b",
+          "type": "tool.result"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "state": "failed"
+          },
+          "ephemeral": false,
+          "id": "evt-en-b-12",
+          "run_id": "run-b",
+          "schema_version": 1,
+          "seq": 12,
+          "session_id": "ses-golden-b",
+          "type": "run.state_changed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "error": "provider unavailable",
+            "state": "failed"
+          },
+          "ephemeral": false,
+          "id": "evt-en-b-13",
+          "run_id": "run-b",
+          "schema_version": 1,
+          "seq": 13,
+          "session_id": "ses-golden-b",
+          "type": "run.failed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "model": "fake-model",
+            "provider": "fake",
+            "sandbox": "host",
+            "unsafe": true
+          },
+          "ephemeral": false,
+          "id": "evt-en-b-14",
+          "run_id": "run-c",
+          "schema_version": 1,
+          "seq": 14,
+          "session_id": "ses-golden-b",
+          "type": "run.started"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "state": "running"
+          },
+          "ephemeral": false,
+          "id": "evt-en-b-15",
+          "run_id": "run-c",
+          "schema_version": 1,
+          "seq": 15,
+          "session_id": "ses-golden-b",
+          "type": "run.state_changed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "message": {
+              "content": [
+                {
+                  "id": "call-c",
+                  "input": {
+                    "path": "c.txt"
+                  },
+                  "kind": "tool_call",
+                  "name": "write_file"
+                }
+              ],
+              "id": "msg-ac",
+              "metadata": {},
+              "role": "assistant"
+            }
+          },
+          "ephemeral": false,
+          "id": "evt-en-b-16",
+          "run_id": "run-c",
+          "schema_version": 1,
+          "seq": 16,
+          "session_id": "ses-golden-b",
+          "type": "assistant.message"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "orphan_tool_call_ids": [
+              "call-c"
+            ]
+          },
+          "ephemeral": false,
+          "id": "evt-en-b-17",
+          "run_id": "run-c",
+          "schema_version": 1,
+          "seq": 17,
+          "session_id": "ses-golden-b",
+          "type": "session.repaired"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "message": {
+              "content": [
+                {
+                  "content": "Execution state was lost",
+                  "is_error": true,
+                  "kind": "tool_result",
+                  "metadata": {
+                    "recovered": true
+                  },
+                  "tool_call_id": "call-c"
+                }
+              ],
+              "id": "msg-rc",
+              "metadata": {
+                "recovery": "orphan_tool_calls"
+              },
+              "role": "user"
+            }
+          },
+          "ephemeral": false,
+          "id": "evt-en-b-18",
+          "run_id": "run-c",
+          "schema_version": 1,
+          "seq": 18,
+          "session_id": "ses-golden-b",
+          "type": "tool.result"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "state": "interrupted"
+          },
+          "ephemeral": false,
+          "id": "evt-en-b-19",
+          "run_id": "run-c",
+          "schema_version": 1,
+          "seq": 19,
+          "session_id": "ses-golden-b",
+          "type": "run.state_changed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "state": "interrupted"
+          },
+          "ephemeral": false,
+          "id": "evt-en-b-20",
+          "run_id": "run-c",
+          "schema_version": 1,
+          "seq": 20,
+          "session_id": "ses-golden-b",
+          "type": "run.interrupted"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "model": "fake-model",
+            "provider": "fake",
+            "sandbox": "host",
+            "unsafe": true
+          },
+          "ephemeral": false,
+          "id": "evt-en-b-21",
+          "run_id": "run-d",
+          "schema_version": 1,
+          "seq": 21,
+          "session_id": "ses-golden-b",
+          "type": "run.started"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "state": "running"
+          },
+          "ephemeral": false,
+          "id": "evt-en-b-22",
+          "run_id": "run-d",
+          "schema_version": 1,
+          "seq": 22,
+          "session_id": "ses-golden-b",
+          "type": "run.state_changed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "state": "cancelled"
+          },
+          "ephemeral": false,
+          "id": "evt-en-b-23",
+          "run_id": "run-d",
+          "schema_version": 1,
+          "seq": 23,
+          "session_id": "ses-golden-b",
+          "type": "run.state_changed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "reason": "abandoned",
+            "state": "cancelled"
+          },
+          "ephemeral": false,
+          "id": "evt-en-b-24",
+          "run_id": "run-d",
+          "schema_version": 1,
+          "seq": 24,
+          "session_id": "ses-golden-b",
+          "type": "run.cancelled"
+        }
+      ],
+      "session_id": "ses-golden-b"
+    }
+  ]
+}
