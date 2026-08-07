@@ -40,6 +40,17 @@ Runtime 和 Session 实现。应用层只负责配置、Coding Tool 组合、CLI
 （名称@版本、作用域、一句话描述）注入系统提示词。正文不进上下文，需要时通过 Harness 的
 Trust 流程显式加载。
 
+## MCP
+
+`AICODE_MCP` 指向一个声明文件即可接入 MCP 服务器：
+
+```json
+{"servers": [{"name": "docs", "command": ["mcp-docs-server"], "allowed_tools": ["search"]}]}
+```
+
+只有声明过的服务器会被启动，且只暴露 `allowed_tools` 列出的工具；它们和内置工具走同一条
+Policy/Hook/Sandbox 链路。省略 `allowed_tools` 表示接受该服务器当前公布的全部工具。
+
 ## Subagent
 
 `AICODE_SUBAGENTS=true` 时注册 `task` 工具，可以把一段只读调查委派给子代理：

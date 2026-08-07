@@ -307,6 +307,11 @@ fencing sequence 和 current-lease partial unique index；过期 takeover 保留
 - 扩展 Provider Golden、Coding Task、安全回放和跨版本 Event/Context 兼容性门禁；
 - 增加成本预算、失败分类、工具副作用审计和长时间运行稳定性指标。
 
+### H-07：Plugin/MCP 应用层接入
+
+- 状态：Done（ADR-0026）；`register_mcp_tools`/`register_plugin_tools`、`StdioMcpTransport`、
+  `aicode` 的 `AICODE_MCP` 声明式接入；`Tool.spec` 改为只读属性以容纳远程工具的计算属性。
+
 ### 待开发清单维护规则
 
 1. `aicode`、`personal` 或其他 Agent 开发时，只有当缺口是 Provider-neutral、可复用且不携带具体

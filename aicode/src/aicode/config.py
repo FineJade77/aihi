@@ -25,6 +25,7 @@ class AICodeConfig:
     workspace: Path = field(default_factory=Path.cwd)
     db_path: Path = field(default_factory=lambda: Path(".aiharness/events.db"))
     skills_path: Path | None = None
+    mcp_config_path: Path | None = None
     artifacts_path: Path | None = None
     telemetry_path: Path | None = None
     project_rules: bool = True
@@ -52,7 +53,7 @@ class AICodeConfig:
             raise ValueError("aicode subagents must be boolean")
         if not isinstance(self.project_rules, bool):
             raise ValueError("aicode project_rules must be boolean")
-        for name in ("artifacts_path", "telemetry_path"):
+        for name in ("artifacts_path", "telemetry_path", "mcp_config_path"):
             value = getattr(self, name)
             if value is not None:
                 object.__setattr__(self, name, Path(value).expanduser())
@@ -96,6 +97,7 @@ class AICodeConfig:
             "false",
             "no",
         }
+        raw_mcp = os.getenv("AICODE_MCP")
         raw_skills = os.getenv("AICODE_SKILLS")
         skills_path = Path(raw_skills) if raw_skills else None
         return cls(
@@ -107,6 +109,7 @@ class AICodeConfig:
             workspace=configured_workspace,
             db_path=db_path,
             skills_path=skills_path,
+            mcp_config_path=Path(raw_mcp) if raw_mcp else None,
             artifacts_path=Path(raw_artifacts) if raw_artifacts else None,
             telemetry_path=Path(raw_telemetry) if raw_telemetry else None,
             project_rules=project_rules,

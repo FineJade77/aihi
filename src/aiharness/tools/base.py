@@ -29,7 +29,11 @@ class ToolContext:
 
 
 class Tool(Protocol):
-    spec: ToolSpec
+    # Read-only on purpose: a plain class attribute satisfies this, and so does
+    # a computed property (remote plugin/MCP tools derive their spec from the
+    # server's advertised definition).
+    @property
+    def spec(self) -> ToolSpec: ...
 
     async def run(self, input: dict[str, Any], context: ToolContext) -> ToolResult: ...
 

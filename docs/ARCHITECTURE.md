@@ -161,7 +161,7 @@ Runtime 通过 `RuntimeExtensions` 组合可选能力：`ContextContributor` 贡
 `tests/contract/test_public_api.py` 保证导出集合可解析、有序，且导入公共 API 不会拉进任何可选
 依赖（`fastapi`、`psycopg`、`opentelemetry`）。
 
-`plugins`、`mcp`、`evals`、`api`、`cli` **刻意不导出**：它们尚未可注入
+`evals`、`api`、`cli` **刻意不导出**：它们尚未可注入
 `RunCoordinator`，因此不存在可承诺的组合契约。提升顺序不可颠倒 —— 先有 Runtime 注入点，
 再写 ADR，最后才进入公共 API（`skills`、`memory` 见 ADR-0022，`agents` 见 ADR-0023）。
 
@@ -396,9 +396,13 @@ MCP Client/Server 使用 JSON-RPC 2.0 边界，方法集为 `initialize`、`tool
 不把网络或第三方 MCP SDK 引入 Core。Server Tool Schema 必须是对象 JSON Schema，并将
 `readOnlyHint`、`destructiveHint`、`idempotentHint`、`openWorldHint` 映射到 canonical `ToolSpec`。
 
-MCP 远程工具只能通过 `McpRemoteTool` 注册到 `ToolRegistry`，因此调用统一经过
+MCP 远程工具通过 `register_mcp_tools()` 注册到 `ToolRegistry`（Plugin 对应
+`register_plugin_tools()`），因此调用统一经过
 `tools → policy → hooks → sandbox` 链路；直接 `McpClient.call_tool` 是低层传输 API，不得作为
 Runtime 的模型工具入口。缺少明确 `readOnlyHint=true` 的远程工具按可变更工具处理。
+注册时可用 `allowed_tools` 按服务端工具名过滤，应用因此不必信任服务器自我约束。
+`StdioMcpTransport` 是标准 stdio 传输：无 shell、独立进程组、最小环境、消息上限和有界关闭
+（ADR-0026）。
 
 断线重连最多按配置次数执行；只读工具可以重试，可能产生副作用的工具绝不自动重放，避免远端
 已经执行成功但响应丢失时造成重复副作用。连接、协议、远端错误统一映射为稳定 MCP 错误类型。

@@ -9,7 +9,7 @@ import aiharness
 
 # Packages that exist but are not yet injectable into RunCoordinator. Promoting
 # one of these is a composition-contract change and needs an ADR (TASK.md H-02).
-UNWIRED_PACKAGES = ("plugins", "mcp", "evals", "api", "cli")
+UNWIRED_PACKAGES = ("evals", "api", "cli")
 
 # Capabilities that RunCoordinator can compose, so their adapters are public.
 WIRED_ADAPTERS = (
@@ -30,6 +30,10 @@ WIRED_ADAPTERS = (
     "ChildRunSubagentRunner",
     "AgentBudget",
     "WorkspaceScope",
+    "register_mcp_tools",
+    "register_plugin_tools",
+    "StdioMcpTransport",
+    "PluginHostPolicy",
 )
 
 # Extras that the core package must never require at import time.

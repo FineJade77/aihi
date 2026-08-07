@@ -15,7 +15,9 @@ from aiharness.mcp.protocol import (
     McpToolAnnotations,
     McpToolDefinition,
 )
+from aiharness.mcp.registration import register_mcp_tools
 from aiharness.mcp.server import McpServer, McpServerHandler, McpServerTool
+from aiharness.mcp.stdio import StdioMcpTransport
 from aiharness.mcp.transport import CallableMcpTransport, InMemoryMcpTransport, McpTransport
 
 __all__ = [
@@ -37,4 +39,6 @@ __all__ = [
     "McpToolNotFound",
     "McpTransport",
     "McpTransportError",
+    "StdioMcpTransport",
+    "register_mcp_tools",
 ]

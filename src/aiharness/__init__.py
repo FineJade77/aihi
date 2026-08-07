@@ -5,7 +5,7 @@ This module is the whole supported surface for applications (`aicode/`,
 re-exported here; anything reachable only through a submodule path is internal
 and may change without an ADR.
 
-Deliberately absent: `plugins`, `mcp`, `evals`, `api` and `cli`. Those
+Deliberately absent: `evals`, `api` and `cli`. Those
 packages exist but are not yet injectable into `RunCoordinator`, so there is no
 composition contract to promise (TASK.md H-02). They stay on explicit submodule
 imports until the Runtime wires them; promoting one means adding its injection
@@ -55,6 +55,19 @@ from aiharness.core.types import (
     Usage,
 )
 from aiharness.hooks import HookBus
+from aiharness.mcp import (
+    InMemoryMcpTransport,
+    McpClient,
+    McpError,
+    McpRemoteTool,
+    McpServer,
+    McpServerTool,
+    McpToolAnnotations,
+    McpToolDefinition,
+    McpTransport,
+    StdioMcpTransport,
+    register_mcp_tools,
+)
 from aiharness.memory import (
     InMemoryMemoryStore,
     MemoryAccess,
@@ -86,6 +99,16 @@ from aiharness.observability import (
     JsonlTelemetrySink,
     Telemetry,
     TelemetrySink,
+)
+from aiharness.plugins import (
+    FileTrustStore,
+    PluginCandidate,
+    PluginDiscovery,
+    PluginHost,
+    PluginHostPolicy,
+    PluginRemoteTool,
+    PluginTrustManager,
+    register_plugin_tools,
 )
 from aiharness.policy import (
     Approval,
@@ -159,14 +182,24 @@ __all__ = [
     "EventStore",
     "FakeProvider",
     "FileArtifactStore",
+    "FileTrustStore",
     "HarnessError",
     "HookBus",
     "HostBackend",
     "InMemoryEventStore",
+    "InMemoryMcpTransport",
     "InMemoryMemoryStore",
     "InMemoryTelemetrySink",
     "JsonlTelemetrySink",
     "LocalIsolatedBackend",
+    "McpClient",
+    "McpError",
+    "McpRemoteTool",
+    "McpServer",
+    "McpServerTool",
+    "McpToolAnnotations",
+    "McpToolDefinition",
+    "McpTransport",
     "MemoryAccess",
     "MemoryCandidate",
     "MemoryCandidateRecorder",
@@ -186,6 +219,12 @@ __all__ = [
     "OpenAIProvider",
     "PermissionContext",
     "PermissionMode",
+    "PluginCandidate",
+    "PluginDiscovery",
+    "PluginHost",
+    "PluginHostPolicy",
+    "PluginRemoteTool",
+    "PluginTrustManager",
     "PolicyEngine",
     "Provider",
     "ROLE_PRIMARY",
@@ -211,6 +250,7 @@ __all__ = [
     "SkillRoot",
     "SkillScope",
     "StaticApprovalResolver",
+    "StdioMcpTransport",
     "StopReason",
     "SubagentAuthority",
     "SubagentRunner",
@@ -234,6 +274,8 @@ __all__ = [
     "WorkspaceScope",
     "WriteFileTool",
     "new_id",
+    "register_mcp_tools",
+    "register_plugin_tools",
     "restrict_registry",
     "subagent_session_factory",
 ]

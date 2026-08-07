@@ -17,6 +17,7 @@ from aiharness.plugins.errors import (
 from aiharness.plugins.host import PluginHost, PluginHostPolicy, PluginRemoteTool
 from aiharness.plugins.host_protocol import PLUGIN_HOST_PROTOCOL_VERSION
 from aiharness.plugins.manifest import MANIFEST_FILENAME, PluginManifest, SemVer, VersionRange
+from aiharness.plugins.registration import register_plugin_tools
 from aiharness.plugins.trust import (
     FileTrustStore,
     InMemoryTrustStore,
@@ -30,9 +31,10 @@ __all__ = [
     "FileTrustStore",
     "InMemoryTrustStore",
     "MANIFEST_FILENAME",
+    "PLUGIN_HOST_PROTOCOL_VERSION",
     "PluginCandidate",
-    "PluginDiscovery",
     "PluginCapabilityDenied",
+    "PluginDiscovery",
     "PluginError",
     "PluginHost",
     "PluginHostCrashed",
@@ -50,8 +52,8 @@ __all__ = [
     "PluginTrustManager",
     "PluginTrustRecord",
     "PluginVersionConflict",
-    "PLUGIN_HOST_PROTOCOL_VERSION",
     "SemVer",
     "TrustStore",
     "VersionRange",
+    "register_plugin_tools",
 ]
