@@ -17,6 +17,13 @@ Runtime 和 Session 实现。应用层只负责配置、Coding Tool 组合、CLI
 - `src/aicode/cli.py`：独立 `aicode` CLI，支持 Fake/真实 Provider 配置和持久化 Session；
 - `tests/`：应用层组合契约测试。
 
+## 模型路由
+
+所有模型请求经过 `ModelGateway`（即使只有一个 Provider）：有界重试 + 请求截止时间，
+且只在**首个 stream chunk 之前**才会 Fallback。
+
+`AICODE_SUBAGENT_MODEL` 可以让子代理用更小更便宜的模型；不设置就用主模型。
+
 ## 上下文与可观测
 
 每次编译上下文时注入：产品系统提示词 + 仓库规则文件（`AGENTS.md` → `CLAUDE.md` →

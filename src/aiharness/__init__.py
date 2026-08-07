@@ -67,7 +67,14 @@ from aiharness.memory import (
     MemoryService,
     MemoryStore,
 )
-from aiharness.models import ModelGateway, ModelRouter, Provider
+from aiharness.models import (
+    ROLE_PRIMARY,
+    ROLE_SUBAGENT,
+    ModelGateway,
+    ModelRoles,
+    ModelRouter,
+    Provider,
+)
 from aiharness.models.providers import (
     AnthropicProvider,
     OpenAICompatibleProvider,
@@ -173,6 +180,7 @@ __all__ = [
     "ModelGateway",
     "ModelRequest",
     "ModelResponse",
+    "ModelRoles",
     "ModelRouter",
     "OpenAICompatibleProvider",
     "OpenAIProvider",
@@ -180,6 +188,8 @@ __all__ = [
     "PermissionMode",
     "PolicyEngine",
     "Provider",
+    "ROLE_PRIMARY",
+    "ROLE_SUBAGENT",
     "ReadFileTool",
     "RunCoordinator",
     "RunOutcome",

@@ -46,7 +46,12 @@ class ModelRouter:
 
 
 class ModelGateway:
-    """Provider-neutral gateway with fallback only before the first stream chunk."""
+    """Provider-neutral gateway with fallback only before the first stream chunk.
+
+    It satisfies the `Provider` protocol, so a runtime can be handed a gateway
+    wherever it accepts a provider; routing, retries and fallback then apply to
+    every model request without the coordinator knowing about them.
+    """
 
     def __init__(
         self,
@@ -54,10 +59,12 @@ class ModelGateway:
         *,
         fallback: tuple[Provider, ...] = (),
         retry_policy: RetryPolicy | None = None,
+        name: str = "gateway",
     ) -> None:
         self.router = router
         self.fallback = fallback
         self.retry_policy = retry_policy or RetryPolicy()
+        self.name = name
 
     def provider_for(self, model: str) -> Provider:
         return self.router.resolve(model)

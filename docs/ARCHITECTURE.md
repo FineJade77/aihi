@@ -301,14 +301,24 @@ count_tokens(ModelRequest)
 Capability 包含 Streaming、Tool Calling、Parallel Tools、Reasoning、Vision、Prompt Cache、
 Token Counting、Context Window、Max Output 和 Effort Levels。
 
-路由按角色配置独立模型：
+`ModelGateway` 自身满足 `Provider` 协议，因此 Runtime 接受 Provider 的任何位置都可以接受
+Gateway；路由、有界重试、请求截止时间和 Fallback 对每次模型请求生效，而 `RunCoordinator`
+无需知道它们的存在。`aicode` 即使只配置一个 Provider 也走 Gateway —— 仅重试与截止时间就
+是净收益。
+
+`ModelRoles` 目前只定义**有真实消费者**的角色：
 
 ```text
-primary / fallback / compact / vision / memory / judge / subagent
+primary    → RunCoordinator 的模型
+subagent   → ChildRunSubagentRunner 派生子 Run 的模型
 ```
 
-第一阶段实现 Fake Provider；随后实现 Anthropic、OpenAI 和 OpenAI-Compatible。Fallback 只能
-在模型请求尚未产生可执行 Tool Call 时自动发生；有副作用的工具结果不得盲目重放。
+`compact` **刻意不在其中**：`SummaryGenerator.generate` 是同步方法，模型驱动的压缩无法在不把
+上下文编译整体 async 化的前提下接入。定义一个没有任何代码能读取的角色，等于写一句 Runtime
+兑现不了的承诺。`vision`/`memory`/`judge` 同理，等到有消费者时再加。
+
+Fallback 只能在模型请求尚未产生任何 stream chunk 时自动发生：一旦开始流式输出就绝不换
+Provider 重放，避免半个回合被另一个模型重写；不可重试的错误也不触发 Fallback。
 
 ## 9. Tools、Plugins、Skills 与 Hooks
 

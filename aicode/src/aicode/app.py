@@ -8,6 +8,7 @@ from aicode.config import AICodeConfig
 from aicode.context import ProjectRulesContributor
 from aicode.prompt import SYSTEM_PROMPT
 from aiharness import (
+    ROLE_SUBAGENT,
     SPAWN_CAPABILITY,
     AgentBudget,
     AnthropicProvider,
@@ -20,6 +21,8 @@ from aiharness import (
     FileArtifactStore,
     HostBackend,
     JsonlTelemetrySink,
+    ModelGateway,
+    ModelRouter,
     OpenAICompatibleProvider,
     OpenAIProvider,
     Provider,
@@ -69,6 +72,21 @@ def build_provider(config: AICodeConfig) -> Provider:
     return OpenAICompatibleProvider(config.api_key, **_base_url(config))
 
 
+def build_gateway(config: AICodeConfig) -> ModelGateway:
+    """Route every model request through the gateway.
+
+    Even with a single provider this is worth it: the gateway adds bounded
+    retries and a request deadline, and it only ever fails over before the
+    first stream chunk, so a partially streamed turn is never replayed.
+    """
+
+    provider = build_provider(config)
+    router = ModelRouter(default=provider)
+    for model in dict.fromkeys(config.roles.to_dict().values()):
+        router.register(provider, models=(model,))
+    return ModelGateway(router, name=provider.name)
+
+
 def build_tool_registry() -> ToolRegistry:
     """Select existing Harness tools for the Coding Agent product."""
 
@@ -106,10 +124,12 @@ def build_subagent_tool(
     )
     parent_tools = build_tool_registry()
 
+    subagent_model = config.roles.resolve(ROLE_SUBAGENT)
+
     def coordinator_factory(spec: object) -> RunCoordinator:
         capabilities = frozenset(getattr(spec, "capabilities", frozenset()))
         return RunCoordinator(
-            build_provider(config),
+            build_gateway(config),
             registry=restrict_registry(parent_tools, capabilities),
             sandbox=sandbox,
             policy=DefaultPolicyEngine(),
@@ -117,8 +137,8 @@ def build_subagent_tool(
 
     runner = ChildRunSubagentRunner(
         coordinator_factory,
-        subagent_session_factory(store, provider=config.provider, model=config.model),
-        model=config.model,
+        subagent_session_factory(store, provider=config.provider, model=subagent_model),
+        model=subagent_model,
     )
     return SubagentTool(runner, authority=authority)
 
@@ -169,7 +189,7 @@ def build_runtime(
     child session, so they are only registered when a store is supplied.
     """
 
-    provider = build_provider(config)
+    provider = build_gateway(config)
     sandbox = HostBackend(config.workspace, unsafe=config.unsafe_host)
     registry = build_tool_registry()
     if store is not None and config.subagents:

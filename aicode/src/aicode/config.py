@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
+from aiharness import ModelRoles
+
 ProviderName = Literal["fake", "openai", "anthropic", "openai_compatible"]
 _PROVIDERS = frozenset({"fake", "openai", "anthropic", "openai_compatible"})
 
@@ -17,6 +19,7 @@ class AICodeConfig:
 
     provider: ProviderName = "fake"
     model: str = "fake-model"
+    subagent_model: str | None = None
     api_key: str | None = field(default=None, repr=False)
     base_url: str | None = None
     workspace: Path = field(default_factory=Path.cwd)
@@ -55,11 +58,23 @@ class AICodeConfig:
                 object.__setattr__(self, name, Path(value).expanduser())
         if self.skills_path is not None:
             object.__setattr__(self, "skills_path", Path(self.skills_path).expanduser())
+        if self.subagent_model is not None and (
+            not isinstance(self.subagent_model, str) or not self.subagent_model.strip()
+        ):
+            raise ValueError("aicode subagent_model must be a non-empty string when set")
         object.__setattr__(self, "model", self.model.strip())
+        if self.subagent_model is not None:
+            object.__setattr__(self, "subagent_model", self.subagent_model.strip())
         object.__setattr__(self, "workspace", Path(self.workspace).expanduser().resolve())
         object.__setattr__(self, "db_path", Path(self.db_path).expanduser())
         if self.base_url is not None:
             object.__setattr__(self, "base_url", self.base_url.strip())
+
+    @property
+    def roles(self) -> ModelRoles:
+        """Model selection per purpose; unset roles use the primary model."""
+
+        return ModelRoles(primary=self.model, subagent=self.subagent_model)
 
     @classmethod
     def from_env(cls, *, workspace: Path | None = None) -> AICodeConfig:
@@ -67,6 +82,7 @@ class AICodeConfig:
 
         provider = os.getenv("AICODE_PROVIDER", "fake")
         model = os.getenv("AICODE_MODEL", "fake-model")
+        subagent_model = os.getenv("AICODE_SUBAGENT_MODEL")
         api_key = os.getenv("AICODE_API_KEY")
         base_url = os.getenv("AICODE_BASE_URL")
         configured_workspace = workspace or Path(os.getenv("AICODE_WORKSPACE", Path.cwd()))
@@ -85,6 +101,7 @@ class AICodeConfig:
         return cls(
             provider=provider,  # type: ignore[arg-type]
             model=model,
+            subagent_model=subagent_model,
             api_key=api_key,
             base_url=base_url,
             workspace=configured_workspace,

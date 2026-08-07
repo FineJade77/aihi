@@ -7,7 +7,7 @@ from pathlib import Path
 from aicode.app import build_runtime
 from aicode.config import AICodeConfig
 
-from aiharness import SPAWN_CAPABILITY, InMemoryEventStore
+from aiharness import SPAWN_CAPABILITY, InMemoryEventStore, ModelGateway
 
 
 def config_for(tmp_path: Path, **overrides: object) -> AICodeConfig:
@@ -45,3 +45,30 @@ def test_enabled_subagent_tool_is_read_only_and_cannot_fan_out(tmp_path: Path) -
     inherited = tool._child_capabilities({})  # type: ignore[attr-defined]
     assert SPAWN_CAPABILITY not in inherited
     assert "filesystem.read" in inherited
+
+
+def test_subagent_role_uses_its_own_model(tmp_path: Path) -> None:
+    runtime = build_runtime(
+        config_for(tmp_path, model="big-model", subagent_model="small-model"),
+        store=InMemoryEventStore(),
+    )
+
+    tool = runtime.registry.get("task")
+    assert tool is not None
+    assert tool.runner.model == "small-model"  # type: ignore[attr-defined]
+
+
+def test_subagent_role_defaults_to_the_primary_model(tmp_path: Path) -> None:
+    runtime = build_runtime(config_for(tmp_path, model="only-model"), store=InMemoryEventStore())
+
+    tool = runtime.registry.get("task")
+    assert tool is not None
+    assert tool.runner.model == "only-model"  # type: ignore[attr-defined]
+
+
+def test_runtime_talks_to_a_gateway_not_a_bare_provider(tmp_path: Path) -> None:
+    runtime = build_runtime(config_for(tmp_path))
+
+    assert isinstance(runtime.provider, ModelGateway)
+    # Routing, bounded retries and the request deadline now apply to every turn.
+    assert runtime.coordinator.provider is runtime.provider
