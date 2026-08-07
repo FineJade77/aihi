@@ -169,6 +169,39 @@ def resume(
 
 
 @app.command()
+def abandon(
+    session: str = typer.Argument(..., help="Session id holding the suspended run."),
+    run_id: str | None = typer.Option(None, "--run", help="Suspended run id."),
+    db: Path | None = typer.Option(None, "--db"),
+    reason: str = typer.Option("abandoned", "--reason"),
+) -> None:
+    """Give up on a suspended run instead of approving or denying it."""
+
+    config = AICodeConfig.from_env()
+    if db is not None:
+        config = replace(config, db_path=db)
+    store = SQLiteEventStore(config.db_path)
+    try:
+        current = _load_session(store, session)
+        suspended = RunCoordinator.suspended_runs(current)
+        target = run_id or (suspended[0] if suspended else None)
+        if target is None:
+            raise typer.BadParameter(
+                "This session has no suspended run to abandon", param_hint="--run"
+            )
+        runtime = build_runtime(replace(config, workspace=current.cwd, unsafe_host=True))
+        try:
+            result = runtime.coordinator.abandon(current, run_id=target, reason=reason)
+        except ValueError as error:
+            raise typer.BadParameter(str(error), param_hint="--run") from error
+        typer.echo(
+            json.dumps({"run_id": result.run_id, "state": result.state.value}, sort_keys=True)
+        )
+    finally:
+        store.close()
+
+
+@app.command()
 def approve(
     session: str = typer.Argument(..., help="Session id holding the pending approval."),
     approval_id: str = typer.Argument(..., help="Approval id reported by a suspended run."),

@@ -15,6 +15,9 @@ class RunState(StrEnum):
     WAITING_APPROVAL = "waiting_approval"
     COMPLETED = "completed"
     FAILED = "failed"
+    # A run stopped mid-flight and may be resumed; it pairs with run.interrupted.
+    INTERRUPTED = "interrupted"
+    # A run explicitly abandoned by its owner; it pairs with run.cancelled.
     CANCELLED = "cancelled"
 
 
@@ -23,15 +26,24 @@ class InvalidRunTransition(HarnessError):
 
 
 _TRANSITIONS: dict[RunState, frozenset[RunState]] = {
-    RunState.CREATED: frozenset({RunState.RUNNING, RunState.CANCELLED, RunState.FAILED}),
+    RunState.CREATED: frozenset(
+        {RunState.RUNNING, RunState.INTERRUPTED, RunState.CANCELLED, RunState.FAILED}
+    ),
     RunState.RUNNING: frozenset(
-        {RunState.WAITING_TOOL, RunState.COMPLETED, RunState.CANCELLED, RunState.FAILED}
+        {
+            RunState.WAITING_TOOL,
+            RunState.COMPLETED,
+            RunState.INTERRUPTED,
+            RunState.CANCELLED,
+            RunState.FAILED,
+        }
     ),
     RunState.WAITING_TOOL: frozenset(
         {
             RunState.RUNNING,
             RunState.WAITING_APPROVAL,
             RunState.COMPLETED,
+            RunState.INTERRUPTED,
             RunState.CANCELLED,
             RunState.FAILED,
         }
@@ -43,11 +55,13 @@ _TRANSITIONS: dict[RunState, frozenset[RunState]] = {
             RunState.RUNNING,
             RunState.WAITING_TOOL,
             RunState.COMPLETED,
+            RunState.INTERRUPTED,
             RunState.CANCELLED,
             RunState.FAILED,
         }
     ),
     RunState.COMPLETED: frozenset(),
+    RunState.INTERRUPTED: frozenset(),
     RunState.FAILED: frozenset(),
     RunState.CANCELLED: frozenset(),
 }

@@ -202,3 +202,33 @@ def test_cli_rejects_resume_and_approve_without_pending_state(
     assert "no suspended run" in missing_run.output
     assert missing_approval.exit_code != 0
     assert "No active pending approval" in missing_approval.output
+
+
+def test_cli_can_abandon_a_suspended_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database = tmp_path / "events.db"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    common = ["--db", str(database), "--workspace", str(workspace), "--unsafe-host"]
+    script(
+        monkeypatch,
+        [FakeStep.call_tool("write_file", WRITE_CALL), FakeStep(text="done")],
+    )
+    started = runner.invoke(app, ["run", "write a note", *common])
+    assert started.exit_code == SUSPENDED_EXIT_CODE, started.output
+    events = events_of(started.output)
+    session_id = events[0]["session_id"]
+    run_id = next(e for e in events if e["type"] == "run.suspended")["run_id"]
+
+    result = runner.invoke(
+        app, ["abandon", session_id, "--run", run_id, "--db", str(database), "--reason", "nope"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["state"] == "cancelled"
+    assert not (workspace / "note.txt").exists()
+    # A resumed run is no longer offered.
+    again = runner.invoke(app, ["resume", session_id, *common])
+    assert again.exit_code != 0
+    assert "no suspended run" in again.output

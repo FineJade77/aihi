@@ -37,6 +37,7 @@ Trust 流程显式加载。
 aicode run "重构这个模块" --unsafe-host          # 挂起并打印 approval_id / run_id
 aicode approve <session> <approval_id>          # 或 --deny
 aicode resume <session> --run <run_id> --unsafe-host
+aicode abandon <session> --run <run_id>          # 放弃这个 Run
 ```
 
 在终端内直接回答：

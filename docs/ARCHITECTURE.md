@@ -172,7 +172,7 @@ CREATED
   → WAITING_APPROVAL   (policy returned ASK; suspended and resumable)
   → WAITING_TOOL       (approval granted or denied)
   → RUNNING
-  → COMPLETED / FAILED / CANCELLED
+  → COMPLETED / FAILED / INTERRUPTED / CANCELLED
 ```
 
 `WAITING_APPROVAL` 是唯一的非终态停机点：Run 追加 `run.suspended` 后返回，不写终态事件，
@@ -190,9 +190,14 @@ CREATED
 
 ### 4.1 取消与恢复
 
+打断与放弃是两个终态（ADR-0024）：`INTERRUPTED` 对应 `run.interrupted`，指 Run 执行中被
+`cancel_event` 打断，可以 Resume；`CANCELLED` 对应 `run.cancelled`，指所有者显式放弃，
+由 `RunCoordinator.abandon()` 写入，不可恢复。
+
 取消流程必须收尾所有在飞任务，给未完成 Tool Call 合成错误结果，并追加
 `run.interrupted`。进程直接退出时，Session Load 会扫描未配对调用并生成
-`session.repaired`。不得自动重放未知是否已产生副作用的工具。
+`session.repaired`。不得自动重放未知是否已产生副作用的工具。挂起等待 Approval 的 Run
+只能通过解决 Approval 或 `abandon()` 离开 `WAITING_APPROVAL`。
 
 主动挂起与崩溃必须区分：等待 Approval 的 Tool Call 没有丢失执行状态，孤儿修复必须跳过
 `run.suspended` 记录的 `pending_tool_call_ids`，由 Resume 真正执行它们。
@@ -226,7 +231,7 @@ event_id, session_id, run_id, seq, type, schema_version, created_at, data
 ```text
 session.created / session.forked / session.repaired
 run.started / run.resumed / run.suspended
-run.completed / run.failed / run.interrupted
+run.completed / run.failed / run.interrupted / run.cancelled
 user.message / assistant.message / tool.result
 model.requested / model.completed / usage.recorded
 tool.requested / tool.started / tool.completed

@@ -353,7 +353,7 @@ async def test_cancellation_repairs_tool_call_without_replay() -> None:
     task.cancel()
     result = await task
 
-    assert result.state == RunState.CANCELLED
+    assert result.state == RunState.INTERRUPTED
     assert session.orphan_tool_calls == ()
     assert any(event.type == "run.interrupted" for event in session.events)
     assert session.messages[-1].tool_results[0].metadata["recovered"] is True
@@ -381,7 +381,7 @@ async def test_cancel_event_interrupts_in_flight_tool_and_repairs_call() -> None
     cancel_event.set()
     result = await asyncio.wait_for(task, timeout=1)
 
-    assert result.state == RunState.CANCELLED
+    assert result.state == RunState.INTERRUPTED
     assert session.orphan_tool_calls == ()
     assert not any(event.type == "tool.completed" for event in session.events)
     assert session.messages[-1].tool_results[0].metadata["recovered"] is True

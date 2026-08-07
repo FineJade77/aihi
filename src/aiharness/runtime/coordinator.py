@@ -65,7 +65,16 @@ _RUN_LIFECYCLE_EVENTS = frozenset(
         "run.completed",
         "run.failed",
         "run.interrupted",
+        "run.cancelled",
     }
+)
+
+
+_TERMINAL_RUN_EVENTS = frozenset(
+    {"run.completed", "run.failed", "run.interrupted", "run.cancelled"}
+)
+_TERMINAL_STATES = frozenset(
+    {RunState.COMPLETED, RunState.FAILED, RunState.INTERRUPTED, RunState.CANCELLED}
 )
 
 
@@ -224,8 +233,8 @@ class RunCoordinator:
             )
         except asyncio.CancelledError:
             self._repair_after_interrupt(session, rid)
-            self._finish(session, rid, machine, RunState.CANCELLED, "run.interrupted")
-            return RunResult(rid, machine.state, error="run_cancelled")
+            self._finish(session, rid, machine, RunState.INTERRUPTED, "run.interrupted")
+            return RunResult(rid, machine.state, error="run_interrupted")
         except Exception as error:  # noqa: BLE001 - persisted as a recoverable run failure.
             self._repair_after_interrupt(session, rid)
             self._finish(
@@ -240,6 +249,46 @@ class RunCoordinator:
         finally:
             if self.telemetry is not None:
                 self.telemetry.flush()
+
+    def abandon(self, session: Session, *, run_id: str, reason: str = "abandoned") -> RunResult:
+        """Terminate a run that is not executing, closing its open tool calls.
+
+        This is the only way out of `WAITING_APPROVAL` other than resolving the
+        approval: without it a suspended run would stay open forever.
+        """
+
+        if run_id in self.suspended_runs(session):
+            pending = self._suspended_tool_call_ids(session, run_id)
+            session.repair_orphan_tool_calls(run_id=run_id, exclude=())
+            del pending
+        elif self._last_lifecycle_event(session, run_id) is None:
+            raise ValueError(f"Unknown run: {run_id}")
+        elif self._last_lifecycle_event(session, run_id) in _TERMINAL_RUN_EVENTS:
+            raise ValueError(f"Run is already terminal: {run_id}")
+        session.append_many(
+            [
+                Event(
+                    type="run.state_changed",
+                    session_id=session.id,
+                    run_id=run_id,
+                    data={"state": RunState.CANCELLED.value},
+                ),
+                Event(
+                    type="run.cancelled",
+                    session_id=session.id,
+                    run_id=run_id,
+                    data={"state": RunState.CANCELLED.value, "reason": reason},
+                ),
+            ]
+        )
+        return RunResult(run_id, RunState.CANCELLED, error="run_cancelled")
+
+    @staticmethod
+    def _last_lifecycle_event(session: Session, run_id: str) -> str | None:
+        for event in reversed(session.events):
+            if event.run_id == run_id and event.type in _RUN_LIFECYCLE_EVENTS:
+                return event.type
+        return None
 
     async def resume(self, session: Session, *, run_id: str, **kwargs: Any) -> RunResult:
         """Continue an interrupted or approval-suspended run from persisted events."""
@@ -912,7 +961,7 @@ class RunCoordinator:
         """Commit the final transition and its terminal event in one transaction."""
 
         events: list[Event] = []
-        if machine.state not in {RunState.COMPLETED, RunState.FAILED, RunState.CANCELLED}:
+        if machine.state not in _TERMINAL_STATES:
             events.append(RunCoordinator._transition_event(session, run_id, machine, target))
         events.append(
             Event(

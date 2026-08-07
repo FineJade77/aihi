@@ -248,7 +248,7 @@ class _ReplayState:
             except (ValueError, InvalidRunTransition) as exc:
                 raise ReplayInvariantViolation("Invalid replay run transition") from exc
             return
-        if event.type in {"run.completed", "run.failed", "run.interrupted"}:
+        if event.type in {"run.completed", "run.failed", "run.interrupted", "run.cancelled"}:
             machine = self.runs.get(event.run_id)
             if machine is None:
                 raise ReplayInvariantViolation("Run terminal event before run.started")
@@ -257,7 +257,8 @@ class _ReplayState:
             target = {
                 "run.completed": RunState.COMPLETED,
                 "run.failed": RunState.FAILED,
-                "run.interrupted": RunState.CANCELLED,
+                "run.interrupted": RunState.INTERRUPTED,
+                "run.cancelled": RunState.CANCELLED,
             }[event.type]
             raw_state = event.data.get("state")
             if raw_state is not None and str(raw_state) != target.value:

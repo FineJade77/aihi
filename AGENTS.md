@@ -96,7 +96,8 @@ Runtime 是显式状态机，不把状态藏在不可恢复的局部变量中。
 
 1. 收尾并取消在飞工具任务；
 2. 为未完成 Tool Call 合成错误 Tool Result；
-3. 持久化 `run.interrupted`；
+3. 持久化 `run.interrupted` 并置为 `INTERRUPTED`（可恢复）；显式放弃走 `abandon()`，
+   写 `run.cancelled` 并置为 `CANCELLED`（不可恢复，ADR-0024）；
 4. 保证下一次 Resume 不会留下孤儿 Tool Call。
 
 ## Provider、Tool 和 Plugin 规则
