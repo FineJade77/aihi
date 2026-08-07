@@ -1,11 +1,32 @@
 # AIHarness 实施任务
 
-状态：基线确认，按依赖顺序实施
+状态：实施中
 架构基线：[ARCHITECTURE.md](ARCHITECTURE.md)
+定位：**单机可嵌入库**。不做平台增强 —— 详见下节。
+
+## 范围：不做平台增强
+
+`aiharness` 是库，不是服务。凡是「需要第二台机器、第二个进程或第二个团队才有意义」的能力
+都不在范围内。2026-08-07 按此判据移除了约 4,000 行已实现代码：
+
+| 已移除 | 行数 | 理由 |
+|---|---:|---|
+| `api/` FastAPI 控制面 | 620 | 带外 Approval 由应用 CLI 覆盖；唯一的 fastapi 依赖 |
+| Worker / Run lease / IPC 认证 | 1,108 | 只在多 Worker 部署下有意义 |
+| `PostgresEventStore` | 366 | 其价值是多进程并发写，即上一条的场景 |
+| 远程 OTel 管线与 exporter | ~700 | 单机观测用 JSONL sink 足够 |
+| `Mailbox` / `SubagentCoordinator` | 408 | 子代理互发消息是编排平台形态；`SubagentTool` 直连 `TaskGraph` |
+| Worktree / Patch 边界 | 221 | 没有执行体的校验器：既不创建 worktree 也不合并 patch |
+| Provider Golden / `EvalGate` | 631 | CI 工具而非 Harness 能力，且无 CI 在用 |
+| `cli/` | 175 | 它把 Provider 和工具集写死，违反自身分层原则；命令行属于应用层 |
+
+**保留的是协议而非部署实现**：`EventStore`、`TelemetrySink`、`SandboxBackend` 都在。
+将来要做分布式是新增适配器，不是重写运行时。运行时依赖因此只剩 `httpx`。
 
 ## 交付原则
 
 - 每个里程碑必须有可运行的纵向链路；
+- 不为假想的部署形态预留实现，只保留协议；
 - 所有新能力先定义事件和可测试协议，再接入实现；
 - 安全边界在第一条工具链路中建立，不延后到产品层；
 - 原始事件不可覆盖，压缩、Memory 和 Eval 都只能追加派生数据；
@@ -54,8 +75,7 @@
 - `tools/`：Tool Protocol、Schema 校验、确定性 Registry、Dispatcher。
 - `sandbox/`：SandboxBackend、HostBackend、路径约束、超时和进程组清理。
 - `policy/`：ALLOW/DENY/ASK、默认规则、审计事件。
-- `tools/builtin/`：ReadFile、Glob、Grep 等只读工具。
-- `cli/`：最小命令行，支持新建会话、Resume、事件流输出。
+- `tools/builtin/`：ReadFile 等只读工具（Glob/Grep 见 ADR-0028）。
 
 ### 验收
 
@@ -75,7 +95,7 @@
 - `models/providers/openai`：流式文本、工具、reasoning effort 和 usage。
 - `models/providers/openai_compatible`：base URL、endpoint capability 配置。
 - Model Gateway、角色路由、Fallback 和请求级超时。
-- 写文件、编辑、Shell、测试执行工具。
+- 写文件、编辑和命令执行工具（`bash`，见 ADR-0028）。
 - `policy/`：路径规则、命令规则、审批、allow-once/allow-always、Capability Lease。
 
 ### 验收
@@ -85,7 +105,7 @@
 - 非幂等工具在 Provider 重试时不会自动重放；
 - 写工具默认 ASK，Plan 模式拒绝修改；
 - 外部文件发生变化后，编辑需要重新读取并拒绝盲写；
-- Shell 超时、取消、输出上限和进程组清理均有测试。
+- 命令执行的超时、取消、输出上限和进程组清理均有测试。
 - Approval/Capability Lease 以事件持久化；两者只能授权对应 `run_id`，过期或撤销后失效；
   Runtime 恢复 Session 后仍能重建授权投影，默认 ASK 产生可审计的 `approval.requested`。
 
@@ -151,28 +171,24 @@ Plugin Host、激活前重新 Hash/Trust 校验、能力/权限子集策略、�
 - MCP 断线时只读工具可有限重试，可能产生副作用的工具不得自动重放；
 - Memory 条目可追溯、可删除、不会把 Secret 写入长期记忆。
 
-## M6：Subagent、Docker 与服务化
+## M6：Subagent 与执行隔离
 
 ### 任务
 
-- `agents/`：TaskSpec、子 Session、Mailbox、预算、深度、并发和取消。
-- Git Worktree/只读 workspace 隔离与 Patch Artifact 合并。
-- `sandbox/docker`：DockerBackend，网络、文件、资源和 Secret Broker 配置。
-- `api/`：可选 FastAPI Session/Run/Approval/Artifact API。
-- SQLite 到 PostgreSQL 的 Store 适配和 Worker lease。
+- `agents/`：TaskSpec、子 Session、预算、深度和取消。
+- `sandbox/local`、`sandbox/docker`：OS-native 与容器执行后端。
 
-当前进度：已完成 M6a 子代理治理核心：`TaskSpec`/`TaskResult` canonical 类型、可快照
-`TaskGraph` 状态机、父子 capability/预算/深度/只读 workspace 子集校验、有界结构化 FIFO
-`Mailbox`、显式 ack/in-flight、取消递归收尾和 Interrupted Resume。当前实现仍是进程内协调器，
-没有宣称 Docker 隔离或多 Worker 所有权；M6b 已加入可选 `LocalIsolatedBackend`，通过 Linux
+> 范围调整（2026-08-07）：本里程碑原含 `api/` 控制面、PostgreSQL Store、Worker lease 与
+> Mailbox/Worktree。它们曾实现并通过测试，现已按「不做平台增强」移除，见本文件顶部。
+
+当前进度：M6a 完成子代理治理核心：`TaskSpec`/`TaskResult` canonical 类型、可快照 `TaskGraph`
+状态机、父子 capability/预算/深度/只读 workspace 子集校验、取消递归收尾和 Interrupted Resume。
+执行入口见 H-02（`SubagentTool`）。M6b 已加入可选 `LocalIsolatedBackend`，通过 Linux
 bubblewrap 或 macOS Seatbelt 做网络、进程和 workspace 外写约束，能力不足时 fail closed；它不
 宣称完整文件系统机密隔离。M6c 已加入可注入 runner 的 `DockerBackend`，默认网络关闭、容器根
-只读、workspace 唯一 bind mount、资源上限和 fail-closed；并加入 `WorktreeSpec`、
-`PatchArtifact`、`WorktreePatchBoundary` 契约，暂不自动创建 Worktree 或合并 Patch。M6d 已完成：
-可选 FastAPI 控制面（Session/事件、Approval、Run lease、受作用域 Artifact 查询）、PostgreSQL
-`EventStore` DB-API 适配（事务、`FOR UPDATE`、`expected_seq` 和严格 JSON）以及内存 Run lease
-基线（过期接管、fencing token、stale owner 拒绝）。FastAPI 不直接执行工具；公网认证和授权由
-部署层提供。
+只读、workspace 唯一 bind mount、资源上限和 fail-closed。
+
+M6d（控制面 / PostgreSQL / Run lease）与 Worktree/Patch 契约曾完成，现已移除。
 
 ### 验收
 
@@ -180,88 +196,55 @@ bubblewrap 或 macOS Seatbelt 做网络、进程和 workspace 外写约束，能
 - 子代理崩溃后可查询状态并恢复或取消；
 - 要求隔离的 Policy Profile 会拒绝 Host，即使 `unsafe=true`；
 - Docker 执行事件可与 Host 执行事件统一回放；
-- 多 Worker 不会同时拥有同一 Run。
-- FastAPI 未安装时核心 SDK 仍可导入，调用 API 工厂得到稳定 `api_unavailable`；API 的未知内部
-  异常不泄露原始错误，Artifact 作用域错误和过期分别得到可区分的 HTTP 错误。
-- PostgreSQL Store 的成功查询结束事务，追加使用 `FOR UPDATE` 与 `expected_seq`；唯一约束竞态、
-  连接失败和非标准 JSON 均有稳定错误映射。
+- 单会话只有一个写者；子代理因此在独立 Session 中执行（ADR-0023）。
 
 ## M7：评估与可观测性
 
 ### 任务
 
-- `observability/`：OpenTelemetry Trace、Metrics、结构化日志、成本核算和脱敏。
-- `evals/`：Fake/Replay、Provider Contract、Golden Tasks、Coding Tasks、安全测试。
+- `observability/`：canonical Trace/Metric/Cost 类型、脱敏、JSONL sink。
+- `evals/`：Replay、TraceGraph、Grader。
 - 事件轨迹导出、离线回放和评分器接口。
-- CI 回归门禁：恢复、策略、压缩、工具安全和 Provider 兼容性。
 
-当前进度：M7a 已完成不绑定厂商的 `TraceContext`、结构化 `Observation`、`MetricPoint`、
-`CostRecord`、有界 `InMemoryTelemetrySink` 和 `Telemetry` facade；Session 可旁路观察本实例
-追加的持久化 Event，观测故障不会改变 Runtime 结果。Redactor 对常见凭据、非 JSON/非有限值、
-超长内容和未知对象 fail-closed；成本核算拒绝负数、非有限和溢出。M7c 已补充可选 exporter 边界，
-但尚未接入远程 exporter pipeline，也尚未覆盖外部 Worker refresh 的事件观察。
+> 范围调整（2026-08-07）：远程 OTel 管线、OTLP 传输、Worker trace 与 Provider Golden/EvalGate
+> 已移除。`TelemetrySink` Protocol 保留，远程导出属于部署适配器。
 
-M7b 已完成脱敏 `TraceBundle`、严格序列号/Run/Tool 生命周期 `ReplayEngine`、JSONL
-`EvalDataset`、离线 `EvalRunner` 以及 EventCount/RunState/Composite Grader。TraceBundle 在导出和
-加载时递归冻结并对完整规范化事件计算 SHA-256；Replay 只做状态投影，绝不重新执行副作用。尚未
-接入真实 Provider Golden Task、远程 exporter pipeline 或外部评估服务。
+当前进度：M7a 完成不绑定厂商的 `TraceContext`、`Observation`、`MetricPoint`、`CostRecord`、
+有界 `InMemoryTelemetrySink` 和 `Telemetry` facade。Session 旁路观察已持久化事件，观测故障
+fail-open 且不改变 Runtime 结果；`ephemeral` 事件不进入观测记录（ADR-0021）。Redactor 对常见
+凭据、非 JSON/非有限值、超长内容和未知对象 fail-closed；成本核算拒绝负数、非有限和溢出。
 
-M7c 已完成 OTel/JSONL exporter 的可选边界适配（Metric/Cost 保留 unit，数值溢出和缺少 OTel API
-时 fail closed）以及 replay-only `GoldenTask`/`GoldenTaskGrader`。
+M7b 完成脱敏 `TraceBundle`、严格序列号/Run/Tool 生命周期 `ReplayEngine`、JSONL `EvalDataset`、
+离线 `EvalRunner` 以及 EventCount/RunState/Composite Grader。TraceBundle 在导出和加载时递归冻结
+并对规范化事件计算 SHA-256；Replay 只做状态投影，绝不重新执行副作用。
 
-M7d-a 已完成离线 Provider Golden Task 与 CI 评估门禁核心：`ProviderGoldenTask` 只接受
-Provider-neutral stream transcript，request fingerprint 在哈希前脱敏且忽略消息/工具调用的临时 ID；
-`ProviderGoldenRunner` 只调用注入的 Provider，不执行 Tool、Policy、Hook 或 Sandbox，异常只输出稳定
-error code；`EvalGate` 生成严格 JSON 的 `GateVerdict`，空数据或低于阈值会失败并可通过
-`EvalGateFailed` 阻断 CI。真实远程 OTel pipeline、批量导出和外部 Provider 不在本步范围。
+M7c 完成 `JsonlTelemetrySink` 与 replay-only `GoldenTask`/`GoldenTaskGrader`。
 
-M7d-b 已完成 `OtelBatchPipeline`：资源元数据在导出前统一脱敏，`W3CTracePropagator` 提供严格
-`traceparent` 注入/解析，队列有界并显式支持 `raise/drop_newest/drop_oldest` 背压；批量导出仅按
-配置的有限次数重试可重试传输错误，耗尽后以稳定错误码失败并统计丢弃批次。`BearerTokenAuth` 不
-把凭据放入 resource 或异常；`OtlpHttpTransport` 提供可注入 HTTP client 的 OTLP/HTTP JSON 适配，
-映射 resource、spans、metrics 和 logs。Runtime 仍通过 Telemetry facade fail-open，远程网络只存在
-于显式配置的 pipeline transport。
+M7d 完成跨会话审计：`TraceGraph`/`replay_graph` 组合单会话 Bundle 并校验委派链接（ADR-0027）。
 
-M7e-a 已完成本地 Runtime/Worker 生命周期接入：`RunCoordinator` 在 completed/failed/interrupted
-terminal event 写入后调用 `Telemetry.flush()`，flush 故障保持 fail-open；`WorkerTraceManager` 为
-Subagent/外部 Worker 创建带 parent span 的 child trace，支持 attempt refresh、从外部
-`traceparent` carrier 恢复和 headers 生成。Worker trace 不参与权限、Lease 或 Sandbox 决策，也不把
-trace context 当作认证凭据；共享 Pipeline 不在每个 Run 结束时 close，仅在进程/Worker shutdown 时
-由调用方显式 `Telemetry.close()`。
+M7e 完成 Runtime 接入：`RunCoordinator` 在 Run 的每个出口 flush 一次，flush 失败只是观测侧失败。
 
-M7e-b 已完成 Lease/IPC trace bridge：`WorkerLeaseEnvelope` 将 `lease_id`、`run_id`、owner、
-fencing token、expiry、attempt 和严格 `traceparent` 组成可 JSON 恢复的 envelope；`WorkerLeaseTraceBridge`
-在 acquire 前校验 parent carrier，acquire/renew/release 始终委托已有 `RunLeaseStore`，不会绕过
-fencing 或把 TraceContext 当作所有权。Lease takeover 可用旧 Worker carrier 创建新 child span；旧
-owner 的 renew/release 仍由 fencing token 拒绝。IPC 传输仍由宿主注入，本步不自动暴露网络路由。
-
-M7e-c 已完成显式 Worker IPC 认证边界：`WorkerIpcAuthenticator` 对 canonical JSON 使用可轮换
-key-id 的 HMAC-SHA256 detached signature，`WorkerLeaseIpcAdapter` 在调用 Bridge 前严格校验签名、
-字段和 envelope；FastAPI Worker 路由只有在调用方显式注入 adapter 时才注册。TLS/mTLS 仍由宿主
-传输层负责，签名密钥不进入 envelope、响应或日志。新增 `PostgresRunLeaseStore` 使用事务、行锁、
-fencing sequence 和 current-lease partial unique index；过期 takeover 保留旧行并拒绝 stale owner，
-提供 DB-API contract fake 与 `AIHARNESS_POSTGRES_DSN` 可选 live E2E。
+已移除：远程 OTel 管线、OTLP 传输、`WorkerTraceManager`、Provider Golden 与 `EvalGate`。
+Provider 兼容性覆盖由 `tests/contract/test_model_providers.py` 承担。
 
 ## AIHarness 待开发 Backlog
 
-本节是 `aiharness` 基础层的持续任务清单，不是 `aicode` 或其他具体 Agent 的产品需求。当前目标
-优先支持单机终端 Agent；分布式 Worker、mTLS 和生产 PostgreSQL 暂缓，除非部署场景明确需要。
+本节是 `aiharness` 基础层的持续任务清单，不是 `aicode` 或其他具体 Agent 的产品需求。
+目标形态是单机可嵌入库；平台类能力见顶部「范围」一节，不再作为待办。
 
 ### H-01：公共组合边界与兼容性
 
-- 状态：In Progress；优先级：P0；依赖：无；验收：应用只依赖稳定 public API，公共 Schema 有兼容性测试。
+- 状态：Done；验收：应用只依赖稳定 public API，公共 Schema 有兼容性测试。
 - ✅ 顶层 `aiharness.__all__` 作为唯一组合面；`aicode` 全部改为 `from aiharness import ...`；
   AST import 边界测试 + 公共 API 契约测试（导出可解析/有序、不拉入可选依赖）；
-  `agents`/`memory`/`skills`/`plugins`/`mcp`/`evals`/`api`/`cli` 暂不导出，等 H-02 的 Runtime 注入点；
 - ✅ Event 信封版本、迁移钩子（fail closed）、事件类型目录（durable/ephemeral/legacy）和
-  冻结 v1 会话语料的兼容性测试；H-01 完成。
-- 固定 Provider、Tool、Policy、Hook、Sandbox、Context、Memory、Skill 和 Subagent 的组合契约；
-- 为应用层提供 Runtime factory/依赖注入约定，但不把 Coding Prompt、工具集合或 Agent 规则写进 Harness；
-- 为公共 Event、Envelope 和 Store Schema 建立版本迁移和兼容性测试。
+  冻结 v1 会话语料的兼容性测试；
+- ✅ 提升规则：**先有 Runtime 注入点，再写 ADR，最后才进公共 API**。`skills`/`memory`（ADR-0022）、
+  `agents`（ADR-0023）、`plugins`/`mcp`（ADR-0026）依次按此完成；目前仅 `evals` 未导出（见 H-12）。
 
-### H-02：本地运行时完善（当前优先级最高）
+### H-02：本地运行时完善
 
-- 状态：In Progress；优先级：P0；依赖：H-01 的组合约定；验收：终端可 Approval、Resume、取消并恢复完整 Tool 生命周期。
+- 状态：Done；验收：终端可 Approval、Resume、取消并恢复完整 Tool 生命周期。
 - ✅ Runtime 可选注入边界（ADR-0022）：`RuntimeExtensions` + `ContextContributor`/`RunRecorder`；
   Skill 索引进上下文、Memory 检索与候选抽取接入 Run；`aicode` 自动组合项目 Skill 索引；
 - ✅ Approval Resolver 与挂起态（ADR-0020）：`RunState.WAITING_APPROVAL`、`run.suspended`/
@@ -272,40 +255,15 @@ fencing sequence 和 current-lease partial unique index；过期 takeover 保留
 - ✅ Subagent 接入（ADR-0023）：`SubagentTool` 走工具链路、子 Run 独立 Session、权限模式取严、
   预算（超时/Token/Tool Call）真实生效、子代理默认不可再派生；`aicode` 以只读授权启用；
 - ✅ 终态语义（ADR-0024）：`INTERRUPTED`/`CANCELLED` 分离，`abandon()` 补上挂起 Run 的出口；
-- 待办：一次性 Approval（`approval.consumed` 事件与投影），当前批准在本 Run 内对该工具持续有效；
-- 完善 Runtime 对 Memory、Skill、Subagent、Artifact 和 Observability 的可选注入边界；
-- 增加跨进程杀死、SQLite 重启、取消、孤儿 Tool Call 和长会话压缩的综合回归集；
-- 继续保持 Host 默认 `unsafe=false`、副作用链路和事件不变式。
+- ✅ 一次性 Approval（ADR-0025）：`GRANTED_ONCE` 与 `approval.consumed`，终端默认收紧为单次；
+- ✅ 工具面重整（ADR-0028）：`bash` 取代 argv 执行，新增只读 `glob`/`grep`，搜索不再需要审批。
 
-### H-03：PostgreSQL 生产化（部署需要时执行）
+### H-03 ~ H-06：已移出范围
 
-- 状态：Deferred；优先级：P2；依赖：H-01、受保护分支的 PostgreSQL 服务；验收：live CI 覆盖迁移、并发 fencing、恢复和 projection rebuild。
-- 将当前可选 `AIHARNESS_POSTGRES_DSN` live E2E 纳入受保护分支 CI；
-- 增加数据库 migration/version table、升级/回滚检查、连接池和重连策略；
-- 验证真实 PostgreSQL 并发 Lease takeover、`FOR UPDATE`、fencing 和 Event Store projection rebuild；
-- 补充备份恢复、数据保留、Artifact GC 和大事件查询的运行手册。
-
-### H-04：部署安全与 Worker Control Plane（分布式场景）
-
-- 状态：Deferred；优先级：P3；依赖：H-03 和明确的远程 Worker 部署；验收：mTLS identity、密钥撤销、重放防护和 Worker 崩溃接管可演练。
-- 接入宿主 transport 的 TLS/mTLS peer identity，并映射到 `worker_id`/`owner_id`；
-- 完成 HMAC 和证书的 active/previous/revoked 轮换、撤销、审计和重放防护；
-- 增加 Worker heartbeat、watchdog、进程重启、Lease 自动续租和 stale owner 接管；
-- 明确 Unix socket、HTTP、队列等 transport 的认证、超时、限流和幂等协议。
-
-### H-05：更强执行隔离（安全场景）
-
-- 状态：Deferred；优先级：P2；依赖：明确的隔离 Profile 和部署适配器；验收：每个后端有 capability matrix、安全回归和失败清理测试。本项属于 ops/deployment adapter，不是单机 Harness 基线。
-- Rootless Docker、seccomp/cgroup、网络 egress 和 Secret Broker 的生产 profile；
-- 评估 gVisor、Firecracker、Kubernetes Worker 等远程后端；
-- 为每个后端补充 capability matrix、资源限制、路径逃逸、进程组和失败清理测试。
-
-### H-06：生产观测与评估
-
-- 状态：Planned；优先级：P1；依赖：H-01；验收：远程观测、Golden/Coding Task 和跨版本回放可在 CI 中阻断回归。
-- 接入 OTel Collector、远程 exporter、采样、cardinality 上限和告警规则；
-- 扩展 Provider Golden、Coding Task、安全回放和跨版本 Event/Context 兼容性门禁；
-- 增加成本预算、失败分类、工具副作用审计和长时间运行稳定性指标。
+PostgreSQL 生产化、Worker Control Plane 与部署安全、生产隔离 profile、远程观测门禁 —— 四项
+均属平台增强，随对应代码一并移除（见顶部「范围」）。若将来确有分布式部署需求，它们是**新增
+适配器**，基于保留下来的 `EventStore` / `TelemetrySink` / `SandboxBackend` Protocol 实现，
+不需要改动运行时。
 
 ### H-07：Plugin/MCP 应用层接入
 
@@ -318,6 +276,38 @@ fencing sequence 和 current-lease partial unique index；过期 takeover 保留
   修正 subagent 记录为会话级，使子会话可独立回放。
 - 待办：多层嵌套委派的递归结构；从真实运行生成兼容性语料（当前 fixture 与写入端靠人工同步）。
 
+### H-09：模型驱动的上下文压缩（compact 角色）
+
+- 状态：Planned；优先级：P0；验收：长会话可用专用 compact 模型生成结构化摘要，且不阻塞事件循环。
+- `SummaryGenerator.generate()` 是同步方法，模型驱动压缩因此接不进来，L2 只能用确定性摘要器；
+- 需要异步的 `SummaryGenerator` 协议与 `ContextCompiler` 的异步编译路径，并写 ADR：
+  这是唯一有真实并发对象（模型请求）、值得改成 async 的路径；
+- `ModelRoles` 届时新增 `compact` 角色 —— 现在刻意不定义没有消费者的角色（ADR 见 §8）。
+
+### H-10：Session 分支
+
+- 状态：Planned；优先级：P1；验收：可从任意序号派生子会话，父会话不可变，两侧都能独立回放。
+- `session.forked` 在事件目录里但**从未实现**，ARCHITECTURE §6 却在描述它；
+- 事件溯源已具备条件：父 Session + 起始序号即可表达分支；
+- 对 Coding Agent 的价值是「从这一步换个方案重试」。
+
+### H-11：Hook 的应用层入口
+
+- 状态：Planned；优先级：P1；验收：`aicode` 可配置「编辑后自动 format/lint」并有测试。
+- `HookBus` 与治理契约已完成，但 `aicode` 使用次数为 0；
+- Harness 侧无需改动，缺的是应用层的 hook 配置与注册。
+
+### H-12：`evals` 进公共 API
+
+- 状态：Planned；优先级：P1；验收：`ReplayEngine`/`TraceBundle`/`TraceGraph`/`Grader` 可从顶层导入。
+- 事件回放审计是 Harness 的核心能力，却仍只能走子模块路径。
+
+### H-13：从真实运行生成兼容性语料
+
+- 状态：Planned；优先级：P2；验收：语料由真实 Run 产出，写入端变更会让兼容性测试失败。
+- 当前 `tests/fixtures/session_schema_v1.json` 与写入端**靠人工同步**：
+  ADR-0027 改动 subagent 事件 payload 时，全量测试并未发现 fixture 已过时（登记于 ADR-0027）。
+
 ### 待开发清单维护规则
 
 1. `aicode`、`personal` 或其他 Agent 开发时，只有当缺口是 Provider-neutral、可复用且不携带具体
@@ -326,7 +316,8 @@ fencing sequence 和 current-lease partial unique index；过期 takeover 保留
    时新增或更新 ADR/RFC。
 3. Agent 开发过程中发现 Harness 缺口，可以先记录为 `H-*`，完成后回填实现文件、测试、ADR 和
    验收结果；不得创建第二份相互冲突的任务清单。
-4. 每个任务仍遵守本文件顶部的“先契约和测试、再实现、最后 subagent review 与全量门禁”流程。
+4. 每个任务仍遵守 [AGENTS.md](../AGENTS.md) 的流程：先补契约和测试，再写实现，最后跑全量门禁。
+5. 新增能力前先问它是否属于顶部「范围」排除的平台增强；是则不做，只保留协议。
 
 ### 验收
 
@@ -345,3 +336,6 @@ fencing sequence 和 current-lease partial unique index；过期 takeover 保留
 | 上下文压缩丢失任务状态 | 结构化摘要 Schema + 任务回归集 |
 | 插件绕过策略 | Plugin Host 隔离 + 工具链路统一入口 |
 | Provider 差异泄漏到内核 | Canonical Contract Test + 依赖方向检查 |
+| 应用层耦合 Harness 内部实现 | 顶层 `__all__` 是唯一组合面 + AST import 边界测试 |
+| 事件 Schema 悄悄漂移 | 信封版本 fail closed + 冻结语料覆盖全部 durable 类型 |
+| 平台能力重新蔓延回库 | 范围判据写在本文件顶部；新增前先自查 |
