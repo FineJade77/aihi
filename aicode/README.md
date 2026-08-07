@@ -21,6 +21,14 @@ Runtime 和 Session 实现。应用层只负责配置、Coding Tool 组合、CLI
 （名称@版本、作用域、一句话描述）注入系统提示词。正文不进上下文，需要时通过 Harness 的
 Trust 流程显式加载。
 
+## Subagent
+
+`AICODE_SUBAGENTS=true` 时注册 `task` 工具，可以把一段只读调查委派给子代理：
+
+- 子代理工作区只读、没有 `process.exec`、`max_depth=1`，因此它不能改文件也不能再派人；
+- 子 Run 在自己的 Session 中执行，父侧 Tool Result 记录 `session_id`/`run_id`/`task_id`；
+- 派生本身是 mutating 工具：默认模式需要批准，Plan 模式直接拒绝。
+
 ## Approval 流程
 
 需要批准的工具不会被伪造成失败，Run 会挂起（退出码 `2`）：

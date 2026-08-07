@@ -5,7 +5,7 @@ This module is the whole supported surface for applications (`aicode/`,
 re-exported here; anything reachable only through a submodule path is internal
 and may change without an ADR.
 
-Deliberately absent: `agents`, `plugins`, `mcp`, `evals`, `api` and `cli`. Those
+Deliberately absent: `plugins`, `mcp`, `evals`, `api` and `cli`. Those
 packages exist but are not yet injectable into `RunCoordinator`, so there is no
 composition contract to promise (TASK.md H-02). They stay on explicit submodule
 imports until the Runtime wires them; promoting one means adding its injection
@@ -15,6 +15,17 @@ Importing this module must not require any optional extra (`fastapi`,
 `psycopg`, `opentelemetry`); `tests/contract/test_public_api.py` enforces that.
 """
 
+from aiharness.agents import (
+    SPAWN_CAPABILITY,
+    AgentBudget,
+    ChildRunSubagentRunner,
+    SubagentAuthority,
+    SubagentRunner,
+    SubagentTool,
+    WorkspaceScope,
+    restrict_registry,
+    subagent_session_factory,
+)
 from aiharness.artifacts import ArtifactAccess, ArtifactPolicy, ArtifactStore, FileArtifactStore
 from aiharness.context import ContextCompiler, ContextSection
 from aiharness.core.errors import (
@@ -108,6 +119,7 @@ from aiharness.tools.builtin import (
 )
 
 __all__ = [
+    "AgentBudget",
     "AnthropicProvider",
     "Approval",
     "ApprovalOutcome",
@@ -118,6 +130,7 @@ __all__ = [
     "ArtifactStore",
     "Capabilities",
     "CapabilityLease",
+    "ChildRunSubagentRunner",
     "ContentBlock",
     "ContextCompiler",
     "ContextContributor",
@@ -168,6 +181,7 @@ __all__ = [
     "RunState",
     "RunTestsTool",
     "RuntimeExtensions",
+    "SPAWN_CAPABILITY",
     "SQLiteEventStore",
     "SandboxBackend",
     "SandboxDescriptor",
@@ -181,6 +195,9 @@ __all__ = [
     "SkillScope",
     "StaticApprovalResolver",
     "StopReason",
+    "SubagentAuthority",
+    "SubagentRunner",
+    "SubagentTool",
     "SuspendingApprovalResolver",
     "Telemetry",
     "TextBlock",
@@ -196,7 +213,10 @@ __all__ = [
     "ToolSpec",
     "UnsafeHostNotAcknowledged",
     "Usage",
+    "WorkspaceScope",
     "WriteFileTool",
     "new_id",
+    "restrict_registry",
+    "subagent_session_factory",
 ]
 __version__ = "0.1.0"

@@ -6,10 +6,14 @@ from dataclasses import dataclass
 
 from aicode.config import AICodeConfig
 from aiharness import (
+    SPAWN_CAPABILITY,
+    AgentBudget,
     AnthropicProvider,
     ApprovalResolver,
+    ChildRunSubagentRunner,
     DefaultPolicyEngine,
     EditFileTool,
+    EventStore,
     FakeProvider,
     HostBackend,
     OpenAICompatibleProvider,
@@ -25,8 +29,13 @@ from aiharness import (
     SkillIndexContributor,
     SkillRoot,
     SkillScope,
+    SubagentAuthority,
+    SubagentTool,
     ToolRegistry,
+    WorkspaceScope,
     WriteFileTool,
+    restrict_registry,
+    subagent_session_factory,
 )
 
 
@@ -67,6 +76,46 @@ def build_tool_registry() -> ToolRegistry:
     )
 
 
+def build_subagent_tool(
+    config: AICodeConfig, store: EventStore, sandbox: SandboxBackend
+) -> SubagentTool:
+    """Let a run delegate read-only investigation to a scoped child run.
+
+    The child inherits at most this authority: a read-only workspace, no process
+    execution, and no right to fan out further. Everything it does still goes
+    through the same policy, hook and sandbox chain in its own session.
+    """
+
+    authority = SubagentAuthority(
+        budget=AgentBudget(
+            max_tokens=config.subagent_max_tokens,
+            timeout_seconds=config.subagent_timeout_seconds,
+            max_tool_calls=config.subagent_max_tool_calls,
+        ),
+        workspace=WorkspaceScope(root=str(config.workspace), read_only=True),
+        capabilities=frozenset({SPAWN_CAPABILITY, "filesystem.read"}),
+        max_depth=1,
+        max_children=config.subagent_max_children,
+    )
+    parent_tools = build_tool_registry()
+
+    def coordinator_factory(spec: object) -> RunCoordinator:
+        capabilities = frozenset(getattr(spec, "capabilities", frozenset()))
+        return RunCoordinator(
+            build_provider(config),
+            registry=restrict_registry(parent_tools, capabilities),
+            sandbox=sandbox,
+            policy=DefaultPolicyEngine(),
+        )
+
+    runner = ChildRunSubagentRunner(
+        coordinator_factory,
+        subagent_session_factory(store, provider=config.provider, model=config.model),
+        model=config.model,
+    )
+    return SubagentTool(runner, authority=authority)
+
+
 def build_extensions(config: AICodeConfig) -> RuntimeExtensions:
     """Offer the project skill index when the workspace ships one.
 
@@ -83,17 +132,23 @@ def build_extensions(config: AICodeConfig) -> RuntimeExtensions:
 
 
 def build_runtime(
-    config: AICodeConfig, *, approval_resolver: ApprovalResolver | None = None
+    config: AICodeConfig,
+    *,
+    approval_resolver: ApprovalResolver | None = None,
+    store: EventStore | None = None,
 ) -> AICodeRuntime:
     """Assemble aicode from existing Harness implementations.
 
     Without a resolver the Harness default applies: a run that needs approval
-    suspends instead of guessing the answer.
+    suspends instead of guessing the answer. Subagents need somewhere to put the
+    child session, so they are only registered when a store is supplied.
     """
 
     provider = build_provider(config)
     sandbox = HostBackend(config.workspace, unsafe=config.unsafe_host)
     registry = build_tool_registry()
+    if store is not None and config.subagents:
+        registry.register(build_subagent_tool(config, store, sandbox))
     extensions = build_extensions(config)
     coordinator = RunCoordinator(
         provider,

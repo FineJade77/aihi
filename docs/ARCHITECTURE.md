@@ -133,8 +133,9 @@ Agent 的应用目录。
 
 Runtime 通过 `RuntimeExtensions` 组合可选能力：`ContextContributor` 贡献只读上下文段落，
 `RunRecorder` 观察已完成的 Run 并追加自己的审计事件。两者都是结构化 Protocol，能力包不 import
-`runtime`，`runtime` 也不 import 能力包。当前已接线：Skill 索引、Memory 读取与候选抽取；
-未接线：Subagent、Plugin、MCP（ADR-0022）。
+`runtime`，`runtime` 也不 import 能力包。当前已接线：Skill 索引、Memory 读取与候选抽取（ADR-0022）。Subagent 走另一条路径：
+它是普通工具 `task`，因此派生子 Run 同样经过 `tools → policy → hooks → sandbox`；
+子 Run 拥有独立 Session，权限模式取父子中更严格者（ADR-0023）。未接线：Plugin、MCP。
 
 ### 3.1 Harness 与应用层边界
 
@@ -156,9 +157,9 @@ Runtime 通过 `RuntimeExtensions` 组合可选能力：`ContextContributor` 贡
 `tests/contract/test_public_api.py` 保证导出集合可解析、有序，且导入公共 API 不会拉进任何可选
 依赖（`fastapi`、`psycopg`、`opentelemetry`）。
 
-`agents`、`plugins`、`mcp`、`evals`、`api`、`cli` **刻意不导出**：它们尚未可注入
+`plugins`、`mcp`、`evals`、`api`、`cli` **刻意不导出**：它们尚未可注入
 `RunCoordinator`，因此不存在可承诺的组合契约。提升顺序不可颠倒 —— 先有 Runtime 注入点，
-再写 ADR，最后才进入公共 API（`skills` 和 `memory` 已按此顺序完成，见 ADR-0022）。
+再写 ADR，最后才进入公共 API（`skills`、`memory` 见 ADR-0022，`agents` 见 ADR-0023）。
 
 ## 4. Runtime 与 Agent Loop
 
@@ -444,6 +445,12 @@ COMPLETED/FAILED/CANCELLED/INTERRUPTED` 状态，并通过结构化 `TaskSpec`�
 in-flight 状态，消费方显式 ack 后才删除。取消会递归收尾活动后代，Interrupted 只能显式 Resume，
 图和 Mailbox 快照可用于进程重启恢复。M6a 尚不启动真实多 Worker 或 Docker；后续 Worker 必须
 从这些持久化边界恢复，不能把本地线程状态当作事实源。
+
+子代理的执行入口是工具 `task`（`required_capabilities=("agent.spawn",)`、`mutates=True`），
+因此 Plan 模式直接拒绝派生，默认模式需要 Approval。子 Run 在**独立 Session** 中执行以保持单写者
+不变式，两侧日志通过子 Session metadata 和父侧 Tool Result metadata 关联；`subagent.started` /
+`subagent.completed` 写入子 Session。预算真实生效：超时用 `wait_for`，Tool Call 上限由子 Session
+的事件 observer 触发取消。未显式指定时，子代理继承父能力集合减去 `agent.spawn`（ADR-0023）。
 
 ## 12. Eval 与 Observability
 

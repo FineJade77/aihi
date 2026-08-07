@@ -23,6 +23,9 @@ class ToolContext:
     session_id: str
     run_id: str
     sandbox: SandboxBackend
+    # The permission mode of the enclosing run. Tools that delegate work must
+    # not hand a child more authority than the parent currently holds.
+    permission_mode: str = "default"
 
 
 class Tool(Protocol):

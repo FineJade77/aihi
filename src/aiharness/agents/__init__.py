@@ -13,6 +13,15 @@ from .errors import (
 )
 from .graph import TaskGraph
 from .mailbox import Mailbox, MailboxMessage
+from .subagent import (
+    SPAWN_CAPABILITY,
+    ChildRunSubagentRunner,
+    SubagentAuthority,
+    SubagentRunner,
+    SubagentTool,
+    restrict_registry,
+    subagent_session_factory,
+)
 from .types import AgentBudget, AgentState, TaskNode, TaskResult, TaskSpec, WorkspaceScope
 from .workspaces import PatchArtifact, WorktreePatchBoundary, WorktreeSpec
 
@@ -25,17 +34,24 @@ __all__ = [
     "AgentState",
     "AgentStateError",
     "AgentValidationError",
+    "ChildRunSubagentRunner",
     "Mailbox",
     "MailboxConflict",
     "MailboxError",
     "MailboxMessage",
+    "PatchArtifact",
+    "SPAWN_CAPABILITY",
+    "SubagentAuthority",
     "SubagentCoordinator",
+    "SubagentRunner",
+    "SubagentTool",
     "TaskGraph",
     "TaskNode",
     "TaskResult",
     "TaskSpec",
-    "PatchArtifact",
+    "WorkspaceScope",
     "WorktreePatchBoundary",
     "WorktreeSpec",
-    "WorkspaceScope",
+    "restrict_registry",
+    "subagent_session_factory",
 ]

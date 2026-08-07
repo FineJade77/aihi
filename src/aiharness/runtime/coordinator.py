@@ -528,6 +528,7 @@ class RunCoordinator:
             session_id=session.id,
             run_id=run_id,
             sandbox=self.sandbox,
+            permission_mode=permission_mode.value,
         )
         return await self.dispatcher.dispatch(
             call,

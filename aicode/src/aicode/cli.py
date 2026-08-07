@@ -96,7 +96,9 @@ def run(
                 model_explicit=model is not None or os.getenv("AICODE_MODEL") is not None,
             )
         before_seq = current.head_seq
-        runtime = build_runtime(config, approval_resolver=_resolver(interactive))
+        runtime = build_runtime(
+            config, approval_resolver=_resolver(interactive), store=store
+        )
         result = asyncio.run(
             runtime.coordinator.run(
                 current,
@@ -148,7 +150,9 @@ def resume(
                 "This session has no suspended run to resume", param_hint="--run"
             )
         before_seq = current.head_seq
-        runtime = build_runtime(config, approval_resolver=_resolver(interactive))
+        runtime = build_runtime(
+            config, approval_resolver=_resolver(interactive), store=store
+        )
         result = asyncio.run(
             runtime.coordinator.resume(
                 current,

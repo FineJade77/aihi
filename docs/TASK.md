@@ -268,7 +268,8 @@ fencing sequence 和 current-lease partial unique index；过期 takeover 保留
   `aicode` 提供终端 Resolver 与 `run -i` / `approve` / `resume`；
 - ✅ Execution 授权轴（ADR-0020）：`accept_edits` 不再放行 `process.exec` 工具，
   放行事件的 `rule_id` 与依据一致；
-- 待办：Subagent 接入 Runtime（`agents/` 仍是包外零引用的最后一块）；
+- ✅ Subagent 接入（ADR-0023）：`SubagentTool` 走工具链路、子 Run 独立 Session、权限模式取严、
+  预算（超时/Token/Tool Call）真实生效、子代理默认不可再派生；`aicode` 以只读授权启用；
 - 待办：一次性 Approval（`approval.consumed` 事件与投影），当前批准在本 Run 内对该工具持续有效；
 - 完善 Runtime 对 Memory、Skill、Subagent、Artifact 和 Observability 的可选注入边界；
 - 增加跨进程杀死、SQLite 重启、取消、孤儿 Tool Call 和长会话压缩的综合回归集；

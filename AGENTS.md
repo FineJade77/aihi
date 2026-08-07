@@ -71,7 +71,8 @@ Provider、Tool、Policy、Sandbox 和 Runtime 实现，但 `aiharness` 不得�
 - 原始 Event 永不被压缩覆盖；Compaction 只生成新的 Context View。
 - 所有副作用必须经过 `tools → policy → hooks → sandbox` 链路。
 - Provider Fallback 不得盲目重放可能已经产生副作用的工具。
-- 子代理的权限、预算和工作区只能是父 Run 的子集。
+- 子代理的权限、预算和工作区只能是父 Run 的子集；派生必须经过工具链路，子 Run 在独立
+  Session 中执行，权限模式取父子中更严格者（ADR-0023）。
 - 事件、错误、模型消息和工具结果必须可 JSON 序列化和恢复。
 
 ## Host 沙箱基线
