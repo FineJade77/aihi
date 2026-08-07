@@ -35,6 +35,10 @@ Runtime 和 Session 实现。应用层只负责配置、Coding Tool 组合、CLI
 
 `AICODE_SUBAGENT_MODEL` 可以让子代理用更小更便宜的模型；不设置就用主模型。
 
+`AICODE_COMPACT_MODEL` 让长会话的 L2 压缩用专用模型生成结构化摘要；不设置则用离线摘要器，
+压缩因此不依赖第二个模型可达。模型失败时自动降级，并在 `compaction.created` 事件里
+记为 `l2_model_fallback`。
+
 ## 上下文与可观测
 
 每次编译上下文时注入：产品系统提示词 + 仓库规则文件（`AGENTS.md` → `CLAUDE.md` →

@@ -142,6 +142,8 @@ def test_roles_fall_back_to_primary_and_reject_unknown_roles() -> None:
 
     assert roles.resolve("primary") == "big"
     assert roles.resolve("subagent") == "big"
+    assert roles.resolve("compact") == "big"
     assert ModelRoles(primary="big", subagent="small").resolve("subagent") == "small"
+    assert ModelRoles(primary="big", compact="tiny").resolve("compact") == "tiny"
     with pytest.raises(ValueError, match="Unknown model role"):
-        roles.resolve("compact")
+        roles.resolve("vision")

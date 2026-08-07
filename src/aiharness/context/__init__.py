@@ -8,6 +8,11 @@ from aiharness.context.compiler import (
     ContextSection,
     compose_system_prompt,
 )
+from aiharness.context.model_summary import (
+    STRATEGY_FALLBACK,
+    STRATEGY_MODEL,
+    ModelSummaryGenerator,
+)
 from aiharness.context.summary import (
     DeterministicSummaryGenerator,
     StructuredSummary,
@@ -17,11 +22,14 @@ from aiharness.context.summary import (
 
 __all__ = [
     "CompactionRecord",
-    "ContextSection",
     "CompiledContext",
     "ContextBudget",
     "ContextCompiler",
+    "ContextSection",
     "DeterministicSummaryGenerator",
+    "ModelSummaryGenerator",
+    "STRATEGY_FALLBACK",
+    "STRATEGY_MODEL",
     "StructuredSummary",
     "SummaryGenerator",
     "SummaryRequest",

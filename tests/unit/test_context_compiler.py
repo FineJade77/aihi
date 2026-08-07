@@ -107,16 +107,18 @@ class RecordingSummaryGenerator:
     def __init__(self) -> None:
         self.requests: list[SummaryRequest] = []
 
-    def generate(self, request: SummaryRequest) -> StructuredSummary:
+    async def generate(self, request: SummaryRequest) -> StructuredSummary:
         self.requests.append(request)
         return StructuredSummary(
+            strategy="l2_model",
             objective="injected objective",
             decisions=("keep the API stable",),
             omitted_message_count=len(request.omitted_messages),
         )
 
 
-def test_l2_compaction_uses_injected_structured_summary_generator() -> None:
+@pytest.mark.asyncio
+async def test_l2_compaction_uses_injected_structured_summary_generator() -> None:
     generator = RecordingSummaryGenerator()
     messages = (
         Message.text("user", "old objective"),
@@ -124,7 +126,7 @@ def test_l2_compaction_uses_injected_structured_summary_generator() -> None:
         Message.text("user", "latest request"),
     )
 
-    compiled = ContextCompiler(summary_generator=generator).compact_l2(
+    compiled = await ContextCompiler(summary_generator=generator).compact_l2(
         messages,
         system_prompt="",
         tools=(),
@@ -132,8 +134,8 @@ def test_l2_compaction_uses_injected_structured_summary_generator() -> None:
     )
 
     assert compiled.compaction is not None
-    assert compiled.compaction.strategy == "l2_structured"
+    assert compiled.compaction.strategy == "l2_model"
     assert compiled.compaction.trigger == "provider_context_length"
     assert generator.requests[0].omitted_messages == messages[:2]
-    assert compiled.messages[0].metadata["compaction"] == "l2_structured"
+    assert compiled.messages[0].metadata["compaction"] == "l2_model"
     assert '"decisions":["keep the API stable"]' in compiled.messages[0].text_content

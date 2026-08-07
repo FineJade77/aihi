@@ -27,7 +27,15 @@ from aiharness.agents import (
     subagent_session_factory,
 )
 from aiharness.artifacts import ArtifactAccess, ArtifactPolicy, ArtifactStore, FileArtifactStore
-from aiharness.context import ContextCompiler, ContextSection
+from aiharness.context import (
+    ContextCompiler,
+    ContextSection,
+    DeterministicSummaryGenerator,
+    ModelSummaryGenerator,
+    StructuredSummary,
+    SummaryGenerator,
+    SummaryRequest,
+)
 from aiharness.core.errors import (
     ContextWindowExceeded,
     EventInvariantViolation,
@@ -81,6 +89,7 @@ from aiharness.memory import (
     MemoryStore,
 )
 from aiharness.models import (
+    ROLE_COMPACT,
     ROLE_PRIMARY,
     ROLE_SUBAGENT,
     ModelGateway,
@@ -177,6 +186,7 @@ __all__ = [
     "Decision",
     "DecisionEffect",
     "DefaultPolicyEngine",
+    "DeterministicSummaryGenerator",
     "DockerBackend",
     "EditFileTool",
     "Event",
@@ -219,6 +229,7 @@ __all__ = [
     "ModelResponse",
     "ModelRoles",
     "ModelRouter",
+    "ModelSummaryGenerator",
     "OpenAICompatibleProvider",
     "OpenAIProvider",
     "PermissionContext",
@@ -231,6 +242,7 @@ __all__ = [
     "PluginTrustManager",
     "PolicyEngine",
     "Provider",
+    "ROLE_COMPACT",
     "ROLE_PRIMARY",
     "ROLE_SUBAGENT",
     "ReadFileTool",
@@ -254,9 +266,12 @@ __all__ = [
     "StaticApprovalResolver",
     "StdioMcpTransport",
     "StopReason",
+    "StructuredSummary",
     "SubagentAuthority",
     "SubagentRunner",
     "SubagentTool",
+    "SummaryGenerator",
+    "SummaryRequest",
     "SuspendingApprovalResolver",
     "Telemetry",
     "TelemetrySink",

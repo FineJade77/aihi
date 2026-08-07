@@ -359,7 +359,7 @@ class RunCoordinator:
                 if context_retry_used:
                     raise
                 context_retry_used = True
-                compiled = self.context_compiler.compact_l2(
+                compiled = await self.context_compiler.compact_l2(
                     session.messages,
                     system_prompt=system_prompt,
                     tools=self.registry.specs,
@@ -387,7 +387,7 @@ class RunCoordinator:
                     raise
                 context_retry_used = True
                 session.refresh()
-                retry_compiled = self.context_compiler.compact_l2(
+                retry_compiled = await self.context_compiler.compact_l2(
                     session.messages,
                     system_prompt=system_prompt,
                     tools=self.registry.specs,

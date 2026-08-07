@@ -149,3 +149,23 @@ def test_cli_run_uses_the_product_prompt(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     assert "You are aicode" in seen[0]
     assert "make check" in seen[0]
+
+
+def test_compaction_uses_the_offline_generator_unless_a_compact_model_is_set(
+    tmp_path: Path,
+) -> None:
+    from aicode.app import build_summary_generator
+
+    from aiharness import DeterministicSummaryGenerator, ModelSummaryGenerator
+
+    root = workspace(tmp_path)
+
+    offline = build_summary_generator(AICodeConfig(workspace=root, unsafe_host=True))
+    with_model = build_summary_generator(
+        AICodeConfig(workspace=root, unsafe_host=True, compact_model="small-model")
+    )
+
+    # Compaction must not depend on a second model being reachable by default.
+    assert isinstance(offline, DeterministicSummaryGenerator)
+    assert isinstance(with_model, ModelSummaryGenerator)
+    assert with_model.model == "small-model"

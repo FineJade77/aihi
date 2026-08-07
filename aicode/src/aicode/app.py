@@ -8,6 +8,7 @@ from aicode.config import AICodeConfig
 from aicode.context import ProjectRulesContributor
 from aicode.prompt import SYSTEM_PROMPT
 from aiharness import (
+    ROLE_COMPACT,
     ROLE_SUBAGENT,
     SPAWN_CAPABILITY,
     AgentBudget,
@@ -16,6 +17,7 @@ from aiharness import (
     BashTool,
     ChildRunSubagentRunner,
     DefaultPolicyEngine,
+    DeterministicSummaryGenerator,
     EditFileTool,
     EventStore,
     FakeProvider,
@@ -26,6 +28,7 @@ from aiharness import (
     JsonlTelemetrySink,
     ModelGateway,
     ModelRouter,
+    ModelSummaryGenerator,
     OpenAICompatibleProvider,
     OpenAIProvider,
     Provider,
@@ -39,6 +42,7 @@ from aiharness import (
     SkillScope,
     SubagentAuthority,
     SubagentTool,
+    SummaryGenerator,
     Telemetry,
     ToolRegistry,
     WorkspaceScope,
@@ -163,6 +167,18 @@ def build_extensions(config: AICodeConfig) -> RuntimeExtensions:
     return RuntimeExtensions(context_contributors=tuple(contributors))  # type: ignore[arg-type]
 
 
+def build_summary_generator(config: AICodeConfig) -> SummaryGenerator:
+    """Use a compact model for L2 compaction when one is configured.
+
+    Without `AICODE_COMPACT_MODEL` the offline generator is used, so compaction
+    never depends on a second model being reachable.
+    """
+
+    if config.compact_model is None:
+        return DeterministicSummaryGenerator()
+    return ModelSummaryGenerator(build_gateway(config), config.roles.resolve(ROLE_COMPACT))
+
+
 def build_artifact_store(config: AICodeConfig) -> FileArtifactStore:
     """Keep large tool output out of the context and out of the event log."""
 
@@ -205,6 +221,7 @@ def build_runtime(
         policy=DefaultPolicyEngine(),
         approval_resolver=approval_resolver,
         extensions=extensions,
+        summary_generator=build_summary_generator(config),
         artifact_store=build_artifact_store(config),
         telemetry=telemetry,
     )

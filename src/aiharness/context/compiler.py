@@ -224,7 +224,7 @@ class ContextCompiler:
             compaction=record,
         )
 
-    def compact_l2(
+    async def compact_l2(
         self,
         messages: tuple[Message, ...] | list[Message],
         *,
@@ -259,7 +259,7 @@ class ContextCompiler:
         generator = summary_generator or self.summary_generator
         omitted = tuple(message for group in groups[:-1] for message in group)
         retained = groups[-1]
-        summary = generator.generate(
+        summary = await generator.generate(
             SummaryRequest(
                 omitted_messages=omitted,
                 retained_messages=retained,
@@ -278,7 +278,9 @@ class ContextCompiler:
                 details={"estimated_tokens": before_tokens, "usable_input": budget.usable_input},
             )
         record = CompactionRecord(
-            strategy="l2_structured",
+            # The record names the generator that actually produced the summary,
+            # so a fallback from a compact model is visible in the event log.
+            strategy=summary.strategy,
             version=1,
             replaced_message_ids=tuple(message.id for message in omitted),
             summary=summary_message,

@@ -27,6 +27,10 @@ class SummaryRequest:
 class StructuredSummary:
     """Schema-stable summary payload embedded in a synthetic system message."""
 
+    #: How this summary was produced. It travels with the payload so a run that
+    #: silently fell back from a compact model to the offline generator says so
+    #: in its own event log.
+    strategy: str = "l2_deterministic"
     objective: str = ""
     constraints: tuple[str, ...] = ()
     decisions: tuple[str, ...] = ()
@@ -43,6 +47,7 @@ class StructuredSummary:
     def to_dict(self) -> dict[str, object]:
         return {
             "kind": "context_compaction_summary",
+            "strategy": self.strategy,
             "objective": self.objective,
             "constraints": list(self.constraints),
             "decisions": list(self.decisions),
@@ -61,8 +66,9 @@ class StructuredSummary:
         self,
         *,
         source_message_ids: tuple[str, ...],
-        strategy: str = "l2_structured",
+        strategy: str | None = None,
     ) -> Message:
+        strategy = strategy or self.strategy
         text = json.dumps(self.to_dict(), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         return Message(
             role="system",
@@ -77,18 +83,18 @@ class StructuredSummary:
 class SummaryGenerator(Protocol):
     """Pluggable L2 summary boundary.
 
-    Implementations must be deterministic for the same request. A compact
-    model can be adapted later by implementing this protocol at the runtime
-    boundary; the default generator never performs network I/O.
+    `generate` is async because a compact model is a network call — the one
+    place in context compilation with a real concurrent object to wait on
+    (ADR-0029). Offline implementations simply never await.
     """
 
-    def generate(self, request: SummaryRequest) -> StructuredSummary: ...
+    async def generate(self, request: SummaryRequest) -> StructuredSummary: ...
 
 
 class DeterministicSummaryGenerator:
     """Offline, schema-complete fallback used unless a generator is injected."""
 
-    def generate(self, request: SummaryRequest) -> StructuredSummary:
+    async def generate(self, request: SummaryRequest) -> StructuredSummary:
         objective = next(
             (
                 message.text_content

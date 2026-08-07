@@ -209,9 +209,9 @@ async def test_runtime_retries_once_after_provider_context_length_error(
     assert len(provider.requests) == 2
     compactions = [event for event in session.events if event.type == "compaction.created"]
     assert len(compactions) == 1
-    assert compactions[0].data["strategy"] == "l2_structured"
+    assert compactions[0].data["strategy"] == "l2_deterministic"
     assert compactions[0].data["trigger"] == "provider_context_length"
-    assert provider.requests[1].messages[0].metadata["compaction"] == "l2_structured"
+    assert provider.requests[1].messages[0].metadata["compaction"] == "l2_deterministic"
 
 
 @pytest.mark.asyncio

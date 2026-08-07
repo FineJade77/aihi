@@ -286,12 +286,16 @@ usable_input = context_window - reserved_output - tool_schema - safety_margin
 
 1. 输出外置：大工具结果写入 Artifact，仅保留预览和引用；
 2. 确定性微压缩：清理旧工具结果和重复上下文；
-3. 语义压缩：通过 `SummaryGenerator` 协议生成结构化摘要；默认使用无网络
-   `DeterministicSummaryGenerator`，可替换为专用 Compact Model。
+3. 语义压缩：通过 **async** `SummaryGenerator` 协议生成结构化摘要。默认是无网络的
+   `DeterministicSummaryGenerator`；`ModelSummaryGenerator` 用专用 compact 模型，
+   输入发送前截断，回复必须落回同一 schema，任何故障都降级而非让 Run 失败
+   —— 压缩失败等于 `ContextWindowExceeded`（ADR-0029）。
 
 结构化摘要至少保留目标、约束、决策、文件变化、验证结果、未解决事项、下一步、
 权限模式、Skill、Subagent 和 Artifact 引用。压缩记录源事件范围、摘要策略、Prompt Hash、
-前后 Token 估算、摘要版本和触发原因。Provider 返回 Context Length 错误时，每个 Run 最多
+前后 Token 估算、摘要版本和触发原因。`strategy` 取自摘要本身
+（`l1_deterministic` / `l2_deterministic` / `l2_model` / `l2_model_fallback`），
+因此降级在事件日志里可见。Provider 返回 Context Length 错误时，每个 Run 最多
 执行一次响应式 L2 压缩；第二次错误直接失败。压缩不得切断 Tool Call/Tool Result 配对。
 
 Artifact Store 使用不可变内容摘要校验 Payload，并在 Manifest 中记录 `ArtifactPolicy`：
@@ -325,11 +329,11 @@ Gateway；路由、有界重试、请求截止时间和 Fallback 对每次模型
 ```text
 primary    → RunCoordinator 的模型
 subagent   → ChildRunSubagentRunner 派生子 Run 的模型
+compact    → ModelSummaryGenerator 的 L2 压缩模型（ADR-0029）
 ```
 
-`compact` **刻意不在其中**：`SummaryGenerator.generate` 是同步方法，模型驱动的压缩无法在不把
-上下文编译整体 async 化的前提下接入。定义一个没有任何代码能读取的角色，等于写一句 Runtime
-兑现不了的承诺。`vision`/`memory`/`judge` 同理，等到有消费者时再加。
+`vision`/`memory`/`judge` **刻意不在其中**：定义一个没有任何代码能读取的角色，等于写一句
+Runtime 兑现不了的承诺。等到有消费者时再加。
 
 Fallback 只能在模型请求尚未产生任何 stream chunk 时自动发生：一旦开始流式输出就绝不换
 Provider 重放，避免半个回合被另一个模型重写；不可重试的错误也不触发 Fallback。

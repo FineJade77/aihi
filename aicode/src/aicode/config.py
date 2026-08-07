@@ -20,6 +20,7 @@ class AICodeConfig:
     provider: ProviderName = "fake"
     model: str = "fake-model"
     subagent_model: str | None = None
+    compact_model: str | None = None
     api_key: str | None = field(default=None, repr=False)
     base_url: str | None = None
     workspace: Path = field(default_factory=Path.cwd)
@@ -59,13 +60,15 @@ class AICodeConfig:
                 object.__setattr__(self, name, Path(value).expanduser())
         if self.skills_path is not None:
             object.__setattr__(self, "skills_path", Path(self.skills_path).expanduser())
-        if self.subagent_model is not None and (
-            not isinstance(self.subagent_model, str) or not self.subagent_model.strip()
-        ):
-            raise ValueError("aicode subagent_model must be a non-empty string when set")
+        for role in ("subagent_model", "compact_model"):
+            value = getattr(self, role)
+            if value is not None and (not isinstance(value, str) or not value.strip()):
+                raise ValueError(f"aicode {role} must be a non-empty string when set")
         object.__setattr__(self, "model", self.model.strip())
-        if self.subagent_model is not None:
-            object.__setattr__(self, "subagent_model", self.subagent_model.strip())
+        for role in ("subagent_model", "compact_model"):
+            value = getattr(self, role)
+            if value is not None:
+                object.__setattr__(self, role, value.strip())
         object.__setattr__(self, "workspace", Path(self.workspace).expanduser().resolve())
         object.__setattr__(self, "db_path", Path(self.db_path).expanduser())
         if self.base_url is not None:
@@ -75,7 +78,11 @@ class AICodeConfig:
     def roles(self) -> ModelRoles:
         """Model selection per purpose; unset roles use the primary model."""
 
-        return ModelRoles(primary=self.model, subagent=self.subagent_model)
+        return ModelRoles(
+            primary=self.model,
+            subagent=self.subagent_model,
+            compact=self.compact_model,
+        )
 
     @classmethod
     def from_env(cls, *, workspace: Path | None = None) -> AICodeConfig:
@@ -84,6 +91,7 @@ class AICodeConfig:
         provider = os.getenv("AICODE_PROVIDER", "fake")
         model = os.getenv("AICODE_MODEL", "fake-model")
         subagent_model = os.getenv("AICODE_SUBAGENT_MODEL")
+        compact_model = os.getenv("AICODE_COMPACT_MODEL")
         api_key = os.getenv("AICODE_API_KEY")
         base_url = os.getenv("AICODE_BASE_URL")
         configured_workspace = workspace or Path(os.getenv("AICODE_WORKSPACE", Path.cwd()))
@@ -104,6 +112,7 @@ class AICodeConfig:
             provider=provider,  # type: ignore[arg-type]
             model=model,
             subagent_model=subagent_model,
+            compact_model=compact_model,
             api_key=api_key,
             base_url=base_url,
             workspace=configured_workspace,

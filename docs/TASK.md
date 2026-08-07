@@ -278,11 +278,11 @@ PostgreSQL 生产化、Worker Control Plane 与部署安全、生产隔离 profi
 
 ### H-09：模型驱动的上下文压缩（compact 角色）
 
-- 状态：Planned；优先级：P0；验收：长会话可用专用 compact 模型生成结构化摘要，且不阻塞事件循环。
-- `SummaryGenerator.generate()` 是同步方法，模型驱动压缩因此接不进来，L2 只能用确定性摘要器；
-- 需要异步的 `SummaryGenerator` 协议与 `ContextCompiler` 的异步编译路径，并写 ADR：
-  这是唯一有真实并发对象（模型请求）、值得改成 async 的路径；
-- `ModelRoles` 届时新增 `compact` 角色 —— 现在刻意不定义没有消费者的角色（ADR 见 §8）。
+- 状态：Done（ADR-0029）；验收：长会话可用专用 compact 模型生成结构化摘要，且不阻塞事件循环。
+- ✅ `SummaryGenerator.generate` 改为 async；只有 `compact_l2()` 需要它，`compile()` 保持同步；
+- ✅ `ModelSummaryGenerator`：输入有界、回复必须落回同一 schema、任何故障降级而非失败；
+- ✅ 降级留痕：`strategy` 随摘要进入 `compaction.created`，`l2_model_fallback` 可见；
+- ✅ `ModelRoles.compact` + `aicode` 的 `AICODE_COMPACT_MODEL`（不设置则用离线摘要器）。
 
 ### H-10：Session 分支
 
