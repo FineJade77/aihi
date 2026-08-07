@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Coroutine
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from typing import Any
@@ -376,11 +377,13 @@ class RunCoordinator:
         require_capability_lease: bool,
         cancel_event: asyncio.Event | None,
     ) -> None:
-        for index, call in enumerate(calls):
+        index = 0
+        while index < len(calls):
             await self._check_cancel(cancel_event)
             session.refresh()
-            try:
-                result = await self._dispatch_with_approval(
+            group = self._parallel_group(calls, index)
+            dispatch = [
+                self._dispatch_with_approval(
                     session,
                     run_id,
                     call,
@@ -389,28 +392,77 @@ class RunCoordinator:
                     require_capability_lease=require_capability_lease,
                     cancel_event=cancel_event,
                 )
-            except _RunSuspended as suspended:
-                # Every call from here on is still unexecuted and must survive
-                # the suspension without a synthesized result.
-                raise _RunSuspended(
-                    suspended.approval_id,
-                    tuple(item.id for item in calls[index:]),
-                ) from None
-            metadata = {**result.result.metadata, "tool_name": call.name}
-            session.add_message(
-                Message(
-                    role="user",
-                    content=(
-                        ToolResultBlock(
-                            tool_call_id=call.id,
-                            content=result.result.content,
-                            is_error=result.result.is_error,
-                            metadata=metadata,
+                for call in group
+            ]
+            if len(dispatch) == 1:
+                outcomes: list[DispatchResult | BaseException] = [
+                    await self._capture(dispatch[0])
+                ]
+            else:
+                outcomes = list(await asyncio.gather(*(self._capture(item) for item in dispatch)))
+            for offset, outcome in enumerate(outcomes):
+                if isinstance(outcome, _RunSuspended):
+                    # Results already committed stay committed; everything from
+                    # the suspended call onwards is still unexecuted.
+                    raise _RunSuspended(
+                        outcome.approval_id,
+                        tuple(item.id for item in calls[index + offset :]),
+                    ) from None
+                if isinstance(outcome, BaseException):
+                    raise outcome
+                call = group[offset]
+                metadata = {**outcome.result.metadata, "tool_name": call.name}
+                session.add_message(
+                    Message(
+                        role="user",
+                        content=(
+                            ToolResultBlock(
+                                tool_call_id=call.id,
+                                content=outcome.result.content,
+                                is_error=outcome.result.is_error,
+                                metadata=metadata,
+                            ),
                         ),
                     ),
-                ),
-                run_id=run_id,
-            )
+                    run_id=run_id,
+                )
+            index += len(group)
+
+    @staticmethod
+    async def _capture(
+        awaitable: Coroutine[Any, Any, DispatchResult],
+    ) -> DispatchResult | BaseException:
+        """Run one dispatch, keeping a failure attached to its own call."""
+
+        try:
+            return await awaitable
+        except asyncio.CancelledError:
+            raise
+        except BaseException as error:  # noqa: BLE001 - re-raised in call order.
+            return error
+
+    def _parallel_group(
+        self, calls: tuple[ToolCallBlock, ...], start: int
+    ) -> tuple[ToolCallBlock, ...]:
+        """The run of calls that may execute together, starting at ``start``.
+
+        Only read-only, concurrency-safe tools qualify. A mutating tool always
+        runs alone, and so does an unknown one, so ordering stays observable
+        wherever it can matter.
+        """
+
+        if not self._is_parallelizable(calls[start]):
+            return (calls[start],)
+        group = [calls[start]]
+        for call in calls[start + 1 :]:
+            if not self._is_parallelizable(call):
+                break
+            group.append(call)
+        return tuple(group)
+
+    def _is_parallelizable(self, call: ToolCallBlock) -> bool:
+        spec = self._tool_spec(call.name)
+        return spec is not None and spec.concurrency_safe and not spec.mutates
 
     async def _dispatch_with_approval(
         self,

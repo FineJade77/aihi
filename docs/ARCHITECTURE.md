@@ -312,6 +312,11 @@ primary / fallback / compact / vision / memory / judge / subagent
 每个工具声明名称、描述、JSON Schema、是否修改外部状态、并发安全、能力需求、超时和
 幂等策略。所有输入先校验和规范化，再进入 Policy。
 
+同一条 Assistant 消息里连续的**只读且并发安全**工具调用会并行执行；`mutates=True`、
+未声明 `concurrency_safe` 或未注册的工具一律单独执行，保证可观察的顺序。无论是否并行，
+Tool Result 都按调用顺序提交；并行组中若有调用需要 Approval，已完成的结果照常落盘，
+该调用及其后的调用保持挂起。
+
 ### 9.2 Plugins
 
 Plugin 使用 `plugin.json` 描述 Manifest Version、ID、SemVer、Harness API 约束、能力、权限、

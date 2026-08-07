@@ -104,7 +104,9 @@ async def test_telemetry_ignores_ephemeral_stream_deltas(tmp_path: Path) -> None
 
 
 @pytest.mark.asyncio
-async def test_artifact_projection_does_not_rescan_history_each_turn(tmp_path: Path) -> None:
+async def test_artifact_projection_does_not_rescan_history_each_turn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The artifact set is built once per run, not re-derived from every event."""
 
     store = CountingEventStore()
@@ -122,12 +124,10 @@ async def test_artifact_projection_does_not_rescan_history_each_turn(tmp_path: P
         scans += 1
         return original(target)
 
-    RunCoordinator._recorded_artifact_ids = staticmethod(counting)  # type: ignore[method-assign]
-    try:
-        await coordinator.run(session, model="fake-model", user_message=Message.text("user", "a"))
-        await coordinator.run(session, model="fake-model", user_message=Message.text("user", "b"))
-    finally:
-        RunCoordinator._recorded_artifact_ids = original  # type: ignore[method-assign]
+    monkeypatch.setattr(RunCoordinator, "_recorded_artifact_ids", staticmethod(counting))
+
+    await coordinator.run(session, model="fake-model", user_message=Message.text("user", "a"))
+    await coordinator.run(session, model="fake-model", user_message=Message.text("user", "b"))
 
     # Once per run, regardless of how many model turns the run makes.
     assert scans == 2
