@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from aicode.config import AICodeConfig
+from aicode.context import ProjectRulesContributor
+from aicode.prompt import SYSTEM_PROMPT
 from aiharness import (
     SPAWN_CAPABILITY,
     AgentBudget,
@@ -15,7 +17,9 @@ from aiharness import (
     EditFileTool,
     EventStore,
     FakeProvider,
+    FileArtifactStore,
     HostBackend,
+    JsonlTelemetrySink,
     OpenAICompatibleProvider,
     OpenAIProvider,
     Provider,
@@ -31,6 +35,7 @@ from aiharness import (
     SkillScope,
     SubagentAuthority,
     SubagentTool,
+    Telemetry,
     ToolRegistry,
     WorkspaceScope,
     WriteFileTool,
@@ -48,6 +53,8 @@ class AICodeRuntime:
     registry: ToolRegistry
     sandbox: SandboxBackend
     extensions: RuntimeExtensions
+    system_prompt: str
+    telemetry: Telemetry | None = None
 
 
 def build_provider(config: AICodeConfig) -> Provider:
@@ -117,18 +124,36 @@ def build_subagent_tool(
 
 
 def build_extensions(config: AICodeConfig) -> RuntimeExtensions:
-    """Offer the project skill index when the workspace ships one.
+    """Compose the project's own context: its rules file and its skill index.
 
-    Only the index is composed here; loading a body still goes through the
+    Only the skill index is offered; loading a body still goes through the
     Harness trust flow. Memory needs a durable store and a scope policy, so it
     stays an explicit application choice rather than a default.
     """
 
+    contributors: list[object] = []
+    if config.project_rules:
+        contributors.append(ProjectRulesContributor(config.workspace))
     root = config.skills_path or (config.workspace / ".aicode" / "skills")
-    if not root.is_dir():
-        return RuntimeExtensions()
-    discovery = SkillDiscovery([SkillRoot(path=root, scope=SkillScope.PROJECT)])
-    return RuntimeExtensions(context_contributors=(SkillIndexContributor(discovery),))
+    if root.is_dir():
+        discovery = SkillDiscovery([SkillRoot(path=root, scope=SkillScope.PROJECT)])
+        contributors.append(SkillIndexContributor(discovery))
+    return RuntimeExtensions(context_contributors=tuple(contributors))  # type: ignore[arg-type]
+
+
+def build_artifact_store(config: AICodeConfig) -> FileArtifactStore:
+    """Keep large tool output out of the context and out of the event log."""
+
+    root = config.artifacts_path or (config.workspace / ".aiharness" / "artifacts")
+    return FileArtifactStore(root)
+
+
+def build_telemetry(config: AICodeConfig) -> Telemetry | None:
+    """Write redacted observations as JSON Lines when a path is configured."""
+
+    if config.telemetry_path is None:
+        return None
+    return Telemetry(JsonlTelemetrySink(config.telemetry_path))
 
 
 def build_runtime(
@@ -150,6 +175,7 @@ def build_runtime(
     if store is not None and config.subagents:
         registry.register(build_subagent_tool(config, store, sandbox))
     extensions = build_extensions(config)
+    telemetry = build_telemetry(config)
     coordinator = RunCoordinator(
         provider,
         registry=registry,
@@ -157,6 +183,8 @@ def build_runtime(
         policy=DefaultPolicyEngine(),
         approval_resolver=approval_resolver,
         extensions=extensions,
+        artifact_store=build_artifact_store(config),
+        telemetry=telemetry,
     )
     return AICodeRuntime(
         coordinator=coordinator,
@@ -164,6 +192,8 @@ def build_runtime(
         registry=registry,
         sandbox=sandbox,
         extensions=extensions,
+        system_prompt=SYSTEM_PROMPT,
+        telemetry=telemetry,
     )
 
 

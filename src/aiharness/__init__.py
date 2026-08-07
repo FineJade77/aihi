@@ -74,7 +74,12 @@ from aiharness.models.providers import (
     OpenAIProvider,
 )
 from aiharness.models.providers.fake import FakeProvider
-from aiharness.observability import Telemetry
+from aiharness.observability import (
+    InMemoryTelemetrySink,
+    JsonlTelemetrySink,
+    Telemetry,
+    TelemetrySink,
+)
 from aiharness.policy import (
     Approval,
     ApprovalOutcome,
@@ -152,6 +157,8 @@ __all__ = [
     "HostBackend",
     "InMemoryEventStore",
     "InMemoryMemoryStore",
+    "InMemoryTelemetrySink",
+    "JsonlTelemetrySink",
     "LocalIsolatedBackend",
     "MemoryAccess",
     "MemoryCandidate",
@@ -200,6 +207,7 @@ __all__ = [
     "SubagentTool",
     "SuspendingApprovalResolver",
     "Telemetry",
+    "TelemetrySink",
     "TextBlock",
     "ThinkingBlock",
     "Tool",

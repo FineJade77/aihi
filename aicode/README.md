@@ -9,11 +9,23 @@ Runtime 和 Session 实现。应用层只负责配置、Coding Tool 组合、CLI
 
 ## 当前骨架
 
-- `src/aicode/config.py`：Provider、模型、workspace、数据库和 Host unsafe 配置；
+- `src/aicode/config.py`：Provider、模型、workspace、数据库、Artifact/Telemetry 路径和 Host unsafe 配置；
+- `src/aicode/prompt.py`：Coding Agent 的系统提示词（产品决策，不进 Harness）；
+- `src/aicode/context.py`：把仓库的 `AGENTS.md`/`CLAUDE.md` 作为项目规则注入上下文；
 - `src/aicode/app.py`：组装现有 Harness 能力的 `build_runtime`；
 - `src/aicode/approvals.py`：终端 Approval UX（Harness 只定义 Resolver 契约）；
 - `src/aicode/cli.py`：独立 `aicode` CLI，支持 Fake/真实 Provider 配置和持久化 Session；
 - `tests/`：应用层组合契约测试。
+
+## 上下文与可观测
+
+每次编译上下文时注入：产品系统提示词 + 仓库规则文件（`AGENTS.md` → `CLAUDE.md` →
+`.aicode/rules.md`，取第一个存在的，上限 32 KB，指向工作区外的符号链接一律忽略）+ Skill 索引。
+
+大型工具输出自动外置到 `.aiharness/artifacts/`（可用 `AICODE_ARTIFACTS` 改路径），上下文只留预览和引用。
+
+设置 `AICODE_TELEMETRY=<path.jsonl>` 后写出脱敏的 JSON Lines 观测记录；不设置则完全关闭。
+`AICODE_PROJECT_RULES=false` 可关闭规则注入。
 
 ## Skills
 

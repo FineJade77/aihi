@@ -22,6 +22,9 @@ class AICodeConfig:
     workspace: Path = field(default_factory=Path.cwd)
     db_path: Path = field(default_factory=lambda: Path(".aiharness/events.db"))
     skills_path: Path | None = None
+    artifacts_path: Path | None = None
+    telemetry_path: Path | None = None
+    project_rules: bool = True
     subagents: bool = False
     subagent_max_tokens: int = 4_096
     subagent_max_tool_calls: int = 20
@@ -44,6 +47,12 @@ class AICodeConfig:
             raise ValueError("aicode unsafe_host must be boolean")
         if not isinstance(self.subagents, bool):
             raise ValueError("aicode subagents must be boolean")
+        if not isinstance(self.project_rules, bool):
+            raise ValueError("aicode project_rules must be boolean")
+        for name in ("artifacts_path", "telemetry_path"):
+            value = getattr(self, name)
+            if value is not None:
+                object.__setattr__(self, name, Path(value).expanduser())
         if self.skills_path is not None:
             object.__setattr__(self, "skills_path", Path(self.skills_path).expanduser())
         object.__setattr__(self, "model", self.model.strip())
@@ -64,6 +73,13 @@ class AICodeConfig:
         db_path = Path(os.getenv("AICODE_DB", ".aiharness/events.db"))
         unsafe_host = os.getenv("AICODE_UNSAFE_HOST", "false").lower() in {"1", "true", "yes"}
         subagents = os.getenv("AICODE_SUBAGENTS", "false").lower() in {"1", "true", "yes"}
+        raw_artifacts = os.getenv("AICODE_ARTIFACTS")
+        raw_telemetry = os.getenv("AICODE_TELEMETRY")
+        project_rules = os.getenv("AICODE_PROJECT_RULES", "true").lower() not in {
+            "0",
+            "false",
+            "no",
+        }
         raw_skills = os.getenv("AICODE_SKILLS")
         skills_path = Path(raw_skills) if raw_skills else None
         return cls(
@@ -74,6 +90,9 @@ class AICodeConfig:
             workspace=configured_workspace,
             db_path=db_path,
             skills_path=skills_path,
+            artifacts_path=Path(raw_artifacts) if raw_artifacts else None,
+            telemetry_path=Path(raw_telemetry) if raw_telemetry else None,
+            project_rules=project_rules,
             subagents=subagents,
             unsafe_host=unsafe_host,
         )

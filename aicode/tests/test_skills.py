@@ -8,7 +8,10 @@ from pathlib import Path
 from aicode.app import build_extensions, build_runtime
 from aicode.cli import app
 from aicode.config import AICodeConfig
+from aicode.context import ProjectRulesContributor
 from typer.testing import CliRunner
+
+from aiharness import SkillIndexContributor
 
 runner = CliRunner()
 
@@ -32,13 +35,22 @@ def workspace_with_skill(tmp_path: Path) -> Path:
     return workspace
 
 
-def test_no_skills_directory_composes_no_extensions(tmp_path: Path) -> None:
+def test_no_skills_directory_composes_no_skill_contributor(tmp_path: Path) -> None:
     workspace = tmp_path / "empty"
     workspace.mkdir()
 
     extensions = build_extensions(AICodeConfig(workspace=workspace))
 
-    assert extensions.empty is True
+    assert not any(
+        isinstance(item, SkillIndexContributor) for item in extensions.context_contributors
+    )
+    # Project rules are still watched: a rules file added later is picked up.
+    assert any(
+        isinstance(item, ProjectRulesContributor) for item in extensions.context_contributors
+    )
+    assert build_extensions(
+        AICodeConfig(workspace=workspace, project_rules=False)
+    ).empty is True
 
 
 def test_project_skills_are_composed_into_the_runtime(tmp_path: Path) -> None:
@@ -46,8 +58,13 @@ def test_project_skills_are_composed_into_the_runtime(tmp_path: Path) -> None:
 
     runtime = build_runtime(AICodeConfig(workspace=workspace, unsafe_host=True))
 
-    assert len(runtime.extensions.context_contributors) == 1
-    sections = runtime.extensions.context_contributors[0].sections(object())
+    skills = [
+        item
+        for item in runtime.extensions.context_contributors
+        if isinstance(item, SkillIndexContributor)
+    ]
+    assert len(skills) == 1
+    sections = skills[0].sections(object())
     assert "repo-conventions@0.3.0" in sections[0].body
     assert "Body text" not in sections[0].body
 

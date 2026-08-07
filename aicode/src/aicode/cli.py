@@ -107,6 +107,7 @@ def run(
                 permission_mode=(
                     PermissionMode.ACCEPT_EDITS if accept_edits else PermissionMode.DEFAULT
                 ),
+                system_prompt=runtime.system_prompt,
             )
         )
         _finish(current, result, before_seq=before_seq)
@@ -161,6 +162,7 @@ def resume(
                 permission_mode=(
                     PermissionMode.ACCEPT_EDITS if accept_edits else PermissionMode.DEFAULT
                 ),
+                system_prompt=runtime.system_prompt,
             )
         )
         _finish(current, result, before_seq=before_seq)
