@@ -60,8 +60,10 @@ def events_of(output: str) -> list[dict]:
 
 
 def test_terminal_resolver_maps_answers_and_defers_by_default() -> None:
-    assert resolve("y") == ApprovalOutcome.GRANTED
-    assert resolve("YES") == ApprovalOutcome.GRANTED
+    # The product default is a single call, not the whole run.
+    assert resolve("y") == ApprovalOutcome.GRANTED_ONCE
+    assert resolve("YES") == ApprovalOutcome.GRANTED_ONCE
+    assert resolve("a") == ApprovalOutcome.GRANTED
     assert resolve("n") == ApprovalOutcome.DENIED
     assert resolve("") == ApprovalOutcome.DEFERRED
     assert resolve("maybe") == ApprovalOutcome.DEFERRED

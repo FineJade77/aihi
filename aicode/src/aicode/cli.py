@@ -209,6 +209,9 @@ def approve(
     approval_id: str = typer.Argument(..., help="Approval id reported by a suspended run."),
     db: Path | None = typer.Option(None, "--db"),
     deny: bool = typer.Option(False, "--deny", help="Reject the request instead of granting it."),
+    once: bool = typer.Option(
+        False, "--once", help="Allow only this call; the next one asks again."
+    ),
     resolved_by: str = typer.Option("operator", "--by", help="Audit identity of the decision."),
 ) -> None:
     """Resolve a pending approval out of band, then resume the run separately."""
@@ -230,6 +233,7 @@ def approve(
                 approved=not deny,
                 resolved_by=resolved_by,
                 run_id=pending.run_id,
+                one_shot=once,
             )
         except EventInvariantViolation as error:
             raise typer.BadParameter(str(error), param_hint="approval_id") from error
@@ -238,6 +242,7 @@ def approve(
                 {
                     "approval_id": approval_id,
                     "status": "denied" if deny else "granted",
+                    "one_shot": once and not deny,
                     "run_id": pending.run_id,
                     "scope": pending.scope,
                 },

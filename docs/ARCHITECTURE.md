@@ -235,7 +235,7 @@ run.completed / run.failed / run.interrupted / run.cancelled
 user.message / assistant.message / tool.result
 model.requested / model.completed / usage.recorded
 tool.requested / tool.started / tool.completed
-policy.decided / approval.requested / approval.resolved
+policy.decided / approval.requested / approval.resolved / approval.consumed
 capability.lease.issued / capability.lease.revoked
 context.compaction_started / context.compacted
 compaction.created (trigger: budget | preflight_context_window | provider_context_length)
@@ -407,6 +407,10 @@ Approval 与 Capability Lease 都是 append-only 授权事件的投影，并绑�
 两者在过期或撤销后失效；Runtime 在每次工具调用前从 Session 事件重建有效授权，不能把
 未持久化的内存授权当作事实源。Approval 的请求和解决结果分别记录，只有匹配 pending
 请求的单次 granted 结果才会产生有效授权；默认 ASK 会追加 `approval.requested`。
+
+授权有两种生命周期（ADR-0025）：`GRANTED` 在本 Run 内对该工具持续有效；`GRANTED_ONCE`
+只授权一次调用，被使用后追加 `approval.consumed` 并从投影中移除，下一次调用重新询问。
+只有一次性授权可以被消费，重复消费和消费 Run 级授权都会让投影 fail closed。
 
 ### 10.1 已确认的沙箱基线
 

@@ -15,7 +15,8 @@ import typer
 
 from aiharness import ApprovalOutcome, ApprovalRequest
 
-_GRANT = {"y", "yes", "a", "allow"}
+_GRANT_ONCE = {"y", "yes", "1", "once"}
+_GRANT_RUN = {"a", "all", "always", "allow"}
 _DENY = {"n", "no", "d", "deny"}
 _MAX_INPUT_CHARS = 800
 
@@ -37,7 +38,8 @@ def render_request(request: ApprovalRequest) -> str:
     if request.required_capabilities:
         lines.append(f"  grants:  {', '.join(request.required_capabilities)}")
     lines.append(
-        f"  note:    granting allows '{request.tool_name}' for the rest of this run."
+        f"  note:    'y' allows this call only; 'a' allows '{request.tool_name}' "
+        "for the rest of this run."
     )
     return "\n".join(lines)
 
@@ -53,7 +55,9 @@ class TerminalApprovalResolver:
         reader: Callable[[], str] | None = None,
         writer: Callable[[str], None] | None = None,
     ) -> None:
-        self._reader = reader or (lambda: typer.prompt("  approve? [y/n/s=suspend]"))
+        self._reader = reader or (
+            lambda: typer.prompt("  approve? [y=once/a=this run/n=deny/s=suspend]")
+        )
         self._writer = writer or (lambda text: typer.echo(text, err=True))
 
     async def resolve(self, request: ApprovalRequest) -> ApprovalOutcome:
@@ -65,7 +69,9 @@ class TerminalApprovalResolver:
             answer = self._reader().strip().lower()
         except (EOFError, KeyboardInterrupt, typer.Abort):
             return ApprovalOutcome.DEFERRED
-        if answer in _GRANT:
+        if answer in _GRANT_ONCE:
+            return ApprovalOutcome.GRANTED_ONCE
+        if answer in _GRANT_RUN:
             return ApprovalOutcome.GRANTED
         if answer in _DENY:
             return ApprovalOutcome.DENIED

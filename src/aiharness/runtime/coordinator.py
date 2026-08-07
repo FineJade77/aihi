@@ -534,6 +534,8 @@ class RunCoordinator:
         )
         decision = result.decision
         if result.started or decision is None or decision.effect != DecisionEffect.ASK:
+            # An out-of-band grant is spent here, not only on the retry path.
+            self._consume_one_shot(session, run_id, call.name, result)
             return result
 
         approval = self._pending_approval_for_call(session, run_id, call.id)
@@ -570,12 +572,13 @@ class RunCoordinator:
         if outcome == ApprovalOutcome.DEFERRED:
             raise _RunSuspended(approval.approval_id, (call.id,))
 
-        granted = outcome == ApprovalOutcome.GRANTED
+        granted = outcome.is_grant
         session.resolve_approval(
             approval.approval_id,
             approved=granted,
             resolved_by=resolver_id(self.approval_resolver),
             run_id=run_id,
+            one_shot=outcome == ApprovalOutcome.GRANTED_ONCE,
         )
         self._transition(session, run_id, machine, RunState.WAITING_TOOL)
         if not granted:
@@ -596,6 +599,7 @@ class RunCoordinator:
             require_capability_lease=require_capability_lease,
             cancel_event=cancel_event,
         )
+        self._consume_one_shot(session, run_id, call.name, retried)
         if not retried.started and retried.decision is not None:
             if retried.decision.effect == DecisionEffect.ASK:
                 # A granted approval that still does not satisfy the policy must
@@ -606,6 +610,20 @@ class RunCoordinator:
                     error_code="permission_approval_ineffective",
                 )
         return retried
+
+    @staticmethod
+    def _consume_one_shot(
+        session: Session, run_id: str, scope: str, result: DispatchResult
+    ) -> None:
+        """Spend the grant that authorized this call, if it was a one-shot one."""
+
+        decision = result.decision
+        if decision is None or decision.rule_id != "approval.granted":
+            return
+        approval = session.authorization.consumable_approval(run_id, scope)
+        if approval is None:
+            return
+        session.consume_approval(approval.approval_id, run_id=run_id, scope=scope)
 
     async def _dispatch(
         self,

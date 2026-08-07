@@ -13,9 +13,16 @@ from typing import Any, Protocol, runtime_checkable
 
 
 class ApprovalOutcome(StrEnum):
+    #: Authorize this tool for the rest of the run.
     GRANTED = "granted"
+    #: Authorize exactly this call; the next one asks again.
+    GRANTED_ONCE = "granted_once"
     DENIED = "denied"
     DEFERRED = "deferred"
+
+    @property
+    def is_grant(self) -> bool:
+        return self in {ApprovalOutcome.GRANTED, ApprovalOutcome.GRANTED_ONCE}
 
 
 @dataclass(frozen=True, slots=True)

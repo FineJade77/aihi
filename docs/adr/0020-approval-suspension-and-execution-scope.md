@@ -59,8 +59,8 @@
 
 ## 已知边界（登记为后续任务）
 
-- Approval 的作用域是 **run + 工具名**：批准一次后该工具在本 Run 内不再询问。
-  一次性批准需要新增 `approval.consumed` 事件与投影，属于后续变更。
+- ~~Approval 的作用域是 run + 工具名~~ —— 已在 ADR-0025 解决：`ApprovalOutcome.GRANTED_ONCE`
+  产生一次性授权，用掉后追加 `approval.consumed`；`GRANTED` 仍是本 Run 持续有效。
 - `process.exec` 之外的执行类能力（例如未来的 `network.egress`）需要在
   `_execution_capabilities` 中显式登记，Policy 不做启发式推断。
 - 命令内容本身仍不做语义分析；本 ADR 只保证「执行必须有人点头」，

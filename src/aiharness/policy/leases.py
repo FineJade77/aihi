@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 
 from aiharness.core.errors import EventInvariantViolation
@@ -77,6 +77,8 @@ class Approval:
     granted_by: str
     expires_at: datetime | None = None
     run_id: str | None = None
+    # A one-shot grant authorizes a single tool call and is then consumed.
+    one_shot: bool = False
     approval_id: str = field(default_factory=lambda: new_id("approval"))
 
     @classmethod
@@ -108,6 +110,7 @@ class Approval:
             "granted_by": self.granted_by,
             "expires_at": self.expires_at.isoformat() if self.expires_at else None,
             "run_id": self.run_id,
+            "one_shot": self.one_shot,
         }
 
     @classmethod
@@ -122,6 +125,7 @@ class Approval:
             granted_by=str(value["granted_by"]),
             expires_at=expires_at,
             run_id=str(value["run_id"]) if value.get("run_id") is not None else None,
+            one_shot=bool(value.get("one_shot", False)),
         )
 
 
@@ -136,6 +140,7 @@ class AuthorizationState:
     revoked_lease_ids: set[str] = field(default_factory=set)
     seen_approval_ids: set[str] = field(default_factory=set)
     resolved_approval_ids: set[str] = field(default_factory=set)
+    consumed_approval_ids: set[str] = field(default_factory=set)
 
     @classmethod
     def from_events(cls, events: Iterable[Event]) -> AuthorizationState:
@@ -201,10 +206,29 @@ class AuthorizationState:
                 raise EventInvariantViolation(
                     f"Approval resolution has no matching pending request: {approval_id}"
                 )
-            if status == "granted" and approval is not None:
-                self.approvals[approval_id] = approval
+            if status == "granted":
+                one_shot = bool(event.data.get("one_shot", False))
+                self.approvals[approval_id] = replace(approval, one_shot=one_shot)
             self.pending_approvals.pop(approval_id, None)
             self.resolved_approval_ids.add(approval_id)
+            return
+        if event.type == "approval.consumed":
+            approval_id = event.data.get("approval_id")
+            if not isinstance(approval_id, str):
+                raise EventInvariantViolation("Approval consumption is missing approval_id")
+            granted = self.approvals.get(approval_id)
+            if granted is None or approval_id in self.consumed_approval_ids:
+                raise EventInvariantViolation(
+                    f"Approval consumption has no active grant: {approval_id}"
+                )
+            if event.run_id != granted.run_id:
+                raise EventInvariantViolation("Approval consumption run_id mismatch")
+            if not granted.one_shot:
+                raise EventInvariantViolation(
+                    f"Only a one-shot approval can be consumed: {approval_id}"
+                )
+            self.approvals.pop(approval_id, None)
+            self.consumed_approval_ids.add(approval_id)
 
     def active_leases(
         self, run_id: str, *, now: datetime | None = None
@@ -223,6 +247,20 @@ class AuthorizationState:
             for approval in self.approvals.values()
             if approval.run_id == run_id and approval.active(now=now)
         )
+
+    def consumable_approval(
+        self, run_id: str, scope: str, *, now: datetime | None = None
+    ) -> Approval | None:
+        """The one-shot grant that would authorize this scope, if any."""
+
+        for approval in self.approvals.values():
+            if (
+                approval.run_id == run_id
+                and approval.one_shot
+                and approval.covers(scope, now=now)
+            ):
+                return approval
+        return None
 
     def approval(self, approval_id: str) -> Approval | None:
         approval = self.approvals.get(approval_id) or self.pending_approvals.get(approval_id)

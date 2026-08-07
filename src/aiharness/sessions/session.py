@@ -249,6 +249,7 @@ class Session:
         approved: bool,
         resolved_by: str,
         run_id: str,
+        one_shot: bool = False,
     ) -> Approval | None:
         approval = self.authorization.pending_approval(approval_id)
         if approval is None:
@@ -265,10 +266,26 @@ class Session:
                     "approval": approval.to_dict(),
                     "status": "granted" if approved else "denied",
                     "resolved_by": resolved_by,
+                    "one_shot": bool(one_shot),
                 },
             )
         )
         return approval if approved else None
+
+    def consume_approval(self, approval_id: str, *, run_id: str, scope: str) -> Event:
+        """Spend a one-shot grant so the next call asks again."""
+
+        approval = self.authorization.approvals.get(approval_id)
+        if approval is None or not approval.one_shot:
+            raise EventInvariantViolation(f"No consumable approval: {approval_id}")
+        return self.append(
+            Event(
+                type="approval.consumed",
+                session_id=self.id,
+                run_id=run_id,
+                data={"approval_id": approval_id, "scope": scope},
+            )
+        )
 
     @property
     def orphan_tool_calls(self) -> tuple[ToolCallBlock, ...]:
