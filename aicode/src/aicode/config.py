@@ -21,6 +21,7 @@ class AICodeConfig:
     base_url: str | None = None
     workspace: Path = field(default_factory=Path.cwd)
     db_path: Path = field(default_factory=lambda: Path(".aiharness/events.db"))
+    skills_path: Path | None = None
     unsafe_host: bool = False
 
     def __post_init__(self) -> None:
@@ -36,6 +37,8 @@ class AICodeConfig:
             raise ValueError("aicode base_url must be a non-empty string when provided")
         if not isinstance(self.unsafe_host, bool):
             raise ValueError("aicode unsafe_host must be boolean")
+        if self.skills_path is not None:
+            object.__setattr__(self, "skills_path", Path(self.skills_path).expanduser())
         object.__setattr__(self, "model", self.model.strip())
         object.__setattr__(self, "workspace", Path(self.workspace).expanduser().resolve())
         object.__setattr__(self, "db_path", Path(self.db_path).expanduser())
@@ -53,6 +56,8 @@ class AICodeConfig:
         configured_workspace = workspace or Path(os.getenv("AICODE_WORKSPACE", Path.cwd()))
         db_path = Path(os.getenv("AICODE_DB", ".aiharness/events.db"))
         unsafe_host = os.getenv("AICODE_UNSAFE_HOST", "false").lower() in {"1", "true", "yes"}
+        raw_skills = os.getenv("AICODE_SKILLS")
+        skills_path = Path(raw_skills) if raw_skills else None
         return cls(
             provider=provider,  # type: ignore[arg-type]
             model=model,
@@ -60,5 +65,6 @@ class AICodeConfig:
             base_url=base_url,
             workspace=configured_workspace,
             db_path=db_path,
+            skills_path=skills_path,
             unsafe_host=unsafe_host,
         )

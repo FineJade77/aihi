@@ -1,5 +1,6 @@
 """Layered Skill discovery and explicit on-demand loading."""
 
+from aiharness.skills.context import SkillIndexContributor
 from aiharness.skills.discovery import SkillCandidate, SkillDiscovery, SkillRoot, SkillScope
 from aiharness.skills.errors import (
     SkillConflict,
@@ -31,6 +32,7 @@ __all__ = [
     "SkillDiscovery",
     "SkillError",
     "SkillFrontmatter",
+    "SkillIndexContributor",
     "SkillIntegrityError",
     "SkillLoader",
     "SkillManifestError",

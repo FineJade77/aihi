@@ -15,6 +15,12 @@ Runtime 和 Session 实现。应用层只负责配置、Coding Tool 组合、CLI
 - `src/aicode/cli.py`：独立 `aicode` CLI，支持 Fake/真实 Provider 配置和持久化 Session；
 - `tests/`：应用层组合契约测试。
 
+## Skills
+
+工作区存在 `.aicode/skills/`（或设置 `AICODE_SKILLS`）时，`aicode` 自动把 Skill **索引**
+（名称@版本、作用域、一句话描述）注入系统提示词。正文不进上下文，需要时通过 Harness 的
+Trust 流程显式加载。
+
 ## Approval 流程
 
 需要批准的工具不会被伪造成失败，Run 会挂起（退出码 `2`）：

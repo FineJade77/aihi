@@ -12,7 +12,7 @@ from aiharness.memory.redaction import SecretRedactor
 from aiharness.memory.store import InMemoryMemoryStore, MemoryStore
 from aiharness.memory.types import MemoryAccess, MemoryCandidate, MemoryRecord, MemoryScope
 
-EventSink = Callable[[Event], None]
+EventSink = Callable[[Event], object]
 
 
 class MemoryService:
@@ -48,6 +48,7 @@ class MemoryService:
         scope_id: str,
         session_id: str | None = None,
         run_id: str | None = None,
+        event_sink: EventSink | None = None,
     ) -> tuple[MemoryCandidate, ...]:
         candidates = self.extractor.extract(
             text,
@@ -79,6 +80,7 @@ class MemoryService:
                 run_id=clean.run_id,
                 scope=clean.scope,
                 scope_id=clean.scope_id,
+                event_sink=event_sink,
             )
         return tuple(clean_candidates)
 
@@ -223,19 +225,22 @@ class MemoryService:
         run_id: str | None,
         scope: MemoryScope | None = None,
         scope_id: str | None = None,
+        event_sink: EventSink | None = None,
     ) -> None:
+        sink = event_sink or self.event_sink
         self._check_audit(
             session_id=session_id,
             run_id=run_id,
             scope=scope,
             scope_id=scope_id,
+            event_sink=sink,
         )
-        if self.event_sink is None:
+        if sink is None:
             return
         event_session_id = session_id or self.event_session_id
         if event_session_id is None:
             return
-        self.event_sink(
+        sink(
             Event(
                 type=event_type,
                 session_id=event_session_id,
@@ -251,10 +256,11 @@ class MemoryService:
         run_id: str | None,
         scope: MemoryScope | None,
         scope_id: str | None,
+        event_sink: EventSink | None = None,
     ) -> None:
         if not self.audit_required:
             return
-        if self.event_sink is None:
+        if (event_sink or self.event_sink) is None:
             raise MemoryValidationError("Memory audit event sink is required")
         if session_id is None and self.event_session_id is None:
             raise MemoryValidationError("Memory audit event requires a session_id")

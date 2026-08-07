@@ -261,11 +261,14 @@ fencing sequence 和 current-lease partial unique index；过期 takeover 保留
 ### H-02：本地运行时完善（当前优先级最高）
 
 - 状态：In Progress；优先级：P0；依赖：H-01 的组合约定；验收：终端可 Approval、Resume、取消并恢复完整 Tool 生命周期。
+- ✅ Runtime 可选注入边界（ADR-0022）：`RuntimeExtensions` + `ContextContributor`/`RunRecorder`；
+  Skill 索引进上下文、Memory 检索与候选抽取接入 Run；`aicode` 自动组合项目 Skill 索引；
 - ✅ Approval Resolver 与挂起态（ADR-0020）：`RunState.WAITING_APPROVAL`、`run.suspended`/
   `run.resumed`、`ApprovalResolver` Protocol、默认挂起、Resume 执行挂起的 Tool Call；
   `aicode` 提供终端 Resolver 与 `run -i` / `approve` / `resume`；
 - ✅ Execution 授权轴（ADR-0020）：`accept_edits` 不再放行 `process.exec` 工具，
   放行事件的 `rule_id` 与依据一致；
+- 待办：Subagent 接入 Runtime（`agents/` 仍是包外零引用的最后一块）；
 - 待办：一次性 Approval（`approval.consumed` 事件与投影），当前批准在本 Run 内对该工具持续有效；
 - 完善 Runtime 对 Memory、Skill、Subagent、Artifact 和 Observability 的可选注入边界；
 - 增加跨进程杀死、SQLite 重启、取消、孤儿 Tool Call 和长会话压缩的综合回归集；

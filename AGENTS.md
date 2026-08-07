@@ -104,7 +104,9 @@ Runtime 是显式状态机，不把状态藏在不可恢复的局部变量中。
 - Tool 必须声明 JSON Schema、是否修改外部状态、并发安全、能力需求、超时和幂等策略。
 - Tool 输入先校验和规范化，再进行 Policy 决策。
 - Plugin 必须通过 Manifest 和版本化 Plugin Host；不得直接 import 第三方代码进主进程。
-- 项目级 Plugin 默认不信任；Skill 正文按需加载，不得无条件塞入系统上下文。
+- 项目级 Plugin 默认不信任；Skill 只向上下文注入索引，正文按需加载，不得无条件塞入系统上下文。
+- 可选能力通过 `RuntimeExtensions` 注入，不再往 `RunCoordinator` 构造函数加参数；
+  `ContextContributor` 失败 fail closed，`RunRecorder` 失败 fail open（ADR-0022）。
 - Hook 不能绕过 Policy、Approval 或 Sandbox；Hook 自身也受同样治理。
 
 ## 存储、上下文和记忆

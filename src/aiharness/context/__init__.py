@@ -5,6 +5,8 @@ from aiharness.context.compiler import (
     CompiledContext,
     ContextBudget,
     ContextCompiler,
+    ContextSection,
+    compose_system_prompt,
 )
 from aiharness.context.summary import (
     DeterministicSummaryGenerator,
@@ -15,6 +17,7 @@ from aiharness.context.summary import (
 
 __all__ = [
     "CompactionRecord",
+    "ContextSection",
     "CompiledContext",
     "ContextBudget",
     "ContextCompiler",
@@ -22,4 +25,5 @@ __all__ = [
     "StructuredSummary",
     "SummaryGenerator",
     "SummaryRequest",
+    "compose_system_prompt",
 ]

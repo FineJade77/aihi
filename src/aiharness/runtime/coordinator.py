@@ -8,7 +8,13 @@ from datetime import datetime
 from typing import Any
 
 from aiharness.artifacts import ArtifactAccess, ArtifactPolicy, ArtifactRef, ArtifactStore
-from aiharness.context import CompiledContext, ContextBudget, ContextCompiler, SummaryGenerator
+from aiharness.context import (
+    CompiledContext,
+    ContextBudget,
+    ContextCompiler,
+    ContextSection,
+    SummaryGenerator,
+)
 from aiharness.core.awaits import await_cancelable
 from aiharness.core.errors import ContextWindowExceeded
 from aiharness.core.events import Event
@@ -37,6 +43,11 @@ from aiharness.policy import (
     PolicyEngine,
     SuspendingApprovalResolver,
     resolver_id,
+)
+from aiharness.runtime.extensions import (
+    ContextRequest,
+    RunOutcome,
+    RuntimeExtensions,
 )
 from aiharness.runtime.state import RunState, RunStateMachine
 from aiharness.sandbox.base import SandboxBackend
@@ -93,6 +104,7 @@ class RunCoordinator:
         artifact_store: ArtifactStore | None = None,
         summary_generator: SummaryGenerator | None = None,
         telemetry: Telemetry | None = None,
+        extensions: RuntimeExtensions | None = None,
         approval_resolver: ApprovalResolver | None = None,
         approval_ttl_seconds: float | None = None,
         capability_lease_ttl_seconds: float = 300.0,
@@ -119,6 +131,7 @@ class RunCoordinator:
         self.artifact_store = artifact_store
         self.summary_generator = summary_generator
         self.telemetry = telemetry
+        self.extensions = extensions or RuntimeExtensions()
         # Deferring is the safe default: without an injected resolver the run
         # suspends instead of silently granting or denying a human decision.
         self.approval_resolver = approval_resolver or SuspendingApprovalResolver()
@@ -183,6 +196,7 @@ class RunCoordinator:
                 cancel_event=cancel_event,
                 pending_tool_call_ids=suspended_calls,
             )
+            self._record_outcome(session, rid, RunState.COMPLETED, response)
             self._finish(session, rid, machine, RunState.COMPLETED, "run.completed")
             return RunResult(rid, machine.state, response=response)
         except _RunSuspended as suspended:
@@ -277,6 +291,7 @@ class RunCoordinator:
                 tools=self.registry.specs,
                 safety_margin=self.context_safety_margin,
             )
+            sections = self._context_sections(session, run_id, permission_mode)
             try:
                 compiled = self.context_compiler.compile(
                     session.messages,
@@ -285,6 +300,7 @@ class RunCoordinator:
                     budget=budget,
                     artifact_store=self.artifact_store,
                     artifact_policy=self._artifact_policy(session),
+                    sections=sections,
                 )
             except ContextWindowExceeded:
                 if context_retry_used:
@@ -298,6 +314,7 @@ class RunCoordinator:
                     artifact_store=self.artifact_store,
                     artifact_policy=self._artifact_policy(session),
                     summary_generator=self.summary_generator,
+                    sections=sections,
                     trigger="preflight_context_window",
                 )
             self._persist_compiled_context(session, run_id, compiled)
@@ -305,7 +322,7 @@ class RunCoordinator:
                 model=model,
                 messages=compiled.messages,
                 tools=self.registry.specs,
-                system_prompt=system_prompt,
+                system_prompt=compiled.system_prompt,
                 max_output_tokens=effective_output_tokens,
             )
             try:
@@ -325,6 +342,7 @@ class RunCoordinator:
                     artifact_store=self.artifact_store,
                     artifact_policy=self._artifact_policy(session),
                     summary_generator=self.summary_generator,
+                    sections=sections,
                     trigger="provider_context_length",
                 )
                 self._persist_compiled_context(session, run_id, retry_compiled)
@@ -596,6 +614,64 @@ class RunCoordinator:
         for message in session.messages:
             calls.extend(call for call in message.tool_calls if call.id in wanted)
         return tuple(calls)
+
+    def _context_sections(
+        self, session: Session, run_id: str, permission_mode: PermissionMode
+    ) -> tuple[ContextSection, ...]:
+        """Compose optional sections. A broken contributor fails the run.
+
+        Silently dropping a section would hand the model a context that is
+        quietly missing its memory or skill index, so this path is fail closed.
+        """
+
+        if not self.extensions.context_contributors:
+            return ()
+        request = ContextRequest(
+            session_id=session.id,
+            run_id=run_id,
+            cwd=str(session.cwd),
+            permission_mode=permission_mode.value,
+            user_text=self._last_text(session, "user"),
+        )
+        sections: list[ContextSection] = []
+        for contributor in self.extensions.context_contributors:
+            sections.extend(contributor.sections(request))
+        return tuple(sections)
+
+    def _record_outcome(
+        self,
+        session: Session,
+        run_id: str,
+        state: RunState,
+        response: ModelResponse | None,
+    ) -> None:
+        """Offer the finished run to recorders; failures never rewrite the run.
+
+        The side effects are already committed at this point, so a recorder is
+        treated like an observer: fail open, exactly as `_notify_observers` does.
+        """
+
+        if not self.extensions.run_recorders:
+            return
+        outcome = RunOutcome(
+            session_id=session.id,
+            run_id=run_id,
+            state=state.value,
+            assistant_text=response.message.text_content if response is not None else "",
+            user_text=self._last_text(session, "user"),
+        )
+        for recorder in self.extensions.run_recorders:
+            try:
+                recorder.record(outcome, event_sink=session.append)
+            except Exception:  # noqa: BLE001 - recorders must not alter run state.
+                continue
+
+    @staticmethod
+    def _last_text(session: Session, role: str) -> str:
+        for message in reversed(session.messages):
+            if message.role == role and message.text_content.strip():
+                return message.text_content
+        return ""
 
     def _persist_compiled_context(
         self, session: Session, run_id: str, compiled: CompiledContext

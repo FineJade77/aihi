@@ -18,8 +18,13 @@ from aiharness import (
     ReadFileTool,
     RunCoordinator,
     RunTestsTool,
+    RuntimeExtensions,
     SandboxBackend,
     ShellTool,
+    SkillDiscovery,
+    SkillIndexContributor,
+    SkillRoot,
+    SkillScope,
     ToolRegistry,
     WriteFileTool,
 )
@@ -33,6 +38,7 @@ class AICodeRuntime:
     provider: Provider
     registry: ToolRegistry
     sandbox: SandboxBackend
+    extensions: RuntimeExtensions
 
 
 def build_provider(config: AICodeConfig) -> Provider:
@@ -61,6 +67,21 @@ def build_tool_registry() -> ToolRegistry:
     )
 
 
+def build_extensions(config: AICodeConfig) -> RuntimeExtensions:
+    """Offer the project skill index when the workspace ships one.
+
+    Only the index is composed here; loading a body still goes through the
+    Harness trust flow. Memory needs a durable store and a scope policy, so it
+    stays an explicit application choice rather than a default.
+    """
+
+    root = config.skills_path or (config.workspace / ".aicode" / "skills")
+    if not root.is_dir():
+        return RuntimeExtensions()
+    discovery = SkillDiscovery([SkillRoot(path=root, scope=SkillScope.PROJECT)])
+    return RuntimeExtensions(context_contributors=(SkillIndexContributor(discovery),))
+
+
 def build_runtime(
     config: AICodeConfig, *, approval_resolver: ApprovalResolver | None = None
 ) -> AICodeRuntime:
@@ -73,18 +94,21 @@ def build_runtime(
     provider = build_provider(config)
     sandbox = HostBackend(config.workspace, unsafe=config.unsafe_host)
     registry = build_tool_registry()
+    extensions = build_extensions(config)
     coordinator = RunCoordinator(
         provider,
         registry=registry,
         sandbox=sandbox,
         policy=DefaultPolicyEngine(),
         approval_resolver=approval_resolver,
+        extensions=extensions,
     )
     return AICodeRuntime(
         coordinator=coordinator,
         provider=provider,
         registry=registry,
         sandbox=sandbox,
+        extensions=extensions,
     )
 
 

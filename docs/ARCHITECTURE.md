@@ -80,9 +80,9 @@ aicode config / Prompt / AGENTS.md / terminal approval
   → aiharness RunCoordinator + Session/EventStore
 ```
 
-`aicode` 可以直接导入 `aiharness.models.providers`、`aiharness.tools`、`aiharness.policy`、
-`aiharness.sandbox` 和 `aiharness.runtime`；是否注册 Edit/Shell/Test、选择哪个模型、如何展示
-Approval 和何时使用 Skills/Memory/Subagent，由应用自行决定。
+`aicode` 通过 `from aiharness import ...` 取得 Provider、Tool、Policy、Sandbox、Runtime 和
+`RuntimeExtensions`；是否注册 Edit/Shell/Test、选择哪个模型、如何展示 Approval 和是否组合
+Skill/Memory，由应用自行决定（见 §3.1 公共 API 边界）。
 
 ## 3. 工程目录
 
@@ -131,6 +131,11 @@ examples/
 Harness 已有的具体实现并注入。`aiharness/agents` 表示 Subagent 协调基础设施，不是用户可执行
 Agent 的应用目录。
 
+Runtime 通过 `RuntimeExtensions` 组合可选能力：`ContextContributor` 贡献只读上下文段落，
+`RunRecorder` 观察已完成的 Run 并追加自己的审计事件。两者都是结构化 Protocol，能力包不 import
+`runtime`，`runtime` 也不 import 能力包。当前已接线：Skill 索引、Memory 读取与候选抽取；
+未接线：Subagent、Plugin、MCP（ADR-0022）。
+
 ### 3.1 Harness 与应用层边界
 
 | 层 | 负责 | 不负责 |
@@ -151,9 +156,9 @@ Agent 的应用目录。
 `tests/contract/test_public_api.py` 保证导出集合可解析、有序，且导入公共 API 不会拉进任何可选
 依赖（`fastapi`、`psycopg`、`opentelemetry`）。
 
-`agents`、`memory`、`skills`、`plugins`、`mcp`、`evals`、`api`、`cli` **刻意不导出**：它们尚未
-可注入 `RunCoordinator`，因此不存在可承诺的组合契约。把其中任何一个提升为公共 API，等同于新增
-组合契约，需要 ADR 和对应的 Runtime 注入点（TASK.md H-02）。
+`agents`、`plugins`、`mcp`、`evals`、`api`、`cli` **刻意不导出**：它们尚未可注入
+`RunCoordinator`，因此不存在可承诺的组合契约。提升顺序不可颠倒 —— 先有 Runtime 注入点，
+再写 ADR，最后才进入公共 API（`skills` 和 `memory` 已按此顺序完成，见 ADR-0022）。
 
 ## 4. Runtime 与 Agent Loop
 
@@ -248,8 +253,10 @@ Branch 通过父 Session + 起始序号表达；父会话不可变，子会话�
 
 ## 7. 上下文与自动压缩
 
-Context Compiler 将系统指令、项目约定、Skill 摘要、记忆、历史消息、工具 Schema 和
-当前用户输入编译成模型请求，并在编译前计算预算：
+Context Compiler 将系统指令、可选的扩展段落（Skill 索引、记忆等）、历史消息、工具 Schema 和
+当前用户输入编译成模型请求，并在编译前计算预算。扩展段落由 `RuntimeExtensions.context_contributors`
+以已渲染的 `ContextSection` 形式提供，因此 `context` 包不依赖 `skills`/`memory`（ADR-0022）；
+段落计入预算，contributor 抛错时 Run fail closed，不静默丢弃上下文：
 
 ```text
 usable_input = context_window - reserved_output - tool_schema - safety_margin

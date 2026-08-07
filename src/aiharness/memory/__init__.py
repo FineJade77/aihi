@@ -1,5 +1,6 @@
 """Scoped, secret-scrubbed memory candidates and durable records."""
 
+from aiharness.memory.context import MemoryCandidateRecorder, MemoryContextContributor
 from aiharness.memory.errors import (
     MemoryAccessDenied,
     MemoryConflict,
@@ -25,7 +26,9 @@ __all__ = [
     "MemoryAccess",
     "MemoryAccessDenied",
     "MemoryCandidate",
+    "MemoryCandidateRecorder",
     "MemoryConflict",
+    "MemoryContextContributor",
     "MemoryError",
     "MemoryExtractor",
     "MemoryKind",

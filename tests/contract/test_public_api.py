@@ -9,7 +9,23 @@ import aiharness
 
 # Packages that exist but are not yet injectable into RunCoordinator. Promoting
 # one of these is a composition-contract change and needs an ADR (TASK.md H-02).
-UNWIRED_PACKAGES = ("agents", "memory", "skills", "plugins", "mcp", "evals", "api", "cli")
+UNWIRED_PACKAGES = ("agents", "plugins", "mcp", "evals", "api", "cli")
+
+# Capabilities that RunCoordinator can compose, so their adapters are public.
+WIRED_ADAPTERS = (
+    "RuntimeExtensions",
+    "ContextContributor",
+    "ContextRequest",
+    "ContextSection",
+    "RunRecorder",
+    "RunOutcome",
+    "SkillIndexContributor",
+    "SkillDiscovery",
+    "MemoryContextContributor",
+    "MemoryCandidateRecorder",
+    "MemoryService",
+    "MemoryAccess",
+)
 
 # Extras that the core package must never require at import time.
 OPTIONAL_DISTRIBUTIONS = ("fastapi", "psycopg", "opentelemetry")
@@ -56,6 +72,12 @@ def test_unwired_packages_are_not_advertised_as_public() -> None:
     exported = set(aiharness.__all__)
     for package in UNWIRED_PACKAGES:
         assert package not in exported
+
+
+def test_wired_capabilities_expose_their_composition_adapters() -> None:
+    """A capability reachable from RunCoordinator must be composable publicly."""
+
+    assert set(WIRED_ADAPTERS) <= set(aiharness.__all__)
 
 
 def test_importing_the_public_api_pulls_in_no_optional_extra() -> None:

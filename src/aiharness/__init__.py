@@ -5,17 +5,18 @@ This module is the whole supported surface for applications (`aicode/`,
 re-exported here; anything reachable only through a submodule path is internal
 and may change without an ADR.
 
-Deliberately absent: `agents`, `memory`, `skills`, `plugins`, `mcp`, `evals`,
-`api` and `cli`. Those packages exist but are not yet injectable into
-`RunCoordinator`, so there is no composition contract to promise (TASK.md H-02).
-They stay on explicit submodule imports until the Runtime wires them.
+Deliberately absent: `agents`, `plugins`, `mcp`, `evals`, `api` and `cli`. Those
+packages exist but are not yet injectable into `RunCoordinator`, so there is no
+composition contract to promise (TASK.md H-02). They stay on explicit submodule
+imports until the Runtime wires them; promoting one means adding its injection
+point and an ADR, in that order.
 
 Importing this module must not require any optional extra (`fastapi`,
 `psycopg`, `opentelemetry`); `tests/contract/test_public_api.py` enforces that.
 """
 
 from aiharness.artifacts import ArtifactAccess, ArtifactPolicy, ArtifactStore, FileArtifactStore
-from aiharness.context import ContextCompiler
+from aiharness.context import ContextCompiler, ContextSection
 from aiharness.core.errors import (
     ContextWindowExceeded,
     EventInvariantViolation,
@@ -43,6 +44,18 @@ from aiharness.core.types import (
     Usage,
 )
 from aiharness.hooks import HookBus
+from aiharness.memory import (
+    InMemoryMemoryStore,
+    MemoryAccess,
+    MemoryCandidate,
+    MemoryCandidateRecorder,
+    MemoryContextContributor,
+    MemoryKind,
+    MemoryRecord,
+    MemoryScope,
+    MemoryService,
+    MemoryStore,
+)
 from aiharness.models import ModelGateway, ModelRouter, Provider
 from aiharness.models.providers import (
     AnthropicProvider,
@@ -66,7 +79,16 @@ from aiharness.policy import (
     StaticApprovalResolver,
     SuspendingApprovalResolver,
 )
-from aiharness.runtime import RunCoordinator, RunResult, RunState
+from aiharness.runtime import (
+    ContextContributor,
+    ContextRequest,
+    RunCoordinator,
+    RunOutcome,
+    RunRecorder,
+    RunResult,
+    RunState,
+    RuntimeExtensions,
+)
 from aiharness.sandbox import (
     DockerBackend,
     HostBackend,
@@ -75,6 +97,7 @@ from aiharness.sandbox import (
     SandboxDescriptor,
 )
 from aiharness.sessions import EventStore, InMemoryEventStore, Session, SQLiteEventStore
+from aiharness.skills import SkillDiscovery, SkillIndexContributor, SkillRoot, SkillScope
 from aiharness.tools import Tool, ToolContext, ToolRegistry, ToolResult
 from aiharness.tools.builtin import (
     EditFileTool,
@@ -97,6 +120,9 @@ __all__ = [
     "CapabilityLease",
     "ContentBlock",
     "ContextCompiler",
+    "ContextContributor",
+    "ContextRequest",
+    "ContextSection",
     "ContextWindowExceeded",
     "Decision",
     "DecisionEffect",
@@ -112,7 +138,17 @@ __all__ = [
     "HookBus",
     "HostBackend",
     "InMemoryEventStore",
+    "InMemoryMemoryStore",
     "LocalIsolatedBackend",
+    "MemoryAccess",
+    "MemoryCandidate",
+    "MemoryCandidateRecorder",
+    "MemoryContextContributor",
+    "MemoryKind",
+    "MemoryRecord",
+    "MemoryScope",
+    "MemoryService",
+    "MemoryStore",
     "Message",
     "ModelGateway",
     "ModelRequest",
@@ -126,9 +162,12 @@ __all__ = [
     "Provider",
     "ReadFileTool",
     "RunCoordinator",
+    "RunOutcome",
+    "RunRecorder",
     "RunResult",
     "RunState",
     "RunTestsTool",
+    "RuntimeExtensions",
     "SQLiteEventStore",
     "SandboxBackend",
     "SandboxDescriptor",
@@ -136,6 +175,10 @@ __all__ = [
     "Session",
     "SessionNotFound",
     "ShellTool",
+    "SkillDiscovery",
+    "SkillIndexContributor",
+    "SkillRoot",
+    "SkillScope",
     "StaticApprovalResolver",
     "StopReason",
     "SuspendingApprovalResolver",

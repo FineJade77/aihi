@@ -95,6 +95,36 @@ class CompactionRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class ContextSection:
+    """A named block prepended to the system prompt by a runtime extension.
+
+    The compiler stays domain-agnostic: skills, memory and future contributors
+    all arrive as already-rendered text, so `context` never imports them.
+    """
+
+    title: str
+    body: str
+    source: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.title.strip():
+            raise ValueError("Context section title must not be empty")
+
+    def render(self) -> str:
+        return f"## {self.title.strip()}\n{self.body.strip()}"
+
+
+def compose_system_prompt(
+    system_prompt: str, sections: tuple[ContextSection, ...] | list[ContextSection]
+) -> str:
+    """Join the base prompt with section blocks in the order they were given."""
+
+    blocks = [system_prompt.strip()] if system_prompt.strip() else []
+    blocks.extend(section.render() for section in sections if section.body.strip())
+    return "\n\n".join(blocks)
+
+
+@dataclass(frozen=True, slots=True)
 class CompiledContext:
     system_prompt: str
     messages: tuple[Message, ...]
@@ -133,8 +163,10 @@ class ContextCompiler:
         budget: ContextBudget,
         artifact_store: ArtifactStore | None = None,
         artifact_policy: ArtifactPolicy | None = None,
+        sections: tuple[ContextSection, ...] = (),
     ) -> CompiledContext:
         original = tuple(messages)
+        system_prompt = compose_system_prompt(system_prompt, sections)
         materialized, artifacts = self._artifactize(original, artifact_store, artifact_policy)
         before_tokens = self._total_tokens(system_prompt, materialized, budget)
         if before_tokens <= budget.usable_input:
@@ -201,6 +233,7 @@ class ContextCompiler:
         budget: ContextBudget,
         artifact_store: ArtifactStore | None = None,
         artifact_policy: ArtifactPolicy | None = None,
+        sections: tuple[ContextSection, ...] = (),
         summary_generator: SummaryGenerator | None = None,
         trigger: str = "provider_context_length",
     ) -> CompiledContext:
@@ -212,6 +245,7 @@ class ContextCompiler:
         """
 
         original = tuple(messages)
+        system_prompt = compose_system_prompt(system_prompt, sections)
         materialized, artifacts = self._artifactize(original, artifact_store, artifact_policy)
         before_tokens = self._total_tokens(system_prompt, materialized, budget)
         groups = _message_groups(materialized)
