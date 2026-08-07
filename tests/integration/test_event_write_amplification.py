@@ -101,3 +101,33 @@ async def test_telemetry_ignores_ephemeral_stream_deltas(tmp_path: Path) -> None
     names = [record.name for record in sink.records()]
     assert "model.chunk" not in names
     assert "run.completed" in names
+
+
+@pytest.mark.asyncio
+async def test_artifact_projection_does_not_rescan_history_each_turn(tmp_path: Path) -> None:
+    """The artifact set is built once per run, not re-derived from every event."""
+
+    store = CountingEventStore()
+    session = session_for(store, tmp_path, "ses-projection")
+    coordinator = RunCoordinator(
+        FakeProvider([FakeStep(text="one"), FakeStep(text="two")]),
+        registry=ToolRegistry(),
+        sandbox=HostBackend(tmp_path, unsafe=True),
+    )
+    scans = 0
+    original = RunCoordinator._recorded_artifact_ids
+
+    def counting(target: Session) -> set[str]:
+        nonlocal scans
+        scans += 1
+        return original(target)
+
+    RunCoordinator._recorded_artifact_ids = staticmethod(counting)  # type: ignore[method-assign]
+    try:
+        await coordinator.run(session, model="fake-model", user_message=Message.text("user", "a"))
+        await coordinator.run(session, model="fake-model", user_message=Message.text("user", "b"))
+    finally:
+        RunCoordinator._recorded_artifact_ids = original  # type: ignore[method-assign]
+
+    # Once per run, regardless of how many model turns the run makes.
+    assert scans == 2

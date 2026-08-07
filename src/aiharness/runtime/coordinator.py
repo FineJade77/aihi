@@ -260,6 +260,9 @@ class RunCoordinator:
         pending_tool_call_ids: tuple[str, ...] = (),
     ) -> ModelResponse:
         context_retry_used = False
+        # Built once per run: re-deriving it from the whole event log on every
+        # model turn made a long run quadratic in its own history.
+        recorded_artifacts = self._recorded_artifact_ids(session)
         pending_calls = self._pending_calls(session, pending_tool_call_ids)
         while True:
             await self._check_cancel(cancel_event)
@@ -317,7 +320,7 @@ class RunCoordinator:
                     sections=sections,
                     trigger="preflight_context_window",
                 )
-            self._persist_compiled_context(session, run_id, compiled)
+            self._persist_compiled_context(session, run_id, compiled, recorded_artifacts)
             request = ModelRequest(
                 model=model,
                 messages=compiled.messages,
@@ -345,7 +348,7 @@ class RunCoordinator:
                     sections=sections,
                     trigger="provider_context_length",
                 )
-                self._persist_compiled_context(session, run_id, retry_compiled)
+                self._persist_compiled_context(session, run_id, retry_compiled, recorded_artifacts)
                 continue
             session.add_message(response.message, run_id=run_id)
             if not response.message.tool_calls:
@@ -674,21 +677,28 @@ class RunCoordinator:
                 return message.text_content
         return ""
 
-    def _persist_compiled_context(
-        self, session: Session, run_id: str, compiled: CompiledContext
-    ) -> None:
-        existing_artifacts = {
+    @staticmethod
+    def _recorded_artifact_ids(session: Session) -> set[str]:
+        return {
             str(event.data["artifact"]["artifact_id"])
             for event in session.events
             if event.type == "artifact.created"
             and isinstance(event.data.get("artifact"), dict)
             and "artifact_id" in event.data["artifact"]
         }
+
+    def _persist_compiled_context(
+        self,
+        session: Session,
+        run_id: str,
+        compiled: CompiledContext,
+        recorded_artifacts: set[str],
+    ) -> None:
         # Context bookkeeping has no side effects to fence, so one transaction
         # commits every artifact reference together with its compaction record.
         pending: list[Event] = []
         for artifact in compiled.artifacts:
-            if artifact.artifact_id in existing_artifacts:
+            if artifact.artifact_id in recorded_artifacts:
                 continue
             pending.append(
                 Event(
@@ -698,7 +708,7 @@ class RunCoordinator:
                     data={"artifact": artifact.to_dict(), "purpose": "context"},
                 )
             )
-            existing_artifacts.add(artifact.artifact_id)
+            recorded_artifacts.add(artifact.artifact_id)
         if compiled.compaction is None:
             if pending:
                 session.append_many(pending)
