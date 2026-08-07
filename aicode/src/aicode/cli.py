@@ -63,19 +63,16 @@ def run(
     """Run one prompt and print newly persisted events as JSON Lines."""
 
     config = AICodeConfig.from_env(workspace=workspace)
-    overrides: dict[str, object] = {}
     # A CLI flag is an explicit acknowledgement. If it is omitted, preserve
     # the already validated environment/config value instead of silently
     # resetting it to the safe default.
-    if unsafe_host:
-        overrides["unsafe_host"] = True
-    if provider is not None:
-        overrides["provider"] = provider
-    if model is not None:
-        overrides["model"] = model
-    if db is not None:
-        overrides["db_path"] = db
-    config = replace(config, **overrides)
+    config = replace(
+        config,
+        unsafe_host=True if unsafe_host else config.unsafe_host,
+        provider=provider or config.provider,  # type: ignore[arg-type]
+        model=model or config.model,
+        db_path=db or config.db_path,
+    )
     store = SQLiteEventStore(config.db_path)
     try:
         if session is None:
@@ -128,12 +125,11 @@ def resume(
     """Continue a run that was suspended waiting for an approval."""
 
     config = AICodeConfig.from_env(workspace=workspace)
-    overrides: dict[str, object] = {}
-    if unsafe_host:
-        overrides["unsafe_host"] = True
-    if db is not None:
-        overrides["db_path"] = db
-    config = replace(config, **overrides)
+    config = replace(
+        config,
+        unsafe_host=True if unsafe_host else config.unsafe_host,
+        db_path=db or config.db_path,
+    )
     store = SQLiteEventStore(config.db_path)
     try:
         current = _load_session(store, session)
@@ -357,12 +353,12 @@ def _resume_config(
         raise typer.BadParameter("Session metadata has no valid provider", param_hint="--session")
     if not model_explicit and not isinstance(stored_model, str):
         raise typer.BadParameter("Session metadata has no valid model", param_hint="--session")
-    overrides: dict[str, object] = {"workspace": session.cwd}
-    if not provider_explicit:
-        overrides["provider"] = stored_provider
-    if not model_explicit:
-        overrides["model"] = stored_model
-    return replace(config, **overrides)
+    return replace(
+        config,
+        workspace=session.cwd,
+        provider=config.provider if provider_explicit else stored_provider,  # type: ignore[arg-type]
+        model=config.model if model_explicit else str(stored_model),
+    )
 
 
 __all__ = ["app", "main"]

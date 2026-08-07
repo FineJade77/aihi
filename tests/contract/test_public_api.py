@@ -7,9 +7,9 @@ from pathlib import Path
 
 import aiharness
 
-# Packages that exist but are not yet injectable into RunCoordinator. Promoting
-# one of these is a composition-contract change and needs an ADR (TASK.md H-02).
-UNWIRED_PACKAGES = ("evals",)
+# Nothing composed into a run may be advertised before it is reachable from
+# RunCoordinator. `evals` is exempt: it is the read side, not a capability.
+UNWIRED_PACKAGES: tuple[str, ...] = ()
 
 # Capabilities that RunCoordinator can compose, so their adapters are public.
 WIRED_ADAPTERS = (
@@ -34,6 +34,11 @@ WIRED_ADAPTERS = (
     "register_plugin_tools",
     "StdioMcpTransport",
     "PluginHostPolicy",
+    # analysis surface: reads a persisted log, composes into nothing
+    "ReplayEngine",
+    "TraceBundle",
+    "TraceGraph",
+    "replay_graph",
 )
 
 # Extras that the core package must never require at import time.

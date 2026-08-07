@@ -64,9 +64,24 @@ class SubagentRunner(Protocol):
 
 @runtime_checkable
 class ChildCoordinator(Protocol):
-    """The subset of RunCoordinator a child run needs."""
+    """The subset of RunCoordinator a child run needs.
 
-    async def run(self, session: Session, **kwargs: Any) -> Any: ...
+    Spelled out rather than `**kwargs`, so `RunCoordinator` — whose keywords are
+    explicit — actually satisfies it.
+    """
+
+    async def run(
+        self,
+        session: Session,
+        *,
+        model: str,
+        user_message: Message | None = ...,
+        run_id: str | None = ...,
+        permission_mode: PermissionMode = ...,
+        system_prompt: str = ...,
+        max_output_tokens: int = ...,
+        cancel_event: asyncio.Event | None = ...,
+    ) -> Any: ...
 
 
 SessionFactory = Callable[[TaskSpec, ToolContext], Session]

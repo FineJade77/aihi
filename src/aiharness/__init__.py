@@ -5,11 +5,12 @@ This module is the whole supported surface for applications (`aicode/`,
 re-exported here; anything reachable only through a submodule path is internal
 and may change without an ADR.
 
-Deliberately absent: `evals`, `api` and `cli`. Those
-packages exist but are not yet injectable into `RunCoordinator`, so there is no
-composition contract to promise (TASK.md H-02). They stay on explicit submodule
-imports until the Runtime wires them; promoting one means adding its injection
-point and an ADR, in that order.
+Two kinds of surface live here. The **composition** surface is what an
+application injects into a run — a capability only appears once it is reachable
+from `RunCoordinator`, so promoting one means adding its injection point first
+and an ADR second. The **analysis** surface (`evals`) is the read side: it
+consumes a persisted event log after the fact and composes into nothing, so it
+carries no injection requirement.
 
 Importing this module must not require any optional extra (`fastapi`,
 `psycopg`, `opentelemetry`); `tests/contract/test_public_api.py` enforces that.
@@ -22,6 +23,8 @@ from aiharness.agents import (
     SubagentAuthority,
     SubagentRunner,
     SubagentTool,
+    TaskResult,
+    TaskSpec,
     WorkspaceScope,
     restrict_registry,
     subagent_session_factory,
@@ -62,7 +65,26 @@ from aiharness.core.types import (
     ToolSpec,
     Usage,
 )
-from aiharness.hooks import HookBus
+from aiharness.evals import (
+    CompositeGrader,
+    Delegation,
+    EvalError,
+    EvalValidationError,
+    EventCountGrader,
+    GoldenTask,
+    GoldenTaskGrader,
+    Grade,
+    Grader,
+    GraphReplayResult,
+    ReplayEngine,
+    ReplayInvariantViolation,
+    ReplayResult,
+    RunStateGrader,
+    TraceBundle,
+    TraceGraph,
+    replay_graph,
+)
+from aiharness.hooks import HookBus, HookEvent, HookGovernance, HookOutcome
 from aiharness.mcp import (
     InMemoryMcpTransport,
     McpClient,
@@ -162,6 +184,7 @@ from aiharness.tools.builtin import (
     ReadFileTool,
     WriteFileTool,
 )
+from aiharness.tools.builtin.bash import resolve_bash
 
 __all__ = [
     "AgentBudget",
@@ -177,6 +200,7 @@ __all__ = [
     "Capabilities",
     "CapabilityLease",
     "ChildRunSubagentRunner",
+    "CompositeGrader",
     "ContentBlock",
     "ContextCompiler",
     "ContextContributor",
@@ -186,19 +210,31 @@ __all__ = [
     "Decision",
     "DecisionEffect",
     "DefaultPolicyEngine",
+    "Delegation",
     "DeterministicSummaryGenerator",
     "DockerBackend",
     "EditFileTool",
+    "EvalError",
+    "EvalValidationError",
     "Event",
+    "EventCountGrader",
     "EventInvariantViolation",
     "EventStore",
     "FakeProvider",
     "FileArtifactStore",
     "FileTrustStore",
     "GlobTool",
+    "GoldenTask",
+    "GoldenTaskGrader",
+    "Grade",
+    "Grader",
+    "GraphReplayResult",
     "GrepTool",
     "HarnessError",
     "HookBus",
+    "HookEvent",
+    "HookGovernance",
+    "HookOutcome",
     "HostBackend",
     "InMemoryEventStore",
     "InMemoryMcpTransport",
@@ -246,11 +282,15 @@ __all__ = [
     "ROLE_PRIMARY",
     "ROLE_SUBAGENT",
     "ReadFileTool",
+    "ReplayEngine",
+    "ReplayInvariantViolation",
+    "ReplayResult",
     "RunCoordinator",
     "RunOutcome",
     "RunRecorder",
     "RunResult",
     "RunState",
+    "RunStateGrader",
     "RuntimeExtensions",
     "SPAWN_CAPABILITY",
     "SQLiteEventStore",
@@ -273,6 +313,8 @@ __all__ = [
     "SummaryGenerator",
     "SummaryRequest",
     "SuspendingApprovalResolver",
+    "TaskResult",
+    "TaskSpec",
     "Telemetry",
     "TelemetrySink",
     "TextBlock",
@@ -286,6 +328,8 @@ __all__ = [
     "ToolResult",
     "ToolResultBlock",
     "ToolSpec",
+    "TraceBundle",
+    "TraceGraph",
     "UnsafeHostNotAcknowledged",
     "Usage",
     "WorkspaceScope",
@@ -293,6 +337,8 @@ __all__ = [
     "new_id",
     "register_mcp_tools",
     "register_plugin_tools",
+    "replay_graph",
+    "resolve_bash",
     "restrict_registry",
     "subagent_session_factory",
 ]

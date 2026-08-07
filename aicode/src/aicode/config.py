@@ -30,6 +30,7 @@ class AICodeConfig:
     artifacts_path: Path | None = None
     telemetry_path: Path | None = None
     project_rules: bool = True
+    format_command: str | None = None
     subagents: bool = False
     subagent_max_tokens: int = 4_096
     subagent_max_tool_calls: int = 20
@@ -60,15 +61,15 @@ class AICodeConfig:
                 object.__setattr__(self, name, Path(value).expanduser())
         if self.skills_path is not None:
             object.__setattr__(self, "skills_path", Path(self.skills_path).expanduser())
-        for role in ("subagent_model", "compact_model"):
-            value = getattr(self, role)
+        for name in ("subagent_model", "compact_model", "format_command"):
+            value = getattr(self, name)
             if value is not None and (not isinstance(value, str) or not value.strip()):
-                raise ValueError(f"aicode {role} must be a non-empty string when set")
+                raise ValueError(f"aicode {name} must be a non-empty string when set")
         object.__setattr__(self, "model", self.model.strip())
-        for role in ("subagent_model", "compact_model"):
-            value = getattr(self, role)
+        for name in ("subagent_model", "compact_model", "format_command"):
+            value = getattr(self, name)
             if value is not None:
-                object.__setattr__(self, role, value.strip())
+                object.__setattr__(self, name, value.strip())
         object.__setattr__(self, "workspace", Path(self.workspace).expanduser().resolve())
         object.__setattr__(self, "db_path", Path(self.db_path).expanduser())
         if self.base_url is not None:
@@ -92,6 +93,7 @@ class AICodeConfig:
         model = os.getenv("AICODE_MODEL", "fake-model")
         subagent_model = os.getenv("AICODE_SUBAGENT_MODEL")
         compact_model = os.getenv("AICODE_COMPACT_MODEL")
+        format_command = os.getenv("AICODE_FORMAT_COMMAND")
         api_key = os.getenv("AICODE_API_KEY")
         base_url = os.getenv("AICODE_BASE_URL")
         configured_workspace = workspace or Path(os.getenv("AICODE_WORKSPACE", Path.cwd()))
@@ -113,6 +115,7 @@ class AICodeConfig:
             model=model,
             subagent_model=subagent_model,
             compact_model=compact_model,
+            format_command=format_command,
             api_key=api_key,
             base_url=base_url,
             workspace=configured_workspace,

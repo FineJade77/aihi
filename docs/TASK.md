@@ -294,14 +294,20 @@ PostgreSQL 生产化、Worker Control Plane 与部署安全、生产隔离 profi
 
 ### H-11：Hook 的应用层入口
 
-- 状态：Planned；优先级：P1；验收：`aicode` 可配置「编辑后自动 format/lint」并有测试。
-- `HookBus` 与治理契约已完成，但 `aicode` 使用次数为 0；
-- Harness 侧无需改动，缺的是应用层的 hook 配置与注册。
+- 状态：Done；验收：`aicode` 可配置「编辑后自动 format/lint」并有测试。
+- ✅ `AICODE_FORMAT_COMMAND` 注册 `FormatOnEditHook`：`mutates=True` 因而必须显式 trust
+  （配置这个命令就是那次授权），只在 `governance.allows_mutation` 为真时执行，走沙箱，
+  失败不影响 Run；被拒绝的编辑绝不会被格式化（有测试）；
+- ✅ `HookEvent`/`HookGovernance`/`HookOutcome` 进入公共 API；
+- ✅ **`aicode` 纳入 mypy 门禁**（此前从未被类型检查，因此 `config.shell_path` 这类
+  笔误可以一路进到运行时）；修正 `ChildCoordinator` Protocol —— `RunCoordinator`
+  原本不满足它（第三例「自己的实现满足不了自己的 Protocol」）。
 
 ### H-12：`evals` 进公共 API
 
-- 状态：Planned；优先级：P1；验收：`ReplayEngine`/`TraceBundle`/`TraceGraph`/`Grader` 可从顶层导入。
-- 事件回放审计是 Harness 的核心能力，却仍只能走子模块路径。
+- 状态：Done；验收：`ReplayEngine`/`TraceBundle`/`TraceGraph`/`Grader` 可从顶层导入。
+- ✅ 公共 API 现在区分两种面：**组合面**（注入进 Run，必须先有注入点再导出）与
+  **分析面**（`evals`，只读事件日志、不组合进任何东西，因此没有注入要求）。
 
 ### H-13：从真实运行生成兼容性语料
 

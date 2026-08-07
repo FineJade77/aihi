@@ -74,6 +74,15 @@ Policy/Hook/Sandbox 链路。省略 `allowed_tools` 表示接受该服务器当�
 - 子 Run 在自己的 Session 中执行，父侧 Tool Result 记录 `session_id`/`run_id`/`task_id`；
 - 派生本身是 mutating 工具：默认模式需要批准，Plan 模式直接拒绝。
 
+## Hook
+
+`AICODE_FORMAT_COMMAND="ruff format"` 会在每次成功的 `write_file`/`edit_file` 之后
+对该文件运行格式化命令。
+
+它是**会修改文件的 hook**，因此遵守 Harness 的规矩：注册时必须显式 trust（配置这个命令
+就是那次授权），只在外层工具调用已被 Policy 放行、且沙箱已确认时执行，走沙箱（工作区限制、
+超时、输出上限），失败只报告不影响 Run。被拒绝的编辑不会被格式化。
+
 ## Approval 流程
 
 需要批准的工具不会被伪造成失败，Run 会挂起（退出码 `2`）：

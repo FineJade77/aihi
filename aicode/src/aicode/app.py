@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from aicode.config import AICodeConfig
 from aicode.context import ProjectRulesContributor
+from aicode.hooks import FormatOnEditHook, register_format_hook
 from aicode.prompt import SYSTEM_PROMPT
 from aiharness import (
     ROLE_COMPACT,
@@ -24,6 +25,7 @@ from aiharness import (
     FileArtifactStore,
     GlobTool,
     GrepTool,
+    HookBus,
     HostBackend,
     JsonlTelemetrySink,
     ModelGateway,
@@ -43,10 +45,12 @@ from aiharness import (
     SubagentAuthority,
     SubagentTool,
     SummaryGenerator,
+    TaskSpec,
     Telemetry,
     ToolRegistry,
     WorkspaceScope,
     WriteFileTool,
+    resolve_bash,
     restrict_registry,
     subagent_session_factory,
 )
@@ -70,11 +74,17 @@ def build_provider(config: AICodeConfig) -> Provider:
         return FakeProvider()
     if config.api_key is None:
         raise ValueError(f"AICODE_API_KEY is required for provider {config.provider}")
+    if config.base_url is None:
+        if config.provider == "openai":
+            return OpenAIProvider(config.api_key)
+        if config.provider == "anthropic":
+            return AnthropicProvider(config.api_key)
+        return OpenAICompatibleProvider(config.api_key)
     if config.provider == "openai":
-        return OpenAIProvider(config.api_key, **_base_url(config))
+        return OpenAIProvider(config.api_key, base_url=config.base_url)
     if config.provider == "anthropic":
-        return AnthropicProvider(config.api_key, **_base_url(config))
-    return OpenAICompatibleProvider(config.api_key, **_base_url(config))
+        return AnthropicProvider(config.api_key, base_url=config.base_url)
+    return OpenAICompatibleProvider(config.api_key, base_url=config.base_url)
 
 
 def build_gateway(config: AICodeConfig) -> ModelGateway:
@@ -132,7 +142,7 @@ def build_subagent_tool(
 
     subagent_model = config.roles.resolve(ROLE_SUBAGENT)
 
-    def coordinator_factory(spec: object) -> RunCoordinator:
+    def coordinator_factory(spec: TaskSpec) -> RunCoordinator:
         capabilities = frozenset(getattr(spec, "capabilities", frozenset()))
         return RunCoordinator(
             build_gateway(config),
@@ -179,6 +189,25 @@ def build_summary_generator(config: AICodeConfig) -> SummaryGenerator:
     return ModelSummaryGenerator(build_gateway(config), config.roles.resolve(ROLE_COMPACT))
 
 
+def build_hooks(config: AICodeConfig, sandbox: SandboxBackend) -> HookBus:
+    """Register the project's own lifecycle hooks.
+
+    Configuring `AICODE_FORMAT_COMMAND` is the act of trust the Harness requires
+    for a mutating hook; it still only runs when the enclosing tool call was
+    allowed and the sandbox is acknowledged.
+    """
+
+    bus = HookBus()
+    if config.format_command is not None:
+        register_format_hook(
+            bus,
+            FormatOnEditHook(
+                config.format_command, sandbox, shell_path=resolve_bash()
+            ),
+        )
+    return bus
+
+
 def build_artifact_store(config: AICodeConfig) -> FileArtifactStore:
     """Keep large tool output out of the context and out of the event log."""
 
@@ -219,6 +248,7 @@ def build_runtime(
         registry=registry,
         sandbox=sandbox,
         policy=DefaultPolicyEngine(),
+        hooks=build_hooks(config, sandbox),
         approval_resolver=approval_resolver,
         extensions=extensions,
         summary_generator=build_summary_generator(config),
@@ -236,5 +266,4 @@ def build_runtime(
     )
 
 
-def _base_url(config: AICodeConfig) -> dict[str, str]:
-    return {} if config.base_url is None else {"base_url": config.base_url}
+
