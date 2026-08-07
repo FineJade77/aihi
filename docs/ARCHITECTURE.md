@@ -15,7 +15,7 @@ AIHarness 是面向多种 Agent 的可复用运行时基础设施。模型只负
 
 当前规划分为两层：
 
-- `aiharness`：可嵌入 SDK 和基础 CLI，提供公共协议、实现、安全边界和可恢复运行时；
+- `aiharness`：可嵌入 SDK，提供公共协议、实现、安全边界和可恢复运行时；它是库，不带 CLI；
 - `aicode/`、`personal/` 等应用：直接复用 Harness 的 Provider、Tool、Policy、Sandbox、Runtime
   和 Context，负责 Prompt、Agent 角色、工具集合、项目规则、交互和产品默认值。
 
@@ -46,7 +46,6 @@ AIHarness 负责：
 flowchart TB
     A1["aicode / personal / other Agents"] --> H["aiharness public SDK"]
     U["Generic CLI / HTTP API / Python SDK"] --> H
-    H --> API["api: Optional Control Plane"]
     H --> R["runtime: Run Coordinator"]
     R --> C["context: Context Compiler"]
     C --> M["models: Model Gateway"]
@@ -69,7 +68,7 @@ flowchart TB
     R --> SES["sessions: Event Store"]
     D --> ART["artifacts: Artifact Store"]
     R --> OBS["observability: OTel + Cost"]
-    SES --> DB["SQLite / PostgreSQL"]
+    SES --> DB["SQLite"]
     ART --> OBJ["Local FS / S3 / MinIO"]
 ```
 
@@ -108,8 +107,6 @@ src/aiharness/
   artifacts/            # Large output and patch storage
   observability/        # OTel, logging, cost accounting
   evals/                # Datasets, replay, graders
-  api/                  # FastAPI optional service
-  cli/                  # Typer CLI
 aicode/
   src/aicode/            # Coding Agent composition, CLI and product workflows
   tests/                 # Coding Agent acceptance and product tests
@@ -129,8 +126,8 @@ plugins/
 examples/
 ```
 
-依赖方向：`core` 不依赖其他业务包；领域包依赖 `core`；`runtime` 组装依赖；`api/cli`
-只调用公共 Runtime API；`aicode` 和其他应用依赖 `aiharness`，反向依赖一律禁止。Runtime 和领域
+依赖方向：`core` 不依赖其他业务包；领域包依赖 `core`；`runtime` 组装依赖；
+`aicode` 和其他应用依赖 `aiharness`，反向依赖一律禁止。Runtime 和领域
 包内部通过 Provider、Sandbox、Store、Plugin Host 等 Protocol 访问实现；应用组合层可以实例化
 Harness 已有的具体实现并注入。`aiharness/agents` 表示 Subagent 协调基础设施，不是用户可执行
 Agent 的应用目录。
@@ -264,11 +261,11 @@ subagent.started / subagent.completed
 ## 6. 会话与存储
 
 `sessions` 保存元数据和 `head_seq`；`events` 按 `(session_id, seq)` 追加。追加必须携带
-`expected_seq`，冲突时拒绝写入。单会话由一个 Runtime Owner 写入，生产 Worker 通过 lease
-保证所有权。
+`expected_seq`，冲突时拒绝写入。**单会话只能有一个写者** —— 这条不变式支撑了 Subagent 使用
+独立 Session 的设计（ADR-0023）。
 
-- 本地：SQLite WAL，单文件、事务、可备份；
-- 生产：PostgreSQL，使用同一 Store Protocol；
+- SQLite WAL：单文件、事务、可备份；
+- 其他后端遵循同一个 `EventStore` Protocol；
 - 大型输出、Diff、附件和日志：Artifact Store；
 - Snapshot：按事件数量或时间生成，只用于加速 Load，不取代事件。
 
@@ -428,7 +425,7 @@ Approval：`accept_edits` 只覆盖工作区编辑，`plan` 同时拒绝两者�
 Policy 返回 `ASK` 时 Runtime 必须挂起而不是伪造 Tool Result：追加 `approval.requested`、
 进入 `WAITING_APPROVAL`，并把决定交给注入的 `ApprovalResolver`
 （`GRANTED / DENIED / DEFERRED`）。未注入时默认 `DEFERRED`，即 Run 挂起等待带外解决，
-既不自动批准也不自动拒绝。Resolver 属于应用层（终端交互、控制面轮询），Harness 只定义契约。
+既不自动批准也不自动拒绝。Resolver 属于应用层（终端交互、带外解决），Harness 只定义契约。
 批准 `capability.lease_required` 会签发一张 run-scoped Capability Lease。
 
 Approval 与 Capability Lease 都是 append-only 授权事件的投影，并绑定单个 `run_id`。
@@ -582,27 +579,22 @@ Worker 相关的 Trace 结构只用于**可观测性关联**，不承载授权�
 - Tool 错误率、策略拒绝率、审批率；
 - 首 Token 延迟、总延迟、Token 和成本。
 
-## 13. 技术与部署
+## 13. 技术与形态
 
-首选 Python 3.11+、asyncio/AnyIO、Pydantic v2、SQLite/PostgreSQL、Typer、可选 FastAPI、
-OpenTelemetry、structlog。第一形态是可嵌入 SDK + CLI；第二形态将 Runtime、Sandbox Worker 和
-Plugin Host 拆分部署。核心不强依赖 LangChain/LangGraph，保持对 Provider 和执行面的控制。
+Python 3.11+、asyncio、SQLite。运行时依赖只有 `httpx`（Provider 适配需要）；核心不依赖
+LangChain/LangGraph，保持对 Provider 和执行面的控制。
 
-### 13.1 服务化控制面与 Worker Lease
+`aiharness` 的形态是**可嵌入库**：它不提供 CLI、HTTP 控制面或后台服务。命令行、交互方式和
+产品默认值属于 `aicode/` 这样的应用层（见 §3.1）。
 
-FastAPI 是可选的内部控制面适配器，由 `create_app` 注入 `EventStore`、`RunLeaseStore` 和可选
-`ArtifactStore`。它只暴露 Session 事件读取、Approval 请求/解决、Run lease 和受作用域保护的
-Artifact 查询，不直接调用 Tool、Provider 或 Sandbox；公网部署必须在 Harness 外配置认证、授权、
-TLS、限流和审计。`/sessions/{session_id}/artifacts` 只列出该 Session 的 `session` 作用域 Artifact；
-`run` 作用域 Artifact 必须通过带匹配 `run_id` 的已知 Artifact 查询访问，`persistent` Artifact 不
-通过 Session 路由泄露。
+不做的事，以及理由：
 
-SQLite 和 PostgreSQL 遵循同一个 `EventStore` Protocol。PostgreSQL 适配使用事务内
-`SELECT ... FOR UPDATE` + `expected_seq`，并在查询后结束事务；驱动通过可选 `psycopg` 或注入的
-DB-API connection factory 提供，核心包不强制安装数据库驱动。连接、唯一约束和 JSON 序列化错误
-映射到稳定 Harness 错误，原始事件仍是唯一事实源。
+| 不做 | 理由 |
+|---|---|
+| HTTP 控制面 / 服务化 | 单机嵌入式 runtime 不需要；带外 Approval 由应用 CLI 覆盖 |
+| 多 Worker、Run lease、fencing | 只在分布式部署下有意义；`EventStore` Protocol 保留，需要时再实现 |
+| PostgreSQL | 其价值是多进程并发写，即上一条的场景 |
+| 远程 OTel 管线 | 单机可观测性用 JSONL sink 足够；`TelemetrySink` Protocol 保留 |
 
-Worker 使用 Run-scoped lease 和单调 fencing token。持有者必须提供 owner 与 token 才能续租或
-释放；过期 lease 可被另一 Worker 接管，旧 Worker 的续租/释放一律拒绝。Lease 不是工具授权，
-每次副作用仍须经过 `tools → policy → hooks → sandbox`，后续多 Worker 实现必须把 lease 状态和
-事件提交放入同一可恢复的控制面。
+保留的是能力协议而非具体部署实现：`EventStore`、`TelemetrySink`、`SandboxBackend` 都还在，
+将来要做分布式时是新增适配器，不是重写运行时。

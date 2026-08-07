@@ -234,3 +234,28 @@ def test_cli_can_abandon_a_suspended_run(
     again = runner.invoke(app, ["resume", session_id, *common])
     assert again.exit_code != 0
     assert "no suspended run" in again.output
+
+
+def test_cli_can_list_and_inspect_persisted_sessions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database = tmp_path / "events.db"
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    script(monkeypatch, [FakeStep(text="hello")])
+    started = runner.invoke(
+        app,
+        ["run", "hi", "--db", str(database), "--workspace", str(workspace), "--unsafe-host"],
+    )
+    assert started.exit_code == 0, started.output
+    session_id = events_of(started.output)[0]["session_id"]
+
+    listed = runner.invoke(app, ["sessions", "--db", str(database)])
+    dumped = runner.invoke(app, ["events", session_id, "--db", str(database)])
+
+    assert listed.exit_code == 0, listed.output
+    assert json.loads(listed.stdout.splitlines()[0])["session_id"] == session_id
+    assert dumped.exit_code == 0, dumped.output
+    types = [json.loads(line)["type"] for line in dumped.stdout.splitlines()]
+    assert types[0] == "session.created"
+    assert "run.completed" in types

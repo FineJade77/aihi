@@ -9,7 +9,9 @@
 基线已确认，第一阶段实现进行中。
 
 本地默认执行后端为 Host。由于 Host 不能提供真正的系统隔离，启用时必须显式传入
-`unsafe=true`（CLI 使用 `--unsafe-host`），并把该事实写入运行事件。Docker 是可选后端。
+`unsafe=true`，并把该事实写入运行事件。Docker 是可选后端。
+
+`aiharness` 是库，不带 CLI；命令行和产品默认值属于 `aicode/` 这样的应用层。
 
 ## 文档
 

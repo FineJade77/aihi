@@ -92,6 +92,15 @@ aicode run "重构这个模块" --unsafe-host -i       # y=批准 n=拒绝 其�
 
 `AGENTS.md`/Skill 注入、Memory 和真实 Subagent 工作流仍属于后续 H-02 与应用层任务。
 
+## 查看会话
+
+```bash
+aicode sessions                 # 列出持久化的会话
+aicode events <session>         # 打印该会话的事件日志（JSON Lines）
+```
+
+Harness 本身不提供 CLI —— 它是库，命令行属于应用层。
+
 在仓库根目录进行本地验证：
 
 ```bash

@@ -9,7 +9,7 @@ import aiharness
 
 # Packages that exist but are not yet injectable into RunCoordinator. Promoting
 # one of these is a composition-contract change and needs an ADR (TASK.md H-02).
-UNWIRED_PACKAGES = ("evals", "api", "cli")
+UNWIRED_PACKAGES = ("evals",)
 
 # Capabilities that RunCoordinator can compose, so their adapters are public.
 WIRED_ADAPTERS = (

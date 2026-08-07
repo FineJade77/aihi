@@ -39,8 +39,6 @@ src/aiharness/
   artifacts/       # Large outputs, patches, attachments
   observability/   # OTel, logs, metrics, cost accounting
   evals/           # Replay, datasets, graders
-  api/             # Optional service API
-  cli/             # CLI entry point
 
 aicode/            # Coding Agent application layer (depends on aiharness)
 personal/          # Optional personal Agent application (depends on aiharness)
@@ -115,7 +113,7 @@ Runtime 是显式状态机，不把状态藏在不可恢复的局部变量中。
 
 ## 存储、上下文和记忆
 
-- 本地使用 SQLite WAL，生产使用 PostgreSQL；两者遵循同一个 Event Store Protocol。
+- 使用 SQLite WAL；任何其他后端遵循同一个 `EventStore` Protocol。
 - `expected_seq` 是并发写入的必要条件，不能静默覆盖别的 Run 的事件。
 - 大型工具输出写入 Artifact Store，上下文只保留预览和引用。
 - 压缩至少保留目标、约束、决策、文件变化、验证结果、未解决事项和下一步。

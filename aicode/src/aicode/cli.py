@@ -171,6 +171,56 @@ def resume(
 
 
 @app.command()
+def sessions(
+    db: Path | None = typer.Option(None, "--db"),
+    limit: int = typer.Option(20, "--limit", min=1, max=200),
+) -> None:
+    """List persisted sessions, most recent first."""
+
+    config = AICodeConfig.from_env()
+    if db is not None:
+        config = replace(config, db_path=db)
+    store = SQLiteEventStore(config.db_path)
+    try:
+        for info in store.list_sessions(limit=limit):
+            typer.echo(
+                json.dumps(
+                    {
+                        "session_id": info.session_id,
+                        "head_seq": info.head_seq,
+                        "cwd": info.metadata.get("cwd"),
+                        "model": info.metadata.get("model"),
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+            )
+    finally:
+        store.close()
+
+
+@app.command()
+def events(
+    session: str = typer.Argument(..., help="Session id to inspect."),
+    db: Path | None = typer.Option(None, "--db"),
+    after: int = typer.Option(0, "--after", help="Only events after this sequence number."),
+) -> None:
+    """Print a session's event log as JSON Lines."""
+
+    config = AICodeConfig.from_env()
+    if db is not None:
+        config = replace(config, db_path=db)
+    store = SQLiteEventStore(config.db_path)
+    try:
+        current = _load_session(store, session)
+        for event in current.events:
+            if (event.seq or 0) > after:
+                typer.echo(json.dumps(event.to_dict(), ensure_ascii=False, sort_keys=True))
+    finally:
+        store.close()
+
+
+@app.command()
 def abandon(
     session: str = typer.Argument(..., help="Session id holding the suspended run."),
     run_id: str | None = typer.Option(None, "--run", help="Suspended run id."),
