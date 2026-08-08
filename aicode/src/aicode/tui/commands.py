@@ -116,6 +116,17 @@ async def _resume(loop: ChatLoop, argument: str) -> bool:
     return False
 
 
+async def _config(loop: ChatLoop, _: str) -> bool:
+    """Re-run the setup questions and adopt the answers without restarting."""
+
+    from aicode.tui.setup import ensure_configured
+
+    updated = await ensure_configured(loop.console, loop.config, force=True)
+    if updated is not None:
+        loop.reconfigure(updated)
+    return False
+
+
 async def _thinking(loop: ChatLoop, _: str) -> bool:
     showing = loop.toggle_thinking()
     loop.console.notice(f"Thinking output: {'on' if showing else 'off'}")
@@ -125,6 +136,7 @@ async def _thinking(loop: ChatLoop, _: str) -> bool:
 COMMANDS: tuple[Command, ...] = (
     Command("/help", "show this list", _help),
     Command("/clear", "start a fresh session", _clear),
+    Command("/config", "change provider, model or API key", _config),
     Command("/mode", "show or set the permission mode", _mode, "[plan|default|accept-edits]"),
     Command("/model", "show or set the model", _model, "[name]"),
     Command("/tools", "list the tools the model can call", _tools),

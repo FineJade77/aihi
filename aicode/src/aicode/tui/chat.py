@@ -152,6 +152,19 @@ class ChatLoop:
         self.renderer.show_thinking = not self.renderer.show_thinking
         return self.renderer.show_thinking
 
+    def reconfigure(self, config: AICodeConfig) -> None:
+        """Adopt new settings mid-session by rebuilding the runtime.
+
+        The session is untouched: switching provider does not rewrite what has
+        already happened, it only changes who answers next.
+        """
+
+        self.config = config
+        self.model = config.model
+        self.runtime = build_runtime(
+            config, approval_resolver=self.resolver, store=self.store
+        )
+
     # --- internals -------------------------------------------------------
 
     def _new_session(self) -> Session:

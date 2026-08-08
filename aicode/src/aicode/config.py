@@ -7,6 +7,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
+from aicode.project import (
+    ProjectPaths,
+    read_api_key,
+    read_project_config,
+    read_user_config,
+)
 from aiharness import ModelRoles
 
 ProviderName = Literal["fake", "openai", "anthropic", "openai_compatible"]
@@ -85,46 +91,112 @@ class AICodeConfig:
             compact=self.compact_model,
         )
 
-    @classmethod
-    def from_env(cls, *, workspace: Path | None = None) -> AICodeConfig:
-        """Load application settings without printing or persisting secrets."""
+    @property
+    def needs_setup(self) -> bool:
+        """True when this config cannot actually reach a model yet."""
 
-        provider = os.getenv("AICODE_PROVIDER", "fake")
-        model = os.getenv("AICODE_MODEL", "fake-model")
-        subagent_model = os.getenv("AICODE_SUBAGENT_MODEL")
-        compact_model = os.getenv("AICODE_COMPACT_MODEL")
-        format_command = os.getenv("AICODE_FORMAT_COMMAND")
-        api_key = os.getenv("AICODE_API_KEY")
-        base_url = os.getenv("AICODE_BASE_URL")
-        configured_workspace = workspace or Path(os.getenv("AICODE_WORKSPACE", Path.cwd()))
-        db_path = Path(os.getenv("AICODE_DB", ".aiharness/events.db"))
-        unsafe_host = os.getenv("AICODE_UNSAFE_HOST", "false").lower() in {"1", "true", "yes"}
-        subagents = os.getenv("AICODE_SUBAGENTS", "false").lower() in {"1", "true", "yes"}
+        return self.provider != "fake" and not self.api_key
+
+    def to_settings_dict(self) -> dict[str, object]:
+        """The persistable settings. The writer drops whatever its scope forbids.
+
+        No secret appears here; `api_key` goes to the credential store instead.
+        """
+
+        return {
+            "provider": self.provider,
+            "model": self.model,
+            "base_url": self.base_url,
+            "subagent_model": self.subagent_model,
+            "compact_model": self.compact_model,
+            "project_rules": self.project_rules,
+            "format_command": self.format_command,
+            "subagents": self.subagents,
+        }
+
+    @classmethod
+    def load(cls, *, workspace: Path | None = None) -> AICodeConfig:
+        """Layer the sources, most specific last.
+
+        Built-in defaults, then `~/.aicode/config.json` (what you usually use),
+        then `<workspace>/.aicode/config.json` (what this project wants), then
+        the environment. Command-line flags sit above all of it and are applied
+        by the caller. Secrets are never printed or persisted here.
+        """
+
+        root = Path(workspace or os.getenv("AICODE_WORKSPACE") or Path.cwd())
+        root = root.expanduser().resolve()
+        user_only = read_user_config()
+        stored = {**user_only, **read_project_config(root)}
+        paths = ProjectPaths(root)
+
+        provider = _text("AICODE_PROVIDER", stored, "provider", "fake") or "fake"
+        base_url = _text("AICODE_BASE_URL", stored, "base_url", None)
+        model = _text("AICODE_MODEL", stored, "model", "fake-model")
         raw_artifacts = os.getenv("AICODE_ARTIFACTS")
         raw_telemetry = os.getenv("AICODE_TELEMETRY")
-        project_rules = os.getenv("AICODE_PROJECT_RULES", "true").lower() not in {
-            "0",
-            "false",
-            "no",
-        }
         raw_mcp = os.getenv("AICODE_MCP")
         raw_skills = os.getenv("AICODE_SKILLS")
-        skills_path = Path(raw_skills) if raw_skills else None
+        raw_db = os.getenv("AICODE_DB")
         return cls(
             provider=provider,  # type: ignore[arg-type]
-            model=model,
-            subagent_model=subagent_model,
-            compact_model=compact_model,
-            format_command=format_command,
-            api_key=api_key,
+            model=model or "fake-model",
+            subagent_model=_text("AICODE_SUBAGENT_MODEL", stored, "subagent_model", None),
+            compact_model=_text("AICODE_COMPACT_MODEL", stored, "compact_model", None),
+            # User scope only: it runs a shell command after every edit, so the
+            # trust has to come from you, never from a repository you cloned.
+            format_command=_text("AICODE_FORMAT_COMMAND", user_only, "format_command", None),
+            api_key=os.getenv("AICODE_API_KEY") or read_api_key(provider, base_url),
             base_url=base_url,
-            workspace=configured_workspace,
-            db_path=db_path,
-            skills_path=skills_path,
+            workspace=root,
+            db_path=Path(raw_db) if raw_db else paths.database,
+            skills_path=Path(raw_skills) if raw_skills else paths.skills,
             mcp_config_path=Path(raw_mcp) if raw_mcp else None,
-            artifacts_path=Path(raw_artifacts) if raw_artifacts else None,
+            artifacts_path=Path(raw_artifacts) if raw_artifacts else paths.artifacts,
             telemetry_path=Path(raw_telemetry) if raw_telemetry else None,
-            project_rules=project_rules,
-            subagents=subagents,
-            unsafe_host=unsafe_host,
+            project_rules=_flag("AICODE_PROJECT_RULES", stored, "project_rules", True),
+            subagents=_flag("AICODE_SUBAGENTS", user_only, "subagents", False),
+            # No file may set this, not even yours. Acknowledging that Host
+            # execution is not isolated should be an act each time, not a
+            # setting you turned on once and forgot about.
+            unsafe_host=_env_flag("AICODE_UNSAFE_HOST", False),
         )
+
+    #: Kept so existing callers and docs keep working; `load` is the real name.
+    from_env = load
+
+
+def _text(name: str, stored: dict[str, object], key: str, default: str | None) -> str | None:
+    value = os.getenv(name)
+    if value is not None and value.strip():
+        return value.strip()
+    saved = stored.get(key)
+    if isinstance(saved, str) and saved.strip():
+        return saved.strip()
+    return default
+
+
+def _flag(name: str, stored: dict[str, object], key: str, default: bool) -> bool:
+    from_env = _parse_bool(os.getenv(name))
+    if from_env is not None:
+        return from_env
+    saved = stored.get(key)
+    return saved if isinstance(saved, bool) else default
+
+
+def _env_flag(name: str, default: bool) -> bool:
+    from_env = _parse_bool(os.getenv(name))
+    return default if from_env is None else from_env
+
+
+def _parse_bool(raw: str | None) -> bool | None:
+    """Unrecognised text is not a decision: fall through to the next source."""
+
+    if raw is None:
+        return None
+    lowered = raw.strip().lower()
+    if lowered in {"1", "true", "yes", "on"}:
+        return True
+    if lowered in {"0", "false", "no", "off"}:
+        return False
+    return None

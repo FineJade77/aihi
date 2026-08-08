@@ -18,8 +18,10 @@ import typer
 from aicode.app import build_runtime
 from aicode.approvals import TerminalApprovalResolver
 from aicode.config import AICodeConfig
+from aicode.project import ensure_project_dir
 from aicode.tui import Console
 from aicode.tui.chat import ChatLoop
+from aicode.tui.setup import ensure_configured
 from aiharness import (
     ApprovalResolver,
     EventInvariantViolation,
@@ -66,10 +68,17 @@ def chat(
         "--accept-edits",
         help="Start with workspace edits auto-allowed; commands still ask.",
     ),
+    setup: bool = typer.Option(
+        False, "--setup", help="Ask the configuration questions again before starting."
+    ),
 ) -> None:
-    """Talk to the Coding Agent on this terminal until you leave."""
+    """Talk to the Coding Agent on this terminal until you leave.
 
-    config = AICodeConfig.from_env(workspace=workspace)
+    The workspace is the current directory unless you say otherwise, and its
+    `.aicode/` holds the settings, session log, artifacts and input history.
+    """
+
+    config = AICodeConfig.load(workspace=workspace)
     config = replace(
         config,
         unsafe_host=True if unsafe_host else config.unsafe_host,
@@ -77,38 +86,61 @@ def chat(
         model=model or config.model,
         db_path=db or config.db_path,
     )
-    store = SQLiteEventStore(config.db_path)
     try:
-        current: Session | None = None
-        if session is not None:
-            current = _load_session(store, session)
-            config = _resume_config(
+        code = asyncio.run(
+            _chat(
                 config,
-                current,
+                session_id=session,
+                permission_mode=_permission_mode(plan=plan, accept_edits=accept_edits),
+                force_setup=setup,
                 workspace_explicit=workspace is not None
                 or os.getenv("AICODE_WORKSPACE") is not None,
                 provider_explicit=provider is not None or os.getenv("AICODE_PROVIDER") is not None,
                 model_explicit=model is not None or os.getenv("AICODE_MODEL") is not None,
             )
-        loop = ChatLoop(
-            config,
-            store,
-            Console(),
-            session=current,
-            permission_mode=_permission_mode(plan=plan, accept_edits=accept_edits),
         )
-        try:
-            code = asyncio.run(_drive(loop))
-        except KeyboardInterrupt:
-            code = 130
-    finally:
-        store.close()
+    except KeyboardInterrupt:
+        code = 130
     raise typer.Exit(code=code)
 
 
-async def _drive(loop: ChatLoop) -> int:
-    async with loop.console:
-        return await loop.run()
+async def _chat(
+    config: AICodeConfig,
+    *,
+    session_id: str | None,
+    permission_mode: PermissionMode,
+    force_setup: bool,
+    workspace_explicit: bool,
+    provider_explicit: bool,
+    model_explicit: bool,
+) -> int:
+    """Configure first, then open the store the answers point at."""
+
+    console = Console()
+    async with console:
+        configured = await ensure_configured(console, config, force=force_setup)
+        if configured is None:
+            return 1
+        config = configured
+        ensure_project_dir(config.workspace)
+        store = SQLiteEventStore(config.db_path)
+        try:
+            current: Session | None = None
+            if session_id is not None:
+                current = _load_session(store, session_id)
+                config = _resume_config(
+                    config,
+                    current,
+                    workspace_explicit=workspace_explicit,
+                    provider_explicit=provider_explicit,
+                    model_explicit=model_explicit,
+                )
+            loop = ChatLoop(
+                config, store, console, session=current, permission_mode=permission_mode
+            )
+            return await loop.run()
+        finally:
+            store.close()
 
 
 @app.command()
@@ -139,7 +171,7 @@ def run(
 ) -> None:
     """Run one prompt and print newly persisted events as JSON Lines."""
 
-    config = AICodeConfig.from_env(workspace=workspace)
+    config = AICodeConfig.load(workspace=workspace)
     # A CLI flag is an explicit acknowledgement. If it is omitted, preserve
     # the already validated environment/config value instead of silently
     # resetting it to the safe default.
@@ -200,7 +232,7 @@ def resume(
 ) -> None:
     """Continue a run that was suspended waiting for an approval."""
 
-    config = AICodeConfig.from_env(workspace=workspace)
+    config = AICodeConfig.load(workspace=workspace)
     config = replace(
         config,
         unsafe_host=True if unsafe_host else config.unsafe_host,
@@ -247,7 +279,7 @@ def sessions(
 ) -> None:
     """List persisted sessions, most recent first."""
 
-    config = AICodeConfig.from_env()
+    config = AICodeConfig.load()
     if db is not None:
         config = replace(config, db_path=db)
     store = SQLiteEventStore(config.db_path)
@@ -277,7 +309,7 @@ def events(
 ) -> None:
     """Print a session's event log as JSON Lines."""
 
-    config = AICodeConfig.from_env()
+    config = AICodeConfig.load()
     if db is not None:
         config = replace(config, db_path=db)
     store = SQLiteEventStore(config.db_path)
@@ -299,7 +331,7 @@ def abandon(
 ) -> None:
     """Give up on a suspended run instead of approving or denying it."""
 
-    config = AICodeConfig.from_env()
+    config = AICodeConfig.load()
     if db is not None:
         config = replace(config, db_path=db)
     store = SQLiteEventStore(config.db_path)
@@ -336,7 +368,7 @@ def approve(
 ) -> None:
     """Resolve a pending approval out of band, then resume the run separately."""
 
-    config = AICodeConfig.from_env()
+    config = AICodeConfig.load()
     if db is not None:
         config = replace(config, db_path=db)
     store = SQLiteEventStore(config.db_path)

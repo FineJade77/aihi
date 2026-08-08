@@ -72,7 +72,7 @@ result = await runtime.coordinator.run(
 ## 开发
 
 ```bash
-python3 -m pytest          # 291 harness + 64 aicode
+python3 -m pytest          # 291 harness + 86 aicode
 ruff check .
 mypy                       # strict，覆盖 aiharness 与 aicode
 ```

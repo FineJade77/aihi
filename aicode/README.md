@@ -9,18 +9,78 @@ Runtime 和 Session 实现。应用层只负责配置、Coding Tool 组合、CLI
 
 ## 当前骨架
 
-- `src/aicode/config.py`：Provider、模型、workspace、数据库、Artifact/Telemetry 路径和 Host unsafe 配置；
+- `src/aicode/config.py`：分层加载配置（用户 → 项目 → 环境 → 命令行）；
+- `src/aicode/project.py`：`~/.aicode` 与 `<workspace>/.aicode` 的布局、字段白名单和凭据存储；
 - `src/aicode/prompt.py`：Coding Agent 的系统提示词（产品决策，不进 Harness）；
 - `src/aicode/context.py`：把仓库的 `AGENTS.md`/`CLAUDE.md` 作为项目规则注入上下文；
 - `src/aicode/app.py`：组装现有 Harness 能力的 `build_runtime`；
 - `src/aicode/approvals.py`：一次性 CLI 的 Approval UX（Harness 只定义 Resolver 契约）；
-- `src/aicode/tui/`：交互式终端前端；
+- `src/aicode/tui/`：交互式终端前端（渲染、审批、打断、斜杠命令、首次配置）；
 - `src/aicode/cli.py`：独立 `aicode` CLI，支持 Fake/真实 Provider 配置和持久化 Session；
 - `tests/`：应用层组合契约测试。
 
+## 配置
+
+两个作用域，回答的是不同的问题：
+
+| 位置 | 属于 | 放什么 |
+|---|---|---|
+| `~/.aicode/config.json` | **你** | 平时用哪家 provider、哪个模型、`format_command` |
+| `~/.aicode/credentials.json` | **你** | API key，`0600`，目录 `0700` |
+| `<workspace>/.aicode/config.json` | **项目** | 这个 codebase 要用的模型 |
+| `<workspace>/.aicode/` | **项目** | `events.db` · `artifacts/` · `history` · `skills/` |
+
+优先级从低到高：内置默认 → 用户配置 → 项目配置 → 环境变量 → 命令行参数。
+
+**API key 永远不写进项目目录。** 项目目录是你会 clone、打包、发给同事的东西，
+放进去的凭据迟早会跟着离开。所以它只去 `~/.aicode/credentials.json`，
+用 `os.open(..., 0o600)` 创建——不是先写再 chmod，中间那一瞬间也不能是全局可读。
+
+### 项目文件不许说的话
+
+项目配置是**你 clone 来的**，所以它的字段是严格子集。这三项即使写在里面也会被丢弃：
+
+| 字段 | 为什么不行 |
+|---|---|
+| `unsafe_host` | 承认 Host 没有隔离是操作者的决定，不是仓库的。**用户配置里也不允许**——放弃沙箱应该是一次动作，而不是你某天设过就忘了的开关 |
+| `format_command` | 每次编辑后跑一条 shell 命令。Harness 要求这份信任被显式授予，clone 一个仓库不算 |
+| `api_key` | 写它直接抛异常 |
+
+`base_url` 允许，但凭据是按 `provider|base_url` 存的——把项目指向另一个端点会去要那个端点的 key，
+不会把你原来的悄悄转发过去。
+
+`.aicode/.gitignore` 自动生成：`config.json` 和 `skills/` 该提交，`events.db`、`artifacts/`、`history` 是本地状态。
+这条规则由测试用 `git status --ignored` 实测把关，而不是断言文件内容。
+
+### 第一次运行
+
+没有任何配置时，进入聊天窗口后直接问你：
+
+```
+  Set up aicode
+  workspace  /Users/me/project
+
+  Which model provider?
+    1. Claude — api.anthropic.com
+    2. OpenAI
+    3. Any OpenAI-compatible endpoint
+    4. Scripted replies, to try the interface offline
+  provider [1]: 1
+  model [claude-opus-5]:
+  api key (not echoed):
+
+  Save these settings for
+    1. every project — /Users/me/.aicode/config.json
+    2. this project only — /Users/me/project/.aicode/config.json
+  scope [1]: 
+```
+
+第一次在任何地方跑 aicode，默认存成**用户配置**——你配置的是 aicode，不是这个仓库。
+之后在某个项目里 `/config` 或 `aicode chat --setup` 再问一次，默认就变成项目作用域。
+
 ## 交互模式
 
-直接跑 `aicode` 就进入交互会话（等价于 `aicode chat`）：
+直接跑 `aicode` 就进入交互会话（等价于 `aicode chat`），workspace 默认是当前目录：
 
 ```
   aicode · claude-opus-5
@@ -71,6 +131,7 @@ Approval required edit_file
 |---|---|
 | `/help` | 命令列表 |
 | `/clear` | 开一个**新** Session。日志只追加，遗忘是换一份日志，旧的仍在盘上 |
+| `/config` | 重新问一遍 provider / model / API key，当场重建 runtime |
 | `/mode [plan\|default\|accept-edits\|bypass]` | 切换权限档位 |
 | `/model [name]` | 切换模型（下一回合生效） |
 | `/tools` | 列出模型能调用的工具 |
@@ -130,7 +191,7 @@ pip install 'aicode[tui]'
 每次编译上下文时注入：产品系统提示词 + 仓库规则文件（`AGENTS.md` → `CLAUDE.md` →
 `.aicode/rules.md`，取第一个存在的，上限 32 KB，指向工作区外的符号链接一律忽略）+ Skill 索引。
 
-大型工具输出自动外置到 `.aiharness/artifacts/`（可用 `AICODE_ARTIFACTS` 改路径），上下文只留预览和引用。
+大型工具输出自动外置到 `.aicode/artifacts/`（可用 `AICODE_ARTIFACTS` 改路径），上下文只留预览和引用。
 
 设置 `AICODE_TELEMETRY=<path.jsonl>` 后写出脱敏的 JSON Lines 观测记录；不设置则完全关闭。
 `AICODE_PROJECT_RULES=false` 可关闭规则注入。
