@@ -16,43 +16,31 @@ from aiharness import (
     AnthropicProvider,
     ApprovalResolver,
     BashTool,
-    ChildRunSubagentRunner,
-    DefaultPolicyEngine,
-    DeterministicSummaryGenerator,
     EditFileTool,
     EventStore,
     FakeProvider,
-    FileArtifactStore,
     GlobTool,
     GrepTool,
     HookBus,
     HostBackend,
-    JsonlTelemetrySink,
-    ModelGateway,
-    ModelRouter,
-    ModelSummaryGenerator,
     OpenAICompatibleProvider,
     OpenAIProvider,
     Provider,
     ReadFileTool,
     RunCoordinator,
+    RuntimeBuilder,
     RuntimeExtensions,
     SandboxBackend,
     SkillDiscovery,
-    SkillIndexContributor,
     SkillRoot,
     SkillScope,
     SubagentAuthority,
-    SubagentTool,
-    SummaryGenerator,
-    TaskSpec,
     Telemetry,
+    Tool,
     ToolRegistry,
     WorkspaceScope,
     WriteFileTool,
     resolve_bash,
-    restrict_registry,
-    subagent_session_factory,
 )
 
 
@@ -87,47 +75,16 @@ def build_provider(config: AICodeConfig) -> Provider:
     return OpenAICompatibleProvider(config.api_key, base_url=config.base_url)
 
 
-def build_gateway(config: AICodeConfig) -> ModelGateway:
-    """Route every model request through the gateway.
+def build_tool_registry() -> list[Tool]:
+    """Which tools this product gives the model — a product decision."""
 
-    Even with a single provider this is worth it: the gateway adds bounded
-    retries and a request deadline, and it only ever fails over before the
-    first stream chunk, so a partially streamed turn is never replayed.
-    """
-
-    provider = build_provider(config)
-    router = ModelRouter(default=provider)
-    for model in dict.fromkeys(config.roles.to_dict().values()):
-        router.register(provider, models=(model,))
-    return ModelGateway(router, name=provider.name)
+    return [BashTool(), EditFileTool(), GlobTool(), GrepTool(), ReadFileTool(), WriteFileTool()]
 
 
-def build_tool_registry() -> ToolRegistry:
-    """Select existing Harness tools for the Coding Agent product."""
+def build_subagent_authority(config: AICodeConfig) -> SubagentAuthority:
+    """How much of its own power a run may delegate — also a product decision."""
 
-    return ToolRegistry(
-        [
-            BashTool(),
-            EditFileTool(),
-            GlobTool(),
-            GrepTool(),
-            ReadFileTool(),
-            WriteFileTool(),
-        ]
-    )
-
-
-def build_subagent_tool(
-    config: AICodeConfig, store: EventStore, sandbox: SandboxBackend
-) -> SubagentTool:
-    """Let a run delegate read-only investigation to a scoped child run.
-
-    The child inherits at most this authority: a read-only workspace, no process
-    execution, and no right to fan out further. Everything it does still goes
-    through the same policy, hook and sandbox chain in its own session.
-    """
-
-    authority = SubagentAuthority(
+    return SubagentAuthority(
         budget=AgentBudget(
             max_tokens=config.subagent_max_tokens,
             timeout_seconds=config.subagent_timeout_seconds,
@@ -138,59 +95,19 @@ def build_subagent_tool(
         max_depth=1,
         max_children=config.subagent_max_children,
     )
-    parent_tools = build_tool_registry()
-
-    subagent_model = config.roles.resolve(ROLE_SUBAGENT)
-
-    def coordinator_factory(spec: TaskSpec) -> RunCoordinator:
-        capabilities = frozenset(getattr(spec, "capabilities", frozenset()))
-        return RunCoordinator(
-            build_gateway(config),
-            registry=restrict_registry(parent_tools, capabilities),
-            sandbox=sandbox,
-            policy=DefaultPolicyEngine(),
-        )
-
-    runner = ChildRunSubagentRunner(
-        coordinator_factory,
-        subagent_session_factory(store, provider=config.provider, model=subagent_model),
-        model=subagent_model,
-    )
-    return SubagentTool(runner, authority=authority)
 
 
-def build_extensions(config: AICodeConfig) -> RuntimeExtensions:
-    """Compose the project's own context: its rules file and its skill index.
-
-    Only the skill index is offered; loading a body still goes through the
-    Harness trust flow. Memory needs a durable store and a scope policy, so it
-    stays an explicit application choice rather than a default.
-    """
+def build_context_contributors(config: AICodeConfig) -> list[object]:
+    """The project's own context: its rules file and its skill index."""
 
     contributors: list[object] = []
     if config.project_rules:
         contributors.append(ProjectRulesContributor(config.workspace))
-    root = config.skills_path or (config.workspace / ".aicode" / "skills")
-    if root.is_dir():
-        discovery = SkillDiscovery([SkillRoot(path=root, scope=SkillScope.PROJECT)])
-        contributors.append(SkillIndexContributor(discovery))
-    return RuntimeExtensions(context_contributors=tuple(contributors))  # type: ignore[arg-type]
-
-
-def build_summary_generator(config: AICodeConfig) -> SummaryGenerator:
-    """Use a compact model for L2 compaction when one is configured.
-
-    Without `AICODE_COMPACT_MODEL` the offline generator is used, so compaction
-    never depends on a second model being reachable.
-    """
-
-    if config.compact_model is None:
-        return DeterministicSummaryGenerator()
-    return ModelSummaryGenerator(build_gateway(config), config.roles.resolve(ROLE_COMPACT))
+    return contributors
 
 
 def build_hooks(config: AICodeConfig, sandbox: SandboxBackend) -> HookBus:
-    """Register the project's own lifecycle hooks.
+    """Register the project's lifecycle hooks.
 
     Configuring `AICODE_FORMAT_COMMAND` is the act of trust the Harness requires
     for a mutating hook; it still only runs when the enclosing tool call was
@@ -201,26 +118,9 @@ def build_hooks(config: AICodeConfig, sandbox: SandboxBackend) -> HookBus:
     if config.format_command is not None:
         register_format_hook(
             bus,
-            FormatOnEditHook(
-                config.format_command, sandbox, shell_path=resolve_bash()
-            ),
+            FormatOnEditHook(config.format_command, sandbox, shell_path=resolve_bash()),
         )
     return bus
-
-
-def build_artifact_store(config: AICodeConfig) -> FileArtifactStore:
-    """Keep large tool output out of the context and out of the event log."""
-
-    root = config.artifacts_path or (config.workspace / ".aiharness" / "artifacts")
-    return FileArtifactStore(root)
-
-
-def build_telemetry(config: AICodeConfig) -> Telemetry | None:
-    """Write redacted observations as JSON Lines when a path is configured."""
-
-    if config.telemetry_path is None:
-        return None
-    return Telemetry(JsonlTelemetrySink(config.telemetry_path))
 
 
 def build_runtime(
@@ -229,41 +129,50 @@ def build_runtime(
     approval_resolver: ApprovalResolver | None = None,
     store: EventStore | None = None,
 ) -> AICodeRuntime:
-    """Assemble aicode from existing Harness implementations.
+    """Assemble aicode from Harness parts.
 
-    Without a resolver the Harness default applies: a run that needs approval
-    suspends instead of guessing the answer. Subagents need somewhere to put the
-    child session, so they are only registered when a store is supplied.
+    Only the product decisions live here: which provider, which tools, the
+    prompt, and how much authority a subagent may inherit. The wiring is the
+    builder's job.
     """
 
-    provider = build_gateway(config)
     sandbox = HostBackend(config.workspace, unsafe=config.unsafe_host)
-    registry = build_tool_registry()
+    builder = (
+        RuntimeBuilder(
+            provider=build_provider(config),
+            sandbox=sandbox,
+            tools=build_tool_registry(),
+        )
+        .with_model_roles(config.roles)
+        .with_hooks(build_hooks(config, sandbox))
+        .with_artifacts(config.artifacts_path)
+        .with_context_contributors(*build_context_contributors(config))
+    )
+    if approval_resolver is not None:
+        builder = builder.with_approvals(approval_resolver)
+    if config.telemetry_path is not None:
+        builder = builder.with_telemetry(config.telemetry_path)
+    if config.compact_model is not None:
+        builder = builder.with_compaction(config.roles.resolve(ROLE_COMPACT))
+    skills_root = config.skills_path or (config.workspace / ".aicode" / "skills")
+    if skills_root.is_dir():
+        builder = builder.with_skills(
+            SkillDiscovery([SkillRoot(path=skills_root, scope=SkillScope.PROJECT)])
+        )
     if store is not None and config.subagents:
-        registry.register(build_subagent_tool(config, store, sandbox))
-    extensions = build_extensions(config)
-    telemetry = build_telemetry(config)
-    coordinator = RunCoordinator(
-        provider,
-        registry=registry,
-        sandbox=sandbox,
-        policy=DefaultPolicyEngine(),
-        hooks=build_hooks(config, sandbox),
-        approval_resolver=approval_resolver,
-        extensions=extensions,
-        summary_generator=build_summary_generator(config),
-        artifact_store=build_artifact_store(config),
-        telemetry=telemetry,
-    )
+        builder = builder.with_subagents(
+            authority=build_subagent_authority(config),
+            store=store,
+            model=config.roles.resolve(ROLE_SUBAGENT),
+            provider_name=config.provider,
+        )
+    runtime = builder.build()
     return AICodeRuntime(
-        coordinator=coordinator,
-        provider=provider,
-        registry=registry,
-        sandbox=sandbox,
-        extensions=extensions,
+        coordinator=runtime.coordinator,
+        provider=runtime.provider,
+        registry=runtime.registry,
+        sandbox=runtime.sandbox,
+        extensions=runtime.extensions,
         system_prompt=SYSTEM_PROMPT,
-        telemetry=telemetry,
+        telemetry=runtime.telemetry,
     )
-
-
-

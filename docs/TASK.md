@@ -328,6 +328,16 @@ PostgreSQL 生产化、Worker Control Plane 与部署安全、生产隔离 profi
 H-01 ~ H-13 已全部关闭，H-03 ~ H-06 随平台增强移出范围。下一批工作应先做一次现状评估，
 而不是从既有清单里继续取项 —— 上一轮 backlog 的价值恰恰来自「先量化、再决定」。
 
+### H-14：组合边界（policy vs plumbing）
+
+- 状态：Done；验收：应用只写产品决策，装配由 Harness 承担，且安全默认值不被隐藏。
+- ✅ `RuntimeBuilder`：`provider`/`sandbox`/`tools` 必填，空工具集拒绝；
+  `with_artifacts`/`with_telemetry`/`with_hooks`/`with_skills`/`with_memory`/
+  `with_compaction`/`with_subagents` 各自显式开启；每个 `with_*` 返回新 builder；
+- ✅ 判据写进 ARCHITECTURE：「每个合理应用是否都会做同样选择，且做错了是否无声」；
+- ✅ 刻意不提供 `default_runtime()` —— 那是已删除的 `aiharness/cli` 犯过的错；
+- ✅ `aicode/app.py` 269 → 178 行，剩下的基本只是产品决策。
+
 ### 待开发清单维护规则
 
 1. `aicode`、`personal` 或其他 Agent 开发时，只有当缺口是 Provider-neutral、可复用且不携带具体

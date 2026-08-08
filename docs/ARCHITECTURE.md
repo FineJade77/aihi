@@ -150,6 +150,21 @@ Runtime 通过 `RuntimeExtensions` 组合可选能力：`ContextContributor` 贡
 `ToolRegistry`，注册已有工具，注入 `DefaultPolicyEngine` 和 `HostBackend`，再构造
 `RunCoordinator`。只有跨应用可复用的缺口才进入 Harness H-* Backlog；应用专属逻辑留在应用目录。
 
+#### 组合：policy 归应用，plumbing 归 Harness
+
+`RuntimeBuilder` 承担装配，判据是一句可执行的问句：**每个合理的应用是否都会做同样的选择，
+且做错了会不会无声？** 是则归 Harness，应用之间会合理地不同则归应用。
+
+- **应用决定（必填，无默认）**：`provider`、`sandbox`、`tools`；Subagent 的 `authority`
+  与模型；系统提示词与项目规则。空工具集会被拒绝 —— 替调用方挑工具就是把产品决策塞进库里。
+- **Harness 装配（可选开启，有默认）**：把 Provider 包进 Gateway（重试与截止时间）、
+  从路径构造 Artifact Store 与 Telemetry sink、构造 Hook Bus、接线子代理的 runner 与
+  session factory、把 Skill/Memory 适配器组装进 `RuntimeExtensions`。
+
+**没有 `default_runtime()`**：任何替调用方选择 Provider 或工具集的便利函数，
+都会重蹈已删除的 `aiharness/cli` 的覆辙。安全相关的默认值（`ASK` 挂起、Host 显式 unsafe、
+mutating hook 需 trust）仍由 Harness 决定 —— 那里的「灵活」等于让应用有机会无声地搞错。
+
 #### 公共 API 边界
 
 应用只能 `from aiharness import ...`：顶层 `aiharness/__init__.py` 的 `__all__` 是**唯一**受支持

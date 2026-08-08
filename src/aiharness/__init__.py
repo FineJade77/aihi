@@ -30,6 +30,7 @@ from aiharness.agents import (
     subagent_session_factory,
 )
 from aiharness.artifacts import ArtifactAccess, ArtifactPolicy, ArtifactStore, FileArtifactStore
+from aiharness.builder import Runtime, RuntimeBuilder
 from aiharness.context import (
     ContextCompiler,
     ContextSection,
@@ -291,6 +292,8 @@ __all__ = [
     "RunResult",
     "RunState",
     "RunStateGrader",
+    "Runtime",
+    "RuntimeBuilder",
     "RuntimeExtensions",
     "SPAWN_CAPABILITY",
     "SQLiteEventStore",

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from aicode.app import build_extensions, build_runtime
+from aicode.app import build_runtime
 from aicode.cli import app
 from aicode.config import AICodeConfig
 from aicode.context import ProjectRulesContributor
@@ -39,18 +39,16 @@ def test_no_skills_directory_composes_no_skill_contributor(tmp_path: Path) -> No
     workspace = tmp_path / "empty"
     workspace.mkdir()
 
-    extensions = build_extensions(AICodeConfig(workspace=workspace))
+    runtime = build_runtime(AICodeConfig(workspace=workspace, unsafe_host=True))
+    contributors = runtime.extensions.context_contributors
 
-    assert not any(
-        isinstance(item, SkillIndexContributor) for item in extensions.context_contributors
-    )
+    assert not any(isinstance(item, SkillIndexContributor) for item in contributors)
     # Project rules are still watched: a rules file added later is picked up.
-    assert any(
-        isinstance(item, ProjectRulesContributor) for item in extensions.context_contributors
+    assert any(isinstance(item, ProjectRulesContributor) for item in contributors)
+    bare = build_runtime(
+        AICodeConfig(workspace=workspace, unsafe_host=True, project_rules=False)
     )
-    assert build_extensions(
-        AICodeConfig(workspace=workspace, project_rules=False)
-    ).empty is True
+    assert bare.extensions.empty is True
 
 
 def test_project_skills_are_composed_into_the_runtime(tmp_path: Path) -> None:

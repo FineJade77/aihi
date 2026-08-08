@@ -154,18 +154,17 @@ def test_cli_run_uses_the_product_prompt(tmp_path: Path) -> None:
 def test_compaction_uses_the_offline_generator_unless_a_compact_model_is_set(
     tmp_path: Path,
 ) -> None:
-    from aicode.app import build_summary_generator
-
-    from aiharness import DeterministicSummaryGenerator, ModelSummaryGenerator
+    from aiharness import ModelSummaryGenerator
 
     root = workspace(tmp_path)
 
-    offline = build_summary_generator(AICodeConfig(workspace=root, unsafe_host=True))
-    with_model = build_summary_generator(
+    offline = build_runtime(AICodeConfig(workspace=root, unsafe_host=True))
+    with_model = build_runtime(
         AICodeConfig(workspace=root, unsafe_host=True, compact_model="small-model")
     )
 
     # Compaction must not depend on a second model being reachable by default.
-    assert isinstance(offline, DeterministicSummaryGenerator)
-    assert isinstance(with_model, ModelSummaryGenerator)
-    assert with_model.model == "small-model"
+    assert offline.coordinator.summary_generator is None
+    generator = with_model.coordinator.summary_generator
+    assert isinstance(generator, ModelSummaryGenerator)
+    assert generator.model == "small-model"

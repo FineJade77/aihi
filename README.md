@@ -38,21 +38,25 @@ L2 应用层      aicode/：Prompt · 工具选择 · CLI · 审批交互
 
 ```python
 from aiharness import (
-    FakeProvider, HostBackend, Message, RunCoordinator,
-    Session, SQLiteEventStore, ToolRegistry, ReadFileTool,
+    FakeProvider, HostBackend, Message, ReadFileTool,
+    RuntimeBuilder, Session, SQLiteEventStore,
 )
+
+runtime = RuntimeBuilder(
+    provider=FakeProvider(),                       # 用哪家模型：应用决定
+    sandbox=HostBackend(".", unsafe=True),         # Host 不是隔离边界，必须显式承认
+    tools=[ReadFileTool()],                        # 给模型哪些工具：应用决定
+).with_artifacts().build()                         # 接线：Harness 负责
 
 store = SQLiteEventStore(".aiharness/events.db")
 session = Session.create(store, cwd=".", provider="fake", model="fake-model")
-coordinator = RunCoordinator(
-    FakeProvider(),
-    registry=ToolRegistry([ReadFileTool()]),
-    sandbox=HostBackend(".", unsafe=True),   # Host 不是隔离边界，必须显式承认
-)
-result = await coordinator.run(
+result = await runtime.coordinator.run(
     session, model="fake-model", user_message=Message.text("user", "看看这个仓库")
 )
 ```
+
+`provider`/`sandbox`/`tools` 没有默认值 —— 替你挑这些就是把产品决策塞进库里。
+装配（Gateway 重试、Artifact 路径、Hook Bus、子代理接线）由 builder 承担。
 
 应用只能 `from aiharness import ...`：顶层 `__all__`（154 个名字）是唯一受支持的组合面，
 子模块路径一律视为内部实现。可运行的完整组合见 [`aicode/`](aicode/README.md)。
