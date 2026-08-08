@@ -6,12 +6,21 @@ from aiharness.core.types import Message, TextBlock, ThinkingBlock, ToolCallBloc
 
 
 def estimate_text_tokens(text: str) -> int:
-    """Conservative estimate suitable for proactive compaction decisions."""
+    """Conservative estimate suitable for proactive compaction decisions.
+
+    The whole message history is re-estimated before every model request, so
+    this runs on the order of millions of characters per long session. The
+    ASCII fast path keeps that in C: counting code points in Python costs about
+    500x more, and code, paths and JSON are overwhelmingly ASCII.
+    """
 
     if not text:
         return 0
-    ascii_chars = sum(ord(char) < 128 for char in text)
-    non_ascii_chars = len(text) - ascii_chars
+    if text.isascii():
+        ascii_chars, non_ascii_chars = len(text), 0
+    else:
+        ascii_chars = sum(ord(char) < 128 for char in text)
+        non_ascii_chars = len(text) - ascii_chars
     return max(1, (ascii_chars + 3) // 4 + (non_ascii_chars + 1) // 2)
 
 

@@ -168,9 +168,8 @@ class RunCoordinator:
             session.add_event_observer(self.telemetry.record_event)
         machine = RunStateMachine()
         suspended_calls = self._suspended_tool_call_ids(session, rid)
-        already_started = any(
-            event.type == "run.started" and event.run_id == rid for event in session.events
-        )
+        # Scanning the whole log per run made this linear in session length.
+        already_started = self._last_lifecycle_event(session, rid) is not None
         opening: list[Event] = []
         if user_message is not None:
             opening.append(session.message_event(user_message, run_id=rid))

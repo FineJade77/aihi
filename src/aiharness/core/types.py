@@ -131,6 +131,22 @@ class Message:
     content: tuple[ContentBlock, ...]
     id: str = field(default_factory=lambda: new_id("msg"))
     metadata: JsonObject = field(default_factory=dict)
+    # Derived once: the message is frozen, but orphan detection and context
+    # compilation read these on every message, every turn.
+    _tool_calls: tuple[ToolCallBlock, ...] = field(init=False, repr=False, compare=False)
+    _tool_results: tuple[ToolResultBlock, ...] = field(init=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "_tool_calls",
+            tuple(block for block in self.content if isinstance(block, ToolCallBlock)),
+        )
+        object.__setattr__(
+            self,
+            "_tool_results",
+            tuple(block for block in self.content if isinstance(block, ToolResultBlock)),
+        )
 
     @classmethod
     def text(cls, role: Role, text: str, **metadata: Any) -> Message:
@@ -138,11 +154,11 @@ class Message:
 
     @property
     def tool_calls(self) -> tuple[ToolCallBlock, ...]:
-        return tuple(block for block in self.content if isinstance(block, ToolCallBlock))
+        return self._tool_calls
 
     @property
     def tool_results(self) -> tuple[ToolResultBlock, ...]:
-        return tuple(block for block in self.content if isinstance(block, ToolResultBlock))
+        return self._tool_results
 
     @property
     def text_content(self) -> str:
