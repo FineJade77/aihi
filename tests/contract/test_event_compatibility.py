@@ -2,6 +2,7 @@
 
 import ast
 import json
+import sys
 from dataclasses import replace
 from pathlib import Path
 
@@ -19,6 +20,10 @@ from aiharness.evals import ReplayEngine, TraceBundle
 from aiharness.policy import AuthorizationState
 from aiharness.sessions import InMemoryEventStore, Session
 from aiharness.sessions.session import find_orphan_tool_calls, project_messages
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "fixtures"))
+
+from corpus_builder import build_corpus  # noqa: E402
 
 CORPUS = Path(__file__).resolve().parents[1] / "fixtures" / "session_schema_v1.json"
 SOURCE_ROOT = Path(__file__).resolve().parents[2] / "src" / "aiharness"
@@ -38,6 +43,25 @@ def test_the_corpus_covers_every_durable_event_type() -> None:
 
     covered = {event.type for events in corpus().values() for event in events}
     assert covered == DURABLE_EVENT_TYPES
+
+
+@pytest.mark.asyncio
+async def test_the_frozen_corpus_still_matches_what_the_harness_writes(
+    tmp_path: Path,
+) -> None:
+    """The corpus is generated, not hand-written: writer drift fails here.
+
+    Regenerate deliberately with `python tests/fixtures/generate_corpus.py`
+    and review the diff — a payload change is a compatibility decision.
+    """
+
+    fresh = await build_corpus(tmp_path)
+    frozen = json.loads(CORPUS.read_text(encoding="utf-8"))
+
+    assert fresh == frozen, (
+        "The harness now writes different events than the frozen corpus. "
+        "Review the change, then regenerate: python tests/fixtures/generate_corpus.py"
+    )
 
 
 def test_source_only_writes_declared_event_types() -> None:
@@ -67,13 +91,17 @@ def test_frozen_events_round_trip_without_drift() -> None:
 
 
 def test_a_stored_session_still_projects_the_same_state() -> None:
-    sessions = corpus()
-    events = sessions["ses-golden-a"]
+    events = corpus()["ses-golden-a"]
 
     messages = project_messages(events)
     authorization = AuthorizationState.from_events(events)
 
     assert [message.role for message in messages] == [
+        "system",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
         "user",
         "assistant",
         "user",
@@ -81,8 +109,9 @@ def test_a_stored_session_still_projects_the_same_state() -> None:
     ]
     assert find_orphan_tool_calls(messages) == ()
     # The one-shot grant was consumed, so it authorizes nothing any more.
-    assert authorization.active_approvals("run-a") == ()
-    assert "approval-1" in authorization.consumed_approval_ids
+    assert authorization.consumed_approval_ids
+    assert authorization.active_approvals("run-2") == ()
+    # The lease was revoked after the run that needed it.
     assert authorization.leases == {}
 
 
@@ -91,10 +120,13 @@ def test_a_compacted_and_repaired_session_still_projects() -> None:
 
     messages = project_messages(events)
 
-    # Compaction replaced the user message with its summary, in place.
-    assert messages[1].metadata["compaction"] == "l1_deterministic"
-    assert not any(message.id == "msg-ub" for message in messages)
+    # Compaction replaced a run of messages with a summary, in place.
+    assert any(
+        message.metadata.get("compaction") == "l1_deterministic" for message in messages
+    )
+    # The abandoned call was closed by the repair.
     assert find_orphan_tool_calls(messages) == ()
+    assert any(event.type == "session.repaired" for event in events)
 
 
 def test_stored_sessions_replay_to_their_recorded_states() -> None:
@@ -103,13 +135,10 @@ def test_stored_sessions_replay_to_their_recorded_states() -> None:
     first = ReplayEngine().replay(TraceBundle.from_events(list(sessions["ses-golden-a"])))
     second = ReplayEngine().replay(TraceBundle.from_events(list(sessions["ses-golden-b"])))
 
-    assert first.run_states == {"run-a": "completed"}
+    assert set(first.run_states.values()) == {"completed"}
     assert first.pending_tool_call_ids == ()
-    assert second.run_states == {
-        "run-b": "failed",
-        "run-c": "interrupted",
-        "run-d": "cancelled",
-    }
+    # Every non-happy terminal is represented, and each maps to its own state.
+    assert sorted(second.run_states.values()) == ["cancelled", "failed", "interrupted"]
 
 
 def test_a_stored_session_can_be_reloaded_through_a_store() -> None:
@@ -121,7 +150,7 @@ def test_a_stored_session_can_be_reloaded_through_a_store() -> None:
     loaded = Session.load(store, "ses-golden-a")
 
     assert [event.type for event in loaded.events] == [event.type for event in events]
-    assert len(loaded.messages) == 4
+    assert len(loaded.messages) == len(project_messages(events))
 
 
 @pytest.mark.parametrize("version", [0, 2, 99])

@@ -558,7 +558,9 @@ Redactor 规范化，并对完整规范化 JSON 计算 SHA-256；Hash、Schema�
 
 `ReplayEngine` 只投影 Run/Tool/Message 状态，**绝不**调用 Provider、Tool、Plugin 或 Sandbox；
 拒绝跨 Run 的工具生命周期、重复终态和 Ephemeral 事件，但允许 Policy 拒绝后仍持久化对应 Tool
-Result。`Grader` 只消费 `ReplayResult`，分数必须是有限的 `[0,1]` JSON 数值。
+Result。带 `run_id` 的事件分两类：**推进 Run 的执行事件**不得出现在终态之后；
+**引用 Run 的记账事件**（Lease 撤销、Artifact 删除、Memory 与 Subagent 记录）可以，
+因为清理和记录本就发生在 Run 结束之后。`Grader` 只消费 `ReplayResult`，分数必须是有限的 `[0,1]` JSON 数值。
 
 离线 Provider 评估同理：`ProviderGoldenRunner` 只消费 Provider-neutral stream chunks，消息 ID
 和工具调用 ID 不进入可审计 fixture，request fingerprint 由脱敏 canonical request 计算；Provider

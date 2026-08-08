@@ -181,6 +181,25 @@ class ReplayResult:
         }
 
 
+#: Bookkeeping that *references* a run rather than advancing it. Cleaning up a
+#: lease, deleting an artifact or recording a memory can legitimately happen
+#: after the run they mention has ended; anything not listed here is part of the
+#: run's execution and may not follow its terminal event.
+_REFERENTIAL_EVENT_TYPES = frozenset(
+    {
+        "capability.lease.revoked",
+        "artifact.created",
+        "artifact.deleted",
+        "memory.candidate",
+        "memory.written",
+        "memory.deleted",
+        "subagent.spawned",
+        "subagent.started",
+        "subagent.completed",
+    }
+)
+
+
 @dataclass(slots=True)
 class _ReplayState:
     session_id: str
@@ -215,7 +234,7 @@ class _ReplayState:
             if event.type == "run.state_changed":
                 raise ReplayInvariantViolation("Run state event is missing run_id")
             return
-        if event.run_id in self.terminal_runs:
+        if event.run_id in self.terminal_runs and event.type not in _REFERENTIAL_EVENT_TYPES:
             raise ReplayInvariantViolation("Event occurred after run became terminal")
         if event.type == "run.started":
             if event.run_id in self.runs:

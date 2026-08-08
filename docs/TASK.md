@@ -311,9 +311,14 @@ PostgreSQL 生产化、Worker Control Plane 与部署安全、生产隔离 profi
 
 ### H-13：从真实运行生成兼容性语料
 
-- 状态：Planned；优先级：P2；验收：语料由真实 Run 产出，写入端变更会让兼容性测试失败。
-- 当前 `tests/fixtures/session_schema_v1.json` 与写入端**靠人工同步**：
-  ADR-0027 改动 subagent 事件 payload 时，全量测试并未发现 fixture 已过时（登记于 ADR-0027）。
+- 状态：Done；验收：语料由真实 Run 产出，写入端变更会让兼容性测试失败。
+- ✅ `tests/fixtures/corpus_builder.py` 驱动真实 Run 覆盖全部 34 个 durable 类型（4 个会话、
+  112 个事件），易变字段（id/时间戳/摘要/临时路径）归一化为占位符；
+- ✅ 测试对比「现场生成」与「冻结文件」，写入端变更即失败，
+  用 `python tests/fixtures/generate_corpus.py` 显式重新生成并 review diff；
+- ✅ 首次生成即暴露一处真实设计问题：`capability.lease.revoked` 合法地发生在 Run 终态之后，
+  但 ReplayEngine 把任何带 `run_id` 的事件都当作 Run 成员。现已区分
+  **推进 Run 的执行事件**与**引用 Run 的记账事件**。
 
 ### 待开发清单维护规则
 

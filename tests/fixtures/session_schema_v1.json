@@ -6,12 +6,13 @@
         {
           "created_at": "2026-01-01T00:00:00+00:00",
           "data": {
-            "cwd": "/tmp/golden",
+            "cwd": "/workspace",
+            "harness_version": "0.1.0",
             "model": "fake-model",
             "provider": "fake"
           },
           "ephemeral": false,
-          "id": "evt-en-a-01",
+          "id": "evt-1",
           "run_id": null,
           "schema_version": 1,
           "seq": 1,
@@ -22,23 +23,43 @@
           "created_at": "2026-01-01T00:00:00+00:00",
           "data": {
             "message": {
+              "content": [],
+              "id": "msg-1",
+              "metadata": {
+                "origin": "project_rules"
+              },
+              "role": "system"
+            }
+          },
+          "ephemeral": false,
+          "id": "evt-2",
+          "run_id": null,
+          "schema_version": 1,
+          "seq": 2,
+          "session_id": "ses-golden-a",
+          "type": "system.message"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "message": {
               "content": [
                 {
                   "kind": "text",
                   "stable_prefix": false,
-                  "text": "write a.txt"
+                  "text": "write with a lease"
                 }
               ],
-              "id": "msg-u",
+              "id": "msg-2",
               "metadata": {},
               "role": "user"
             }
           },
           "ephemeral": false,
-          "id": "evt-en-a-02",
-          "run_id": "run-a",
+          "id": "evt-3",
+          "run_id": "run-1",
           "schema_version": 1,
-          "seq": 2,
+          "seq": 3,
           "session_id": "ses-golden-a",
           "type": "user.message"
         },
@@ -46,15 +67,29 @@
           "created_at": "2026-01-01T00:00:00+00:00",
           "data": {
             "model": "fake-model",
+            "permission_mode": "default",
             "provider": "fake",
+            "require_capability_lease": true,
             "sandbox": "host",
+            "sandbox_descriptor": {
+              "filesystem_isolated": false,
+              "filesystem_write_isolated": false,
+              "image": null,
+              "mechanism": "unspecified",
+              "mount_scope": null,
+              "name": "host",
+              "network_isolated": false,
+              "network_mode": null,
+              "process_isolated": false,
+              "unsafe": true
+            },
             "unsafe": true
           },
           "ephemeral": false,
-          "id": "evt-en-a-03",
-          "run_id": "run-a",
+          "id": "evt-4",
+          "run_id": "run-1",
           "schema_version": 1,
-          "seq": 3,
+          "seq": 4,
           "session_id": "ses-golden-a",
           "type": "run.started"
         },
@@ -64,10 +99,10 @@
             "state": "running"
           },
           "ephemeral": false,
-          "id": "evt-en-a-04",
-          "run_id": "run-a",
+          "id": "evt-5",
+          "run_id": "run-1",
           "schema_version": 1,
-          "seq": 4,
+          "seq": 5,
           "session_id": "ses-golden-a",
           "type": "run.state_changed"
         },
@@ -77,24 +112,27 @@
             "message": {
               "content": [
                 {
-                  "id": "call-a",
+                  "id": "toolu-1",
                   "input": {
-                    "path": "a.txt"
+                    "content": "hello",
+                    "path": "leased.txt"
                   },
                   "kind": "tool_call",
                   "name": "write_file"
                 }
               ],
-              "id": "msg-a",
-              "metadata": {},
+              "id": "msg-3",
+              "metadata": {
+                "provider": "fake"
+              },
               "role": "assistant"
             }
           },
           "ephemeral": false,
-          "id": "evt-en-a-05",
-          "run_id": "run-a",
+          "id": "evt-6",
+          "run_id": "run-1",
           "schema_version": 1,
-          "seq": 5,
+          "seq": 6,
           "session_id": "ses-golden-a",
           "type": "assistant.message"
         },
@@ -104,10 +142,10 @@
             "state": "waiting_tool"
           },
           "ephemeral": false,
-          "id": "evt-en-a-06",
-          "run_id": "run-a",
+          "id": "evt-7",
+          "run_id": "run-1",
           "schema_version": 1,
-          "seq": 6,
+          "seq": 7,
           "session_id": "ses-golden-a",
           "type": "run.state_changed"
         },
@@ -115,16 +153,17 @@
           "created_at": "2026-01-01T00:00:00+00:00",
           "data": {
             "input": {
-              "path": "a.txt"
+              "content": "hello",
+              "path": "leased.txt"
             },
-            "tool_call_id": "call-a",
+            "tool_call_id": "toolu-1",
             "tool_name": "write_file"
           },
           "ephemeral": false,
-          "id": "evt-en-a-07",
-          "run_id": "run-a",
+          "id": "evt-8",
+          "run_id": "run-1",
           "schema_version": 1,
-          "seq": 7,
+          "seq": 8,
           "session_id": "ses-golden-a",
           "type": "tool.requested"
         },
@@ -132,16 +171,16 @@
           "created_at": "2026-01-01T00:00:00+00:00",
           "data": {
             "effect": "ask",
-            "reason": "needs approval",
-            "rule_id": "default.mutation_requires_approval",
-            "tool_call_id": "call-a",
+            "reason": "The tool requires an active capability lease.",
+            "rule_id": "capability.lease_required",
+            "tool_call_id": "toolu-1",
             "tool_name": "write_file"
           },
           "ephemeral": false,
-          "id": "evt-en-a-08",
-          "run_id": "run-a",
+          "id": "evt-9",
+          "run_id": "run-1",
           "schema_version": 1,
-          "seq": 8,
+          "seq": 9,
           "session_id": "ses-golden-a",
           "type": "policy.decided"
         },
@@ -152,21 +191,21 @@
               "approval_id": "approval-1",
               "expires_at": null,
               "granted_by": "policy",
-              "one_shot": true,
-              "run_id": "run-a",
+              "one_shot": false,
+              "run_id": "run-1",
               "scope": "write_file"
             },
-            "reason": "needs approval",
+            "reason": "The tool requires an active capability lease.",
             "requested_by": "policy",
-            "rule_id": "default.mutation_requires_approval",
-            "tool_call_id": "call-a",
+            "rule_id": "capability.lease_required",
+            "tool_call_id": "toolu-1",
             "tool_name": "write_file"
           },
           "ephemeral": false,
-          "id": "evt-en-a-09",
-          "run_id": "run-a",
+          "id": "evt-10",
+          "run_id": "run-1",
           "schema_version": 1,
-          "seq": 9,
+          "seq": 10,
           "session_id": "ses-golden-a",
           "type": "approval.requested"
         },
@@ -176,30 +215,12 @@
             "state": "waiting_approval"
           },
           "ephemeral": false,
-          "id": "evt-en-a-10",
-          "run_id": "run-a",
-          "schema_version": 1,
-          "seq": 10,
-          "session_id": "ses-golden-a",
-          "type": "run.state_changed"
-        },
-        {
-          "created_at": "2026-01-01T00:00:00+00:00",
-          "data": {
-            "approval_id": "approval-1",
-            "pending_tool_call_ids": [
-              "call-a"
-            ],
-            "reason": "approval_required",
-            "state": "waiting_approval"
-          },
-          "ephemeral": false,
-          "id": "evt-en-a-11",
-          "run_id": "run-a",
+          "id": "evt-11",
+          "run_id": "run-1",
           "schema_version": 1,
           "seq": 11,
           "session_id": "ses-golden-a",
-          "type": "run.suspended"
+          "type": "run.state_changed"
         },
         {
           "created_at": "2026-01-01T00:00:00+00:00",
@@ -208,18 +229,18 @@
               "approval_id": "approval-1",
               "expires_at": null,
               "granted_by": "policy",
-              "one_shot": true,
-              "run_id": "run-a",
+              "one_shot": false,
+              "run_id": "run-1",
               "scope": "write_file"
             },
             "approval_id": "approval-1",
-            "one_shot": true,
-            "resolved_by": "operator",
+            "one_shot": false,
+            "resolved_by": "static",
             "status": "granted"
           },
           "ephemeral": false,
-          "id": "evt-en-a-12",
-          "run_id": "run-a",
+          "id": "evt-12",
+          "run_id": "run-1",
           "schema_version": 1,
           "seq": 12,
           "session_id": "ses-golden-a",
@@ -228,42 +249,13 @@
         {
           "created_at": "2026-01-01T00:00:00+00:00",
           "data": {
-            "model": "fake-model",
-            "provider": "fake",
-            "sandbox": "host",
-            "unsafe": true
-          },
-          "ephemeral": false,
-          "id": "evt-en-a-13",
-          "run_id": "run-a",
-          "schema_version": 1,
-          "seq": 13,
-          "session_id": "ses-golden-a",
-          "type": "run.resumed"
-        },
-        {
-          "created_at": "2026-01-01T00:00:00+00:00",
-          "data": {
-            "state": "running"
-          },
-          "ephemeral": false,
-          "id": "evt-en-a-14",
-          "run_id": "run-a",
-          "schema_version": 1,
-          "seq": 14,
-          "session_id": "ses-golden-a",
-          "type": "run.state_changed"
-        },
-        {
-          "created_at": "2026-01-01T00:00:00+00:00",
-          "data": {
             "state": "waiting_tool"
           },
           "ephemeral": false,
-          "id": "evt-en-a-15",
-          "run_id": "run-a",
+          "id": "evt-13",
+          "run_id": "run-1",
           "schema_version": 1,
-          "seq": 15,
+          "seq": 13,
           "session_id": "ses-golden-a",
           "type": "run.state_changed"
         },
@@ -275,30 +267,77 @@
               "capabilities": [
                 "filesystem.write"
               ],
-              "expires_at": "2099-01-01T00:00:00+00:00",
+              "expires_at": "2026-01-01T00:00:00+00:00",
               "lease_id": "lease-1",
-              "run_id": "run-a"
+              "run_id": "run-1"
             }
           },
           "ephemeral": false,
-          "id": "evt-en-a-16",
-          "run_id": "run-a",
+          "id": "evt-14",
+          "run_id": "run-1",
           "schema_version": 1,
-          "seq": 16,
+          "seq": 14,
           "session_id": "ses-golden-a",
           "type": "capability.lease.issued"
         },
         {
           "created_at": "2026-01-01T00:00:00+00:00",
           "data": {
+            "input": {
+              "content": "hello",
+              "path": "leased.txt"
+            },
+            "tool_call_id": "toolu-1",
+            "tool_name": "write_file"
+          },
+          "ephemeral": false,
+          "id": "evt-15",
+          "run_id": "run-1",
+          "schema_version": 1,
+          "seq": 15,
+          "session_id": "ses-golden-a",
+          "type": "tool.requested"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "effect": "allow",
+            "reason": "An active approval grant allows this privileged tool.",
+            "rule_id": "approval.granted",
+            "tool_call_id": "toolu-1",
+            "tool_name": "write_file"
+          },
+          "ephemeral": false,
+          "id": "evt-16",
+          "run_id": "run-1",
+          "schema_version": 1,
+          "seq": 16,
+          "session_id": "ses-golden-a",
+          "type": "policy.decided"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
             "sandbox": "host",
-            "tool_call_id": "call-a",
+            "sandbox_descriptor": {
+              "filesystem_isolated": false,
+              "filesystem_write_isolated": false,
+              "image": null,
+              "mechanism": "unspecified",
+              "mount_scope": null,
+              "name": "host",
+              "network_isolated": false,
+              "network_mode": null,
+              "process_isolated": false,
+              "unsafe": true
+            },
+            "tool_call_id": "toolu-1",
             "tool_name": "write_file",
             "unsafe": true
           },
           "ephemeral": false,
-          "id": "evt-en-a-17",
-          "run_id": "run-a",
+          "id": "evt-17",
+          "run_id": "run-1",
           "schema_version": 1,
           "seq": 17,
           "session_id": "ses-golden-a",
@@ -308,13 +347,16 @@
           "created_at": "2026-01-01T00:00:00+00:00",
           "data": {
             "is_error": false,
-            "metadata": {},
-            "tool_call_id": "call-a",
+            "metadata": {
+              "path": "/workspace/leased.txt",
+              "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            "tool_call_id": "toolu-1",
             "tool_name": "write_file"
           },
           "ephemeral": false,
-          "id": "evt-en-a-18",
-          "run_id": "run-a",
+          "id": "evt-18",
+          "run_id": "run-1",
           "schema_version": 1,
           "seq": 18,
           "session_id": "ses-golden-a",
@@ -323,239 +365,45 @@
         {
           "created_at": "2026-01-01T00:00:00+00:00",
           "data": {
-            "approval_id": "approval-1",
-            "scope": "write_file"
-          },
-          "ephemeral": false,
-          "id": "evt-en-a-19",
-          "run_id": "run-a",
-          "schema_version": 1,
-          "seq": 19,
-          "session_id": "ses-golden-a",
-          "type": "approval.consumed"
-        },
-        {
-          "created_at": "2026-01-01T00:00:00+00:00",
-          "data": {
-            "lease_id": "lease-1",
-            "revoked_by": "runtime"
-          },
-          "ephemeral": false,
-          "id": "evt-en-a-20",
-          "run_id": "run-a",
-          "schema_version": 1,
-          "seq": 20,
-          "session_id": "ses-golden-a",
-          "type": "capability.lease.revoked"
-        },
-        {
-          "created_at": "2026-01-01T00:00:00+00:00",
-          "data": {
             "message": {
               "content": [
                 {
-                  "content": "written",
+                  "content": "Wrote 5 bytes to /workspace/leased.txt.",
                   "is_error": false,
                   "kind": "tool_result",
-                  "metadata": {},
-                  "tool_call_id": "call-a"
+                  "metadata": {
+                    "path": "/workspace/leased.txt",
+                    "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+                    "tool_name": "write_file"
+                  },
+                  "tool_call_id": "toolu-1"
                 }
               ],
-              "id": "msg-r",
+              "id": "msg-4",
               "metadata": {},
               "role": "user"
             }
           },
           "ephemeral": false,
-          "id": "evt-en-a-21",
-          "run_id": "run-a",
+          "id": "evt-19",
+          "run_id": "run-1",
           "schema_version": 1,
-          "seq": 21,
+          "seq": 19,
           "session_id": "ses-golden-a",
           "type": "tool.result"
         },
         {
           "created_at": "2026-01-01T00:00:00+00:00",
           "data": {
-            "artifact": {
-              "artifact_id": "art-1",
-              "created_at": "2026-01-01T00:00:00+00:00",
-              "media_type": "text/plain",
-              "metadata": {},
-              "policy": {
-                "expires_at": null,
-                "retention": "session",
-                "run_id": null,
-                "session_id": "ses-golden-a"
-              },
-              "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
-              "size_bytes": 12
-            },
-            "purpose": "context"
+            "state": "running"
           },
           "ephemeral": false,
-          "id": "evt-en-a-22",
-          "run_id": "run-a",
+          "id": "evt-20",
+          "run_id": "run-1",
           "schema_version": 1,
-          "seq": 22,
+          "seq": 20,
           "session_id": "ses-golden-a",
-          "type": "artifact.created"
-        },
-        {
-          "created_at": "2026-01-01T00:00:00+00:00",
-          "data": {
-            "artifact": {
-              "artifact_id": "art-1",
-              "created_at": "2026-01-01T00:00:00+00:00",
-              "media_type": "text/plain",
-              "metadata": {},
-              "policy": {
-                "expires_at": null,
-                "retention": "session",
-                "run_id": null,
-                "session_id": "ses-golden-a"
-              },
-              "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
-              "size_bytes": 12
-            },
-            "reason": "expired"
-          },
-          "ephemeral": false,
-          "id": "evt-en-a-23",
-          "run_id": "run-a",
-          "schema_version": 1,
-          "seq": 23,
-          "session_id": "ses-golden-a",
-          "type": "artifact.deleted"
-        },
-        {
-          "created_at": "2026-01-01T00:00:00+00:00",
-          "data": {
-            "candidate": {
-              "candidate_id": "memcand-1",
-              "confidence": 0.8,
-              "content": "uses make check",
-              "created_at": "2026-01-01T00:00:00+00:00",
-              "deleted_at": null,
-              "kind": "semantic",
-              "memory_id": "mem-1",
-              "metadata": {},
-              "run_id": "run-a",
-              "scope": "session",
-              "scope_id": "ses-golden-a",
-              "session_id": "ses-golden-a",
-              "source": "assistant",
-              "updated_at": "2026-01-01T00:00:00+00:00"
-            }
-          },
-          "ephemeral": false,
-          "id": "evt-en-a-24",
-          "run_id": "run-a",
-          "schema_version": 1,
-          "seq": 24,
-          "session_id": "ses-golden-a",
-          "type": "memory.candidate"
-        },
-        {
-          "created_at": "2026-01-01T00:00:00+00:00",
-          "data": {
-            "record": {
-              "confidence": 0.8,
-              "content": "uses make check",
-              "created_at": "2026-01-01T00:00:00+00:00",
-              "deleted_at": null,
-              "kind": "semantic",
-              "memory_id": "mem-1",
-              "metadata": {},
-              "run_id": "run-a",
-              "scope": "session",
-              "scope_id": "ses-golden-a",
-              "session_id": "ses-golden-a",
-              "source": "assistant",
-              "updated_at": "2026-01-01T00:00:00+00:00"
-            }
-          },
-          "ephemeral": false,
-          "id": "evt-en-a-25",
-          "run_id": "run-a",
-          "schema_version": 1,
-          "seq": 25,
-          "session_id": "ses-golden-a",
-          "type": "memory.written"
-        },
-        {
-          "created_at": "2026-01-01T00:00:00+00:00",
-          "data": {
-            "memory_id": "mem-1",
-            "reason": "requested"
-          },
-          "ephemeral": false,
-          "id": "evt-en-a-26",
-          "run_id": "run-a",
-          "schema_version": 1,
-          "seq": 26,
-          "session_id": "ses-golden-a",
-          "type": "memory.deleted"
-        },
-        {
-          "created_at": "2026-01-01T00:00:00+00:00",
-          "data": {
-            "node": {
-              "depth": 1,
-              "objective": "read the code",
-              "state": "pending",
-              "task_id": "task-1"
-            }
-          },
-          "ephemeral": false,
-          "id": "evt-en-a-27",
-          "run_id": "run-a",
-          "schema_version": 1,
-          "seq": 27,
-          "session_id": "ses-golden-a",
-          "type": "subagent.spawned"
-        },
-        {
-          "created_at": "2026-01-01T00:00:00+00:00",
-          "data": {
-            "child_run_id": "run-child-1",
-            "depth": 1,
-            "objective": "read the code",
-            "parent_run_id": "run-a",
-            "parent_session_id": "ses-golden-a",
-            "task_id": "task-1"
-          },
-          "ephemeral": false,
-          "id": "evt-en-a-28",
-          "run_id": null,
-          "schema_version": 1,
-          "seq": 28,
-          "session_id": "ses-golden-a",
-          "type": "subagent.started"
-        },
-        {
-          "created_at": "2026-01-01T00:00:00+00:00",
-          "data": {
-            "child_run_id": "run-child-1",
-            "parent_run_id": "run-a",
-            "parent_session_id": "ses-golden-a",
-            "result": {
-              "error": null,
-              "metrics": {},
-              "output_artifact_ids": [],
-              "state": "completed",
-              "summary": "read it",
-              "task_id": "task-1"
-            },
-            "task_id": "task-1"
-          },
-          "ephemeral": false,
-          "id": "evt-en-a-29",
-          "run_id": null,
-          "schema_version": 1,
-          "seq": 29,
-          "session_id": "ses-golden-a",
-          "type": "subagent.completed"
+          "type": "run.state_changed"
         },
         {
           "created_at": "2026-01-01T00:00:00+00:00",
@@ -565,19 +413,21 @@
                 {
                   "kind": "text",
                   "stable_prefix": false,
-                  "text": "all done"
+                  "text": "written"
                 }
               ],
-              "id": "msg-t",
-              "metadata": {},
+              "id": "msg-5",
+              "metadata": {
+                "provider": "fake"
+              },
               "role": "assistant"
             }
           },
           "ephemeral": false,
-          "id": "evt-en-a-30",
-          "run_id": "run-a",
+          "id": "evt-21",
+          "run_id": "run-1",
           "schema_version": 1,
-          "seq": 30,
+          "seq": 21,
           "session_id": "ses-golden-a",
           "type": "assistant.message"
         },
@@ -587,10 +437,10 @@
             "state": "completed"
           },
           "ephemeral": false,
-          "id": "evt-en-a-31",
-          "run_id": "run-a",
+          "id": "evt-22",
+          "run_id": "run-1",
           "schema_version": 1,
-          "seq": 31,
+          "seq": 22,
           "session_id": "ses-golden-a",
           "type": "run.state_changed"
         },
@@ -600,12 +450,666 @@
             "state": "completed"
           },
           "ephemeral": false,
-          "id": "evt-en-a-32",
-          "run_id": "run-a",
+          "id": "evt-23",
+          "run_id": "run-1",
+          "schema_version": 1,
+          "seq": 23,
+          "session_id": "ses-golden-a",
+          "type": "run.completed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "lease_id": "lease-1",
+            "revoked_by": "runtime"
+          },
+          "ephemeral": false,
+          "id": "evt-24",
+          "run_id": "run-1",
+          "schema_version": 1,
+          "seq": 24,
+          "session_id": "ses-golden-a",
+          "type": "capability.lease.revoked"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "message": {
+              "content": [
+                {
+                  "kind": "text",
+                  "stable_prefix": false,
+                  "text": "write a note"
+                }
+              ],
+              "id": "msg-6",
+              "metadata": {},
+              "role": "user"
+            }
+          },
+          "ephemeral": false,
+          "id": "evt-25",
+          "run_id": "run-2",
+          "schema_version": 1,
+          "seq": 25,
+          "session_id": "ses-golden-a",
+          "type": "user.message"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "model": "fake-model",
+            "permission_mode": "default",
+            "provider": "fake",
+            "require_capability_lease": false,
+            "sandbox": "host",
+            "sandbox_descriptor": {
+              "filesystem_isolated": false,
+              "filesystem_write_isolated": false,
+              "image": null,
+              "mechanism": "unspecified",
+              "mount_scope": null,
+              "name": "host",
+              "network_isolated": false,
+              "network_mode": null,
+              "process_isolated": false,
+              "unsafe": true
+            },
+            "unsafe": true
+          },
+          "ephemeral": false,
+          "id": "evt-26",
+          "run_id": "run-2",
+          "schema_version": 1,
+          "seq": 26,
+          "session_id": "ses-golden-a",
+          "type": "run.started"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "state": "running"
+          },
+          "ephemeral": false,
+          "id": "evt-27",
+          "run_id": "run-2",
+          "schema_version": 1,
+          "seq": 27,
+          "session_id": "ses-golden-a",
+          "type": "run.state_changed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "message": {
+              "content": [
+                {
+                  "id": "toolu-2",
+                  "input": {
+                    "content": "hi",
+                    "path": "note.txt"
+                  },
+                  "kind": "tool_call",
+                  "name": "write_file"
+                }
+              ],
+              "id": "msg-7",
+              "metadata": {
+                "provider": "fake"
+              },
+              "role": "assistant"
+            }
+          },
+          "ephemeral": false,
+          "id": "evt-28",
+          "run_id": "run-2",
+          "schema_version": 1,
+          "seq": 28,
+          "session_id": "ses-golden-a",
+          "type": "assistant.message"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "state": "waiting_tool"
+          },
+          "ephemeral": false,
+          "id": "evt-29",
+          "run_id": "run-2",
+          "schema_version": 1,
+          "seq": 29,
+          "session_id": "ses-golden-a",
+          "type": "run.state_changed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "input": {
+              "content": "hi",
+              "path": "note.txt"
+            },
+            "tool_call_id": "toolu-2",
+            "tool_name": "write_file"
+          },
+          "ephemeral": false,
+          "id": "evt-30",
+          "run_id": "run-2",
+          "schema_version": 1,
+          "seq": 30,
+          "session_id": "ses-golden-a",
+          "type": "tool.requested"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "effect": "ask",
+            "reason": "This tool can mutate external state and requires approval.",
+            "rule_id": "default.mutation_requires_approval",
+            "tool_call_id": "toolu-2",
+            "tool_name": "write_file"
+          },
+          "ephemeral": false,
+          "id": "evt-31",
+          "run_id": "run-2",
+          "schema_version": 1,
+          "seq": 31,
+          "session_id": "ses-golden-a",
+          "type": "policy.decided"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "approval": {
+              "approval_id": "approval-2",
+              "expires_at": null,
+              "granted_by": "policy",
+              "one_shot": false,
+              "run_id": "run-2",
+              "scope": "write_file"
+            },
+            "reason": "This tool can mutate external state and requires approval.",
+            "requested_by": "policy",
+            "rule_id": "default.mutation_requires_approval",
+            "tool_call_id": "toolu-2",
+            "tool_name": "write_file"
+          },
+          "ephemeral": false,
+          "id": "evt-32",
+          "run_id": "run-2",
           "schema_version": 1,
           "seq": 32,
           "session_id": "ses-golden-a",
+          "type": "approval.requested"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "state": "waiting_approval"
+          },
+          "ephemeral": false,
+          "id": "evt-33",
+          "run_id": "run-2",
+          "schema_version": 1,
+          "seq": 33,
+          "session_id": "ses-golden-a",
+          "type": "run.state_changed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "approval_id": "approval-2",
+            "pending_tool_call_ids": [
+              "toolu-2"
+            ],
+            "reason": "approval_required",
+            "state": "waiting_approval"
+          },
+          "ephemeral": false,
+          "id": "evt-34",
+          "run_id": "run-2",
+          "schema_version": 1,
+          "seq": 34,
+          "session_id": "ses-golden-a",
+          "type": "run.suspended"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "approval": {
+              "approval_id": "approval-2",
+              "expires_at": null,
+              "granted_by": "policy",
+              "one_shot": false,
+              "run_id": "run-2",
+              "scope": "write_file"
+            },
+            "approval_id": "approval-2",
+            "one_shot": true,
+            "resolved_by": "operator",
+            "status": "granted"
+          },
+          "ephemeral": false,
+          "id": "evt-35",
+          "run_id": "run-2",
+          "schema_version": 1,
+          "seq": 35,
+          "session_id": "ses-golden-a",
+          "type": "approval.resolved"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "model": "fake-model",
+            "permission_mode": "default",
+            "provider": "fake",
+            "require_capability_lease": false,
+            "sandbox": "host",
+            "sandbox_descriptor": {
+              "filesystem_isolated": false,
+              "filesystem_write_isolated": false,
+              "image": null,
+              "mechanism": "unspecified",
+              "mount_scope": null,
+              "name": "host",
+              "network_isolated": false,
+              "network_mode": null,
+              "process_isolated": false,
+              "unsafe": true
+            },
+            "unsafe": true
+          },
+          "ephemeral": false,
+          "id": "evt-36",
+          "run_id": "run-2",
+          "schema_version": 1,
+          "seq": 36,
+          "session_id": "ses-golden-a",
+          "type": "run.resumed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "state": "running"
+          },
+          "ephemeral": false,
+          "id": "evt-37",
+          "run_id": "run-2",
+          "schema_version": 1,
+          "seq": 37,
+          "session_id": "ses-golden-a",
+          "type": "run.state_changed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "state": "waiting_tool"
+          },
+          "ephemeral": false,
+          "id": "evt-38",
+          "run_id": "run-2",
+          "schema_version": 1,
+          "seq": 38,
+          "session_id": "ses-golden-a",
+          "type": "run.state_changed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "input": {
+              "content": "hi",
+              "path": "note.txt"
+            },
+            "tool_call_id": "toolu-2",
+            "tool_name": "write_file"
+          },
+          "ephemeral": false,
+          "id": "evt-39",
+          "run_id": "run-2",
+          "schema_version": 1,
+          "seq": 39,
+          "session_id": "ses-golden-a",
+          "type": "tool.requested"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "effect": "allow",
+            "reason": "An active approval grant allows this privileged tool.",
+            "rule_id": "approval.granted",
+            "tool_call_id": "toolu-2",
+            "tool_name": "write_file"
+          },
+          "ephemeral": false,
+          "id": "evt-40",
+          "run_id": "run-2",
+          "schema_version": 1,
+          "seq": 40,
+          "session_id": "ses-golden-a",
+          "type": "policy.decided"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "sandbox": "host",
+            "sandbox_descriptor": {
+              "filesystem_isolated": false,
+              "filesystem_write_isolated": false,
+              "image": null,
+              "mechanism": "unspecified",
+              "mount_scope": null,
+              "name": "host",
+              "network_isolated": false,
+              "network_mode": null,
+              "process_isolated": false,
+              "unsafe": true
+            },
+            "tool_call_id": "toolu-2",
+            "tool_name": "write_file",
+            "unsafe": true
+          },
+          "ephemeral": false,
+          "id": "evt-41",
+          "run_id": "run-2",
+          "schema_version": 1,
+          "seq": 41,
+          "session_id": "ses-golden-a",
+          "type": "tool.started"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "is_error": false,
+            "metadata": {
+              "path": "/workspace/note.txt",
+              "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+            },
+            "tool_call_id": "toolu-2",
+            "tool_name": "write_file"
+          },
+          "ephemeral": false,
+          "id": "evt-42",
+          "run_id": "run-2",
+          "schema_version": 1,
+          "seq": 42,
+          "session_id": "ses-golden-a",
+          "type": "tool.completed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "approval_id": "approval-2",
+            "scope": "write_file"
+          },
+          "ephemeral": false,
+          "id": "evt-43",
+          "run_id": "run-2",
+          "schema_version": 1,
+          "seq": 43,
+          "session_id": "ses-golden-a",
+          "type": "approval.consumed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "message": {
+              "content": [
+                {
+                  "content": "Wrote 2 bytes to /workspace/note.txt.",
+                  "is_error": false,
+                  "kind": "tool_result",
+                  "metadata": {
+                    "path": "/workspace/note.txt",
+                    "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+                    "tool_name": "write_file"
+                  },
+                  "tool_call_id": "toolu-2"
+                }
+              ],
+              "id": "msg-8",
+              "metadata": {},
+              "role": "user"
+            }
+          },
+          "ephemeral": false,
+          "id": "evt-44",
+          "run_id": "run-2",
+          "schema_version": 1,
+          "seq": 44,
+          "session_id": "ses-golden-a",
+          "type": "tool.result"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "state": "running"
+          },
+          "ephemeral": false,
+          "id": "evt-45",
+          "run_id": "run-2",
+          "schema_version": 1,
+          "seq": 45,
+          "session_id": "ses-golden-a",
+          "type": "run.state_changed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "message": {
+              "content": [
+                {
+                  "kind": "text",
+                  "stable_prefix": false,
+                  "text": "written"
+                }
+              ],
+              "id": "msg-9",
+              "metadata": {
+                "provider": "fake"
+              },
+              "role": "assistant"
+            }
+          },
+          "ephemeral": false,
+          "id": "evt-46",
+          "run_id": "run-2",
+          "schema_version": 1,
+          "seq": 46,
+          "session_id": "ses-golden-a",
+          "type": "assistant.message"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "state": "completed"
+          },
+          "ephemeral": false,
+          "id": "evt-47",
+          "run_id": "run-2",
+          "schema_version": 1,
+          "seq": 47,
+          "session_id": "ses-golden-a",
+          "type": "run.state_changed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "state": "completed"
+          },
+          "ephemeral": false,
+          "id": "evt-48",
+          "run_id": "run-2",
+          "schema_version": 1,
+          "seq": 48,
+          "session_id": "ses-golden-a",
           "type": "run.completed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "artifact": {
+              "artifact_id": "art-41d1b52263304b83e9261a8fc0308882-8fe24b76afd8",
+              "created_at": "2026-01-01T00:00:00+00:00",
+              "media_type": "text/plain; charset=utf-8",
+              "metadata": {},
+              "policy": {
+                "expires_at": null,
+                "retention": "session",
+                "run_id": null,
+                "session_id": "ses-golden-a"
+              },
+              "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+              "size_bytes": 1800
+            },
+            "purpose": "context"
+          },
+          "ephemeral": false,
+          "id": "evt-49",
+          "run_id": "run-2",
+          "schema_version": 1,
+          "seq": 49,
+          "session_id": "ses-golden-a",
+          "type": "artifact.created"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "artifact": {
+              "artifact_id": "art-41d1b52263304b83e9261a8fc0308882-8fe24b76afd8",
+              "created_at": "2026-01-01T00:00:00+00:00",
+              "media_type": "text/plain; charset=utf-8",
+              "metadata": {},
+              "policy": {
+                "expires_at": null,
+                "retention": "session",
+                "run_id": null,
+                "session_id": "ses-golden-a"
+              },
+              "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+              "size_bytes": 1800
+            },
+            "reason": "requested"
+          },
+          "ephemeral": false,
+          "id": "evt-50",
+          "run_id": "run-2",
+          "schema_version": 1,
+          "seq": 50,
+          "session_id": "ses-golden-a",
+          "type": "artifact.deleted"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "candidate": {
+              "candidate_id": "memcand-1",
+              "confidence": 0.8,
+              "content": "the build runs with make check.",
+              "kind": "episodic",
+              "metadata": {
+                "extractor": "deterministic-v1"
+              },
+              "run_id": "run-2",
+              "scope": "session",
+              "scope_id": "ses-golden-a",
+              "session_id": "ses-golden-a",
+              "source": "assistant"
+            }
+          },
+          "ephemeral": false,
+          "id": "evt-51",
+          "run_id": "run-2",
+          "schema_version": 1,
+          "seq": 51,
+          "session_id": "ses-golden-a",
+          "type": "memory.candidate"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "candidate_id": "memcand-1",
+            "memory": {
+              "confidence": 0.8,
+              "content": "the build runs with make check.",
+              "created_at": "2026-01-01T00:00:00+00:00",
+              "deleted_at": null,
+              "fingerprint": "0000000000000000000000000000000000000000000000000000000000000000",
+              "kind": "episodic",
+              "memory_id": "mem-1",
+              "metadata": {
+                "extractor": "deterministic-v1"
+              },
+              "run_id": "run-2",
+              "scope": "session",
+              "scope_id": "ses-golden-a",
+              "session_id": "ses-golden-a",
+              "source": "assistant",
+              "updated_at": "2026-01-01T00:00:00+00:00"
+            }
+          },
+          "ephemeral": false,
+          "id": "evt-52",
+          "run_id": "run-2",
+          "schema_version": 1,
+          "seq": 52,
+          "session_id": "ses-golden-a",
+          "type": "memory.written"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "actor": "operator",
+            "memory_id": "mem-1",
+            "reason": "requested",
+            "scope": "session",
+            "scope_id": "ses-golden-a"
+          },
+          "ephemeral": false,
+          "id": "evt-53",
+          "run_id": "run-2",
+          "schema_version": 1,
+          "seq": 53,
+          "session_id": "ses-golden-a",
+          "type": "memory.deleted"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "state": "pending",
+            "task": {
+              "budget": {
+                "max_cost_usd": null,
+                "max_tokens": 512,
+                "max_tool_calls": 2,
+                "timeout_seconds": 10.0
+              },
+              "capabilities": [
+                "filesystem.read"
+              ],
+              "child_run_id": "run-3",
+              "constraints": [],
+              "created_at": "2026-01-01T00:00:00+00:00",
+              "depth": 0,
+              "max_children": 8,
+              "max_depth": 4,
+              "metadata": {},
+              "objective": "investigate",
+              "parent_run_id": "run-2",
+              "parent_task_id": null,
+              "task_id": "task-1",
+              "workspace": {
+                "allowed_paths": [],
+                "read_only": true,
+                "root": "/workspace"
+              }
+            }
+          },
+          "ephemeral": false,
+          "id": "evt-54",
+          "run_id": "run-3",
+          "schema_version": 1,
+          "seq": 54,
+          "session_id": "ses-golden-a",
+          "type": "subagent.spawned"
         }
       ],
       "session_id": "ses-golden-a"
@@ -615,12 +1119,211 @@
         {
           "created_at": "2026-01-01T00:00:00+00:00",
           "data": {
-            "cwd": "/tmp/golden",
+            "cwd": "/workspace",
+            "depth": 1,
+            "harness_version": "0.1.0",
+            "model": "fake-model",
+            "parent_run_id": "run-4",
+            "parent_session_id": "ses-golden-parent",
+            "provider": "fake",
+            "task_id": "task-2"
+          },
+          "ephemeral": false,
+          "id": "evt-55",
+          "run_id": null,
+          "schema_version": 1,
+          "seq": 1,
+          "session_id": "ses-1",
+          "type": "session.created"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "budget": {
+              "max_cost_usd": null,
+              "max_tokens": 512,
+              "max_tool_calls": 2,
+              "timeout_seconds": 10.0
+            },
+            "capabilities": [
+              "filesystem.read"
+            ],
+            "child_run_id": "run-5",
+            "depth": 1,
+            "objective": "look around",
+            "parent_run_id": "run-4",
+            "parent_session_id": "ses-golden-parent",
+            "task_id": "task-2"
+          },
+          "ephemeral": false,
+          "id": "evt-56",
+          "run_id": null,
+          "schema_version": 1,
+          "seq": 2,
+          "session_id": "ses-1",
+          "type": "subagent.started"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "message": {
+              "content": [
+                {
+                  "kind": "text",
+                  "stable_prefix": false,
+                  "text": "look around"
+                }
+              ],
+              "id": "msg-10",
+              "metadata": {},
+              "role": "user"
+            }
+          },
+          "ephemeral": false,
+          "id": "evt-57",
+          "run_id": "run-5",
+          "schema_version": 1,
+          "seq": 3,
+          "session_id": "ses-1",
+          "type": "user.message"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "model": "fake-model",
+            "permission_mode": "default",
+            "provider": "fake",
+            "require_capability_lease": false,
+            "sandbox": "host",
+            "sandbox_descriptor": {
+              "filesystem_isolated": false,
+              "filesystem_write_isolated": false,
+              "image": null,
+              "mechanism": "unspecified",
+              "mount_scope": null,
+              "name": "host",
+              "network_isolated": false,
+              "network_mode": null,
+              "process_isolated": false,
+              "unsafe": true
+            },
+            "unsafe": true
+          },
+          "ephemeral": false,
+          "id": "evt-58",
+          "run_id": "run-5",
+          "schema_version": 1,
+          "seq": 4,
+          "session_id": "ses-1",
+          "type": "run.started"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "state": "running"
+          },
+          "ephemeral": false,
+          "id": "evt-59",
+          "run_id": "run-5",
+          "schema_version": 1,
+          "seq": 5,
+          "session_id": "ses-1",
+          "type": "run.state_changed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "message": {
+              "content": [
+                {
+                  "kind": "text",
+                  "stable_prefix": false,
+                  "text": "the child looked around"
+                }
+              ],
+              "id": "msg-11",
+              "metadata": {
+                "provider": "fake"
+              },
+              "role": "assistant"
+            }
+          },
+          "ephemeral": false,
+          "id": "evt-60",
+          "run_id": "run-5",
+          "schema_version": 1,
+          "seq": 6,
+          "session_id": "ses-1",
+          "type": "assistant.message"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "state": "completed"
+          },
+          "ephemeral": false,
+          "id": "evt-61",
+          "run_id": "run-5",
+          "schema_version": 1,
+          "seq": 7,
+          "session_id": "ses-1",
+          "type": "run.state_changed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "state": "completed"
+          },
+          "ephemeral": false,
+          "id": "evt-62",
+          "run_id": "run-5",
+          "schema_version": 1,
+          "seq": 8,
+          "session_id": "ses-1",
+          "type": "run.completed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "child_run_id": "run-5",
+            "parent_run_id": "run-4",
+            "parent_session_id": "ses-golden-parent",
+            "result": {
+              "error": null,
+              "metrics": {
+                "run_id": "run-5",
+                "session_id": "ses-1"
+              },
+              "output_artifact_ids": [],
+              "state": "completed",
+              "summary": "the child looked around",
+              "task_id": "task-2"
+            },
+            "task_id": "task-2"
+          },
+          "ephemeral": false,
+          "id": "evt-63",
+          "run_id": null,
+          "schema_version": 1,
+          "seq": 9,
+          "session_id": "ses-1",
+          "type": "subagent.completed"
+        }
+      ],
+      "session_id": "ses-1"
+    },
+    {
+      "events": [
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "cwd": "/workspace",
+            "harness_version": "0.1.0",
             "model": "fake-model",
             "provider": "fake"
           },
           "ephemeral": false,
-          "id": "evt-en-b-01",
+          "id": "evt-64",
           "run_id": null,
           "schema_version": 1,
           "seq": 1,
@@ -635,21 +1338,21 @@
                 {
                   "kind": "text",
                   "stable_prefix": false,
-                  "text": "house rules"
+                  "text": "history 0 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
                 }
               ],
-              "id": "msg-sys",
+              "id": "msg-12",
               "metadata": {},
-              "role": "system"
+              "role": "user"
             }
           },
           "ephemeral": false,
-          "id": "evt-en-b-02",
-          "run_id": "run-b",
+          "id": "evt-65",
+          "run_id": null,
           "schema_version": 1,
           "seq": 2,
           "session_id": "ses-golden-b",
-          "type": "system.message"
+          "type": "user.message"
         },
         {
           "created_at": "2026-01-01T00:00:00+00:00",
@@ -659,17 +1362,17 @@
                 {
                   "kind": "text",
                   "stable_prefix": false,
-                  "text": "do a thing"
+                  "text": "history 1 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
                 }
               ],
-              "id": "msg-ub",
+              "id": "msg-13",
               "metadata": {},
               "role": "user"
             }
           },
           "ephemeral": false,
-          "id": "evt-en-b-03",
-          "run_id": "run-b",
+          "id": "evt-66",
+          "run_id": null,
           "schema_version": 1,
           "seq": 3,
           "session_id": "ses-golden-b",
@@ -678,204 +1381,268 @@
         {
           "created_at": "2026-01-01T00:00:00+00:00",
           "data": {
-            "model": "fake-model",
-            "provider": "fake",
-            "sandbox": "host",
-            "unsafe": true
-          },
-          "ephemeral": false,
-          "id": "evt-en-b-04",
-          "run_id": "run-b",
-          "schema_version": 1,
-          "seq": 4,
-          "session_id": "ses-golden-b",
-          "type": "run.started"
-        },
-        {
-          "created_at": "2026-01-01T00:00:00+00:00",
-          "data": {
-            "state": "running"
-          },
-          "ephemeral": false,
-          "id": "evt-en-b-05",
-          "run_id": "run-b",
-          "schema_version": 1,
-          "seq": 5,
-          "session_id": "ses-golden-b",
-          "type": "run.state_changed"
-        },
-        {
-          "created_at": "2026-01-01T00:00:00+00:00",
-          "data": {
-            "after_tokens": 120,
-            "artifact_ids": [],
-            "before_tokens": 900,
-            "prompt_hash": "1111111111111111111111111111111111111111111111111111111111111111",
-            "replaced_message_ids": [
-              "msg-ub"
-            ],
-            "source_seq_end": 3,
-            "source_seq_start": 3,
-            "strategy": "l1_deterministic",
-            "summary": {
+            "message": {
               "content": [
                 {
                   "kind": "text",
                   "stable_prefix": false,
-                  "text": "summary of earlier work"
+                  "text": "history 2 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
                 }
               ],
-              "id": "msg-s",
-              "metadata": {
-                "compaction": "l1_deterministic"
-              },
-              "role": "system"
-            },
-            "trigger": "budget",
-            "version": 1
-          },
-          "ephemeral": false,
-          "id": "evt-en-b-06",
-          "run_id": "run-b",
-          "schema_version": 1,
-          "seq": 6,
-          "session_id": "ses-golden-b",
-          "type": "compaction.created"
-        },
-        {
-          "created_at": "2026-01-01T00:00:00+00:00",
-          "data": {
-            "message": {
-              "content": [
-                {
-                  "id": "call-b",
-                  "input": {},
-                  "kind": "tool_call",
-                  "name": "missing_tool"
-                }
-              ],
-              "id": "msg-ab",
-              "metadata": {},
-              "role": "assistant"
-            }
-          },
-          "ephemeral": false,
-          "id": "evt-en-b-07",
-          "run_id": "run-b",
-          "schema_version": 1,
-          "seq": 7,
-          "session_id": "ses-golden-b",
-          "type": "assistant.message"
-        },
-        {
-          "created_at": "2026-01-01T00:00:00+00:00",
-          "data": {
-            "state": "waiting_tool"
-          },
-          "ephemeral": false,
-          "id": "evt-en-b-08",
-          "run_id": "run-b",
-          "schema_version": 1,
-          "seq": 8,
-          "session_id": "ses-golden-b",
-          "type": "run.state_changed"
-        },
-        {
-          "created_at": "2026-01-01T00:00:00+00:00",
-          "data": {
-            "input": {},
-            "tool_call_id": "call-b",
-            "tool_name": "missing_tool"
-          },
-          "ephemeral": false,
-          "id": "evt-en-b-09",
-          "run_id": "run-b",
-          "schema_version": 1,
-          "seq": 9,
-          "session_id": "ses-golden-b",
-          "type": "tool.requested"
-        },
-        {
-          "created_at": "2026-01-01T00:00:00+00:00",
-          "data": {
-            "error_code": "tool_not_found",
-            "tool_call_id": "call-b",
-            "tool_name": "missing_tool"
-          },
-          "ephemeral": false,
-          "id": "evt-en-b-10",
-          "run_id": "run-b",
-          "schema_version": 1,
-          "seq": 10,
-          "session_id": "ses-golden-b",
-          "type": "tool.rejected"
-        },
-        {
-          "created_at": "2026-01-01T00:00:00+00:00",
-          "data": {
-            "message": {
-              "content": [
-                {
-                  "content": "Unknown tool",
-                  "is_error": true,
-                  "kind": "tool_result",
-                  "metadata": {
-                    "error_code": "tool_not_found"
-                  },
-                  "tool_call_id": "call-b"
-                }
-              ],
-              "id": "msg-rb",
+              "id": "msg-14",
               "metadata": {},
               "role": "user"
             }
           },
           "ephemeral": false,
-          "id": "evt-en-b-11",
-          "run_id": "run-b",
+          "id": "evt-67",
+          "run_id": null,
+          "schema_version": 1,
+          "seq": 4,
+          "session_id": "ses-golden-b",
+          "type": "user.message"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "message": {
+              "content": [
+                {
+                  "kind": "text",
+                  "stable_prefix": false,
+                  "text": "history 3 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                }
+              ],
+              "id": "msg-15",
+              "metadata": {},
+              "role": "user"
+            }
+          },
+          "ephemeral": false,
+          "id": "evt-68",
+          "run_id": null,
+          "schema_version": 1,
+          "seq": 5,
+          "session_id": "ses-golden-b",
+          "type": "user.message"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "message": {
+              "content": [
+                {
+                  "kind": "text",
+                  "stable_prefix": false,
+                  "text": "history 4 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                }
+              ],
+              "id": "msg-16",
+              "metadata": {},
+              "role": "user"
+            }
+          },
+          "ephemeral": false,
+          "id": "evt-69",
+          "run_id": null,
+          "schema_version": 1,
+          "seq": 6,
+          "session_id": "ses-golden-b",
+          "type": "user.message"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "message": {
+              "content": [
+                {
+                  "kind": "text",
+                  "stable_prefix": false,
+                  "text": "history 5 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                }
+              ],
+              "id": "msg-17",
+              "metadata": {},
+              "role": "user"
+            }
+          },
+          "ephemeral": false,
+          "id": "evt-70",
+          "run_id": null,
+          "schema_version": 1,
+          "seq": 7,
+          "session_id": "ses-golden-b",
+          "type": "user.message"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "message": {
+              "content": [
+                {
+                  "kind": "text",
+                  "stable_prefix": false,
+                  "text": "history 6 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                }
+              ],
+              "id": "msg-18",
+              "metadata": {},
+              "role": "user"
+            }
+          },
+          "ephemeral": false,
+          "id": "evt-71",
+          "run_id": null,
+          "schema_version": 1,
+          "seq": 8,
+          "session_id": "ses-golden-b",
+          "type": "user.message"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "message": {
+              "content": [
+                {
+                  "kind": "text",
+                  "stable_prefix": false,
+                  "text": "history 7 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                }
+              ],
+              "id": "msg-19",
+              "metadata": {},
+              "role": "user"
+            }
+          },
+          "ephemeral": false,
+          "id": "evt-72",
+          "run_id": null,
+          "schema_version": 1,
+          "seq": 9,
+          "session_id": "ses-golden-b",
+          "type": "user.message"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "message": {
+              "content": [
+                {
+                  "kind": "text",
+                  "stable_prefix": false,
+                  "text": "history 8 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                }
+              ],
+              "id": "msg-20",
+              "metadata": {},
+              "role": "user"
+            }
+          },
+          "ephemeral": false,
+          "id": "evt-73",
+          "run_id": null,
+          "schema_version": 1,
+          "seq": 10,
+          "session_id": "ses-golden-b",
+          "type": "user.message"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "message": {
+              "content": [
+                {
+                  "kind": "text",
+                  "stable_prefix": false,
+                  "text": "history 9 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                }
+              ],
+              "id": "msg-21",
+              "metadata": {},
+              "role": "user"
+            }
+          },
+          "ephemeral": false,
+          "id": "evt-74",
+          "run_id": null,
           "schema_version": 1,
           "seq": 11,
           "session_id": "ses-golden-b",
-          "type": "tool.result"
+          "type": "user.message"
         },
         {
           "created_at": "2026-01-01T00:00:00+00:00",
           "data": {
-            "state": "failed"
+            "message": {
+              "content": [
+                {
+                  "kind": "text",
+                  "stable_prefix": false,
+                  "text": "history 10 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                }
+              ],
+              "id": "msg-22",
+              "metadata": {},
+              "role": "user"
+            }
           },
           "ephemeral": false,
-          "id": "evt-en-b-12",
-          "run_id": "run-b",
+          "id": "evt-75",
+          "run_id": null,
           "schema_version": 1,
           "seq": 12,
           "session_id": "ses-golden-b",
-          "type": "run.state_changed"
+          "type": "user.message"
         },
         {
           "created_at": "2026-01-01T00:00:00+00:00",
           "data": {
-            "error": "provider unavailable",
-            "state": "failed"
+            "message": {
+              "content": [
+                {
+                  "kind": "text",
+                  "stable_prefix": false,
+                  "text": "history 11 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                }
+              ],
+              "id": "msg-23",
+              "metadata": {},
+              "role": "user"
+            }
           },
           "ephemeral": false,
-          "id": "evt-en-b-13",
-          "run_id": "run-b",
+          "id": "evt-76",
+          "run_id": null,
           "schema_version": 1,
           "seq": 13,
           "session_id": "ses-golden-b",
-          "type": "run.failed"
+          "type": "user.message"
         },
         {
           "created_at": "2026-01-01T00:00:00+00:00",
           "data": {
             "model": "fake-model",
+            "permission_mode": "default",
             "provider": "fake",
+            "require_capability_lease": false,
             "sandbox": "host",
+            "sandbox_descriptor": {
+              "filesystem_isolated": false,
+              "filesystem_write_isolated": false,
+              "image": null,
+              "mechanism": "unspecified",
+              "mount_scope": null,
+              "name": "host",
+              "network_isolated": false,
+              "network_mode": null,
+              "process_isolated": false,
+              "unsafe": true
+            },
             "unsafe": true
           },
           "ephemeral": false,
-          "id": "evt-en-b-14",
-          "run_id": "run-c",
+          "id": "evt-77",
+          "run_id": "run-6",
           "schema_version": 1,
           "seq": 14,
           "session_id": "ses-golden-b",
@@ -887,8 +1654,8 @@
             "state": "running"
           },
           "ephemeral": false,
-          "id": "evt-en-b-15",
-          "run_id": "run-c",
+          "id": "evt-78",
+          "run_id": "run-6",
           "schema_version": 1,
           "seq": 15,
           "session_id": "ses-golden-b",
@@ -897,44 +1664,119 @@
         {
           "created_at": "2026-01-01T00:00:00+00:00",
           "data": {
+            "after_tokens": 434,
+            "artifact_ids": [],
+            "before_tokens": 466,
+            "prompt_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+            "replaced_message_ids": [
+              "msg-12",
+              "msg-13",
+              "msg-14",
+              "msg-15"
+            ],
+            "source_seq_end": 5,
+            "source_seq_start": 2,
+            "strategy": "l1_deterministic",
+            "summary": {
+              "content": [
+                {
+                  "kind": "text",
+                  "stable_prefix": false,
+                  "text": "{\"artifacts\":[],\"constraints\":[],\"decisions\":[],\"files_changed\":[],\"kind\":\"context_compaction_summary\",\"next_steps\":[],\"objective\":\"history 11 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"omitted_message_count\":4,\"open_questions\":[],\"permission_mode\":null,\"skills\":[],\"subagents\":[],\"verified_state\":[]}"
+                }
+              ],
+              "id": "msg-24",
+              "metadata": {
+                "compaction": "l1_deterministic",
+                "source_message_ids": [
+                  "msg-12",
+                  "msg-13",
+                  "msg-14",
+                  "msg-15"
+                ]
+              },
+              "role": "system"
+            },
+            "trigger": "budget",
+            "version": 1
+          },
+          "ephemeral": false,
+          "id": "evt-79",
+          "run_id": "run-6",
+          "schema_version": 1,
+          "seq": 16,
+          "session_id": "ses-golden-b",
+          "type": "compaction.created"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
             "message": {
               "content": [
                 {
-                  "id": "call-c",
-                  "input": {
-                    "path": "c.txt"
-                  },
+                  "id": "toolu-3",
+                  "input": {},
                   "kind": "tool_call",
-                  "name": "write_file"
+                  "name": "missing_tool"
                 }
               ],
-              "id": "msg-ac",
-              "metadata": {},
+              "id": "msg-25",
+              "metadata": {
+                "provider": "fake"
+              },
               "role": "assistant"
             }
           },
           "ephemeral": false,
-          "id": "evt-en-b-16",
-          "run_id": "run-c",
+          "id": "evt-80",
+          "run_id": "run-6",
           "schema_version": 1,
-          "seq": 16,
+          "seq": 17,
           "session_id": "ses-golden-b",
           "type": "assistant.message"
         },
         {
           "created_at": "2026-01-01T00:00:00+00:00",
           "data": {
-            "orphan_tool_call_ids": [
-              "call-c"
-            ]
+            "state": "waiting_tool"
           },
           "ephemeral": false,
-          "id": "evt-en-b-17",
-          "run_id": "run-c",
+          "id": "evt-81",
+          "run_id": "run-6",
           "schema_version": 1,
-          "seq": 17,
+          "seq": 18,
           "session_id": "ses-golden-b",
-          "type": "session.repaired"
+          "type": "run.state_changed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "input": {},
+            "tool_call_id": "toolu-3",
+            "tool_name": "missing_tool"
+          },
+          "ephemeral": false,
+          "id": "evt-82",
+          "run_id": "run-6",
+          "schema_version": 1,
+          "seq": 19,
+          "session_id": "ses-golden-b",
+          "type": "tool.requested"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "error_code": "tool_not_found",
+            "tool_call_id": "toolu-3",
+            "tool_name": "missing_tool"
+          },
+          "ephemeral": false,
+          "id": "evt-83",
+          "run_id": "run-6",
+          "schema_version": 1,
+          "seq": 20,
+          "session_id": "ses-golden-b",
+          "type": "tool.rejected"
         },
         {
           "created_at": "2026-01-01T00:00:00+00:00",
@@ -942,69 +1784,159 @@
             "message": {
               "content": [
                 {
-                  "content": "Execution state was lost",
+                  "content": "Unknown tool: missing_tool",
                   "is_error": true,
                   "kind": "tool_result",
                   "metadata": {
-                    "recovered": true
+                    "error_code": "tool_not_found",
+                    "tool_name": "missing_tool"
                   },
-                  "tool_call_id": "call-c"
+                  "tool_call_id": "toolu-3"
                 }
               ],
-              "id": "msg-rc",
-              "metadata": {
-                "recovery": "orphan_tool_calls"
-              },
+              "id": "msg-26",
+              "metadata": {},
               "role": "user"
             }
           },
           "ephemeral": false,
-          "id": "evt-en-b-18",
-          "run_id": "run-c",
+          "id": "evt-84",
+          "run_id": "run-6",
           "schema_version": 1,
-          "seq": 18,
+          "seq": 21,
           "session_id": "ses-golden-b",
           "type": "tool.result"
         },
         {
           "created_at": "2026-01-01T00:00:00+00:00",
           "data": {
-            "state": "interrupted"
+            "state": "running"
           },
           "ephemeral": false,
-          "id": "evt-en-b-19",
-          "run_id": "run-c",
+          "id": "evt-85",
+          "run_id": "run-6",
           "schema_version": 1,
-          "seq": 19,
+          "seq": 22,
           "session_id": "ses-golden-b",
           "type": "run.state_changed"
         },
         {
           "created_at": "2026-01-01T00:00:00+00:00",
           "data": {
-            "state": "interrupted"
+            "after_tokens": 426,
+            "artifact_ids": [],
+            "before_tokens": 460,
+            "prompt_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+            "replaced_message_ids": [
+              "msg-24"
+            ],
+            "strategy": "l1_deterministic",
+            "summary": {
+              "content": [
+                {
+                  "kind": "text",
+                  "stable_prefix": false,
+                  "text": "{\"artifacts\":[],\"constraints\":[],\"decisions\":[],\"files_changed\":[],\"kind\":\"context_compaction_summary\",\"next_steps\":[],\"objective\":\"\",\"omitted_message_count\":1,\"open_questions\":[],\"permission_mode\":null,\"skills\":[],\"subagents\":[],\"verified_state\":[]}"
+                }
+              ],
+              "id": "msg-27",
+              "metadata": {
+                "compaction": "l1_deterministic",
+                "source_message_ids": [
+                  "msg-24"
+                ]
+              },
+              "role": "system"
+            },
+            "trigger": "budget",
+            "version": 1
           },
           "ephemeral": false,
-          "id": "evt-en-b-20",
-          "run_id": "run-c",
+          "id": "evt-86",
+          "run_id": "run-6",
           "schema_version": 1,
-          "seq": 20,
+          "seq": 23,
           "session_id": "ses-golden-b",
-          "type": "run.interrupted"
+          "type": "compaction.created"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "state": "failed"
+          },
+          "ephemeral": false,
+          "id": "evt-87",
+          "run_id": "run-6",
+          "schema_version": 1,
+          "seq": 24,
+          "session_id": "ses-golden-b",
+          "type": "run.state_changed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "error": "provider is down",
+            "state": "failed"
+          },
+          "ephemeral": false,
+          "id": "evt-88",
+          "run_id": "run-6",
+          "schema_version": 1,
+          "seq": 25,
+          "session_id": "ses-golden-b",
+          "type": "run.failed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "message": {
+              "content": [
+                {
+                  "kind": "text",
+                  "stable_prefix": false,
+                  "text": "start then stop"
+                }
+              ],
+              "id": "msg-28",
+              "metadata": {},
+              "role": "user"
+            }
+          },
+          "ephemeral": false,
+          "id": "evt-89",
+          "run_id": "run-7",
+          "schema_version": 1,
+          "seq": 26,
+          "session_id": "ses-golden-b",
+          "type": "user.message"
         },
         {
           "created_at": "2026-01-01T00:00:00+00:00",
           "data": {
             "model": "fake-model",
+            "permission_mode": "default",
             "provider": "fake",
+            "require_capability_lease": false,
             "sandbox": "host",
+            "sandbox_descriptor": {
+              "filesystem_isolated": false,
+              "filesystem_write_isolated": false,
+              "image": null,
+              "mechanism": "unspecified",
+              "mount_scope": null,
+              "name": "host",
+              "network_isolated": false,
+              "network_mode": null,
+              "process_isolated": false,
+              "unsafe": true
+            },
             "unsafe": true
           },
           "ephemeral": false,
-          "id": "evt-en-b-21",
-          "run_id": "run-d",
+          "id": "evt-90",
+          "run_id": "run-7",
           "schema_version": 1,
-          "seq": 21,
+          "seq": 27,
           "session_id": "ses-golden-b",
           "type": "run.started"
         },
@@ -1014,12 +1946,284 @@
             "state": "running"
           },
           "ephemeral": false,
-          "id": "evt-en-b-22",
-          "run_id": "run-d",
+          "id": "evt-91",
+          "run_id": "run-7",
           "schema_version": 1,
-          "seq": 22,
+          "seq": 28,
           "session_id": "ses-golden-b",
           "type": "run.state_changed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "state": "interrupted"
+          },
+          "ephemeral": false,
+          "id": "evt-92",
+          "run_id": "run-7",
+          "schema_version": 1,
+          "seq": 29,
+          "session_id": "ses-golden-b",
+          "type": "run.state_changed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "state": "interrupted"
+          },
+          "ephemeral": false,
+          "id": "evt-93",
+          "run_id": "run-7",
+          "schema_version": 1,
+          "seq": 30,
+          "session_id": "ses-golden-b",
+          "type": "run.interrupted"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "message": {
+              "content": [
+                {
+                  "kind": "text",
+                  "stable_prefix": false,
+                  "text": "write then give up"
+                }
+              ],
+              "id": "msg-29",
+              "metadata": {},
+              "role": "user"
+            }
+          },
+          "ephemeral": false,
+          "id": "evt-94",
+          "run_id": "run-8",
+          "schema_version": 1,
+          "seq": 31,
+          "session_id": "ses-golden-b",
+          "type": "user.message"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "model": "fake-model",
+            "permission_mode": "default",
+            "provider": "fake",
+            "require_capability_lease": false,
+            "sandbox": "host",
+            "sandbox_descriptor": {
+              "filesystem_isolated": false,
+              "filesystem_write_isolated": false,
+              "image": null,
+              "mechanism": "unspecified",
+              "mount_scope": null,
+              "name": "host",
+              "network_isolated": false,
+              "network_mode": null,
+              "process_isolated": false,
+              "unsafe": true
+            },
+            "unsafe": true
+          },
+          "ephemeral": false,
+          "id": "evt-95",
+          "run_id": "run-8",
+          "schema_version": 1,
+          "seq": 32,
+          "session_id": "ses-golden-b",
+          "type": "run.started"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "state": "running"
+          },
+          "ephemeral": false,
+          "id": "evt-96",
+          "run_id": "run-8",
+          "schema_version": 1,
+          "seq": 33,
+          "session_id": "ses-golden-b",
+          "type": "run.state_changed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "message": {
+              "content": [
+                {
+                  "id": "toolu-4",
+                  "input": {
+                    "content": "x",
+                    "path": "x.txt"
+                  },
+                  "kind": "tool_call",
+                  "name": "write_file"
+                }
+              ],
+              "id": "msg-30",
+              "metadata": {
+                "provider": "fake"
+              },
+              "role": "assistant"
+            }
+          },
+          "ephemeral": false,
+          "id": "evt-97",
+          "run_id": "run-8",
+          "schema_version": 1,
+          "seq": 34,
+          "session_id": "ses-golden-b",
+          "type": "assistant.message"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "state": "waiting_tool"
+          },
+          "ephemeral": false,
+          "id": "evt-98",
+          "run_id": "run-8",
+          "schema_version": 1,
+          "seq": 35,
+          "session_id": "ses-golden-b",
+          "type": "run.state_changed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "input": {
+              "content": "x",
+              "path": "x.txt"
+            },
+            "tool_call_id": "toolu-4",
+            "tool_name": "write_file"
+          },
+          "ephemeral": false,
+          "id": "evt-99",
+          "run_id": "run-8",
+          "schema_version": 1,
+          "seq": 36,
+          "session_id": "ses-golden-b",
+          "type": "tool.requested"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "effect": "ask",
+            "reason": "This tool can mutate external state and requires approval.",
+            "rule_id": "default.mutation_requires_approval",
+            "tool_call_id": "toolu-4",
+            "tool_name": "write_file"
+          },
+          "ephemeral": false,
+          "id": "evt-100",
+          "run_id": "run-8",
+          "schema_version": 1,
+          "seq": 37,
+          "session_id": "ses-golden-b",
+          "type": "policy.decided"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "approval": {
+              "approval_id": "approval-3",
+              "expires_at": null,
+              "granted_by": "policy",
+              "one_shot": false,
+              "run_id": "run-8",
+              "scope": "write_file"
+            },
+            "reason": "This tool can mutate external state and requires approval.",
+            "requested_by": "policy",
+            "rule_id": "default.mutation_requires_approval",
+            "tool_call_id": "toolu-4",
+            "tool_name": "write_file"
+          },
+          "ephemeral": false,
+          "id": "evt-101",
+          "run_id": "run-8",
+          "schema_version": 1,
+          "seq": 38,
+          "session_id": "ses-golden-b",
+          "type": "approval.requested"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "state": "waiting_approval"
+          },
+          "ephemeral": false,
+          "id": "evt-102",
+          "run_id": "run-8",
+          "schema_version": 1,
+          "seq": 39,
+          "session_id": "ses-golden-b",
+          "type": "run.state_changed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "approval_id": "approval-3",
+            "pending_tool_call_ids": [
+              "toolu-4"
+            ],
+            "reason": "approval_required",
+            "state": "waiting_approval"
+          },
+          "ephemeral": false,
+          "id": "evt-103",
+          "run_id": "run-8",
+          "schema_version": 1,
+          "seq": 40,
+          "session_id": "ses-golden-b",
+          "type": "run.suspended"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "orphan_tool_call_ids": [
+              "toolu-4"
+            ]
+          },
+          "ephemeral": false,
+          "id": "evt-104",
+          "run_id": "run-8",
+          "schema_version": 1,
+          "seq": 41,
+          "session_id": "ses-golden-b",
+          "type": "session.repaired"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "message": {
+              "content": [
+                {
+                  "content": "Execution state was lost before a result was committed; not replayed.",
+                  "is_error": true,
+                  "kind": "tool_result",
+                  "metadata": {
+                    "recovered": true
+                  },
+                  "tool_call_id": "toolu-4"
+                }
+              ],
+              "id": "msg-31",
+              "metadata": {
+                "recovery": "orphan_tool_calls"
+              },
+              "role": "user"
+            }
+          },
+          "ephemeral": false,
+          "id": "evt-105",
+          "run_id": "run-8",
+          "schema_version": 1,
+          "seq": 42,
+          "session_id": "ses-golden-b",
+          "type": "tool.result"
         },
         {
           "created_at": "2026-01-01T00:00:00+00:00",
@@ -1027,24 +2231,24 @@
             "state": "cancelled"
           },
           "ephemeral": false,
-          "id": "evt-en-b-23",
-          "run_id": "run-d",
+          "id": "evt-106",
+          "run_id": "run-8",
           "schema_version": 1,
-          "seq": 23,
+          "seq": 43,
           "session_id": "ses-golden-b",
           "type": "run.state_changed"
         },
         {
           "created_at": "2026-01-01T00:00:00+00:00",
           "data": {
-            "reason": "abandoned",
+            "reason": "operator gave up",
             "state": "cancelled"
           },
           "ephemeral": false,
-          "id": "evt-en-b-24",
-          "run_id": "run-d",
+          "id": "evt-107",
+          "run_id": "run-8",
           "schema_version": 1,
-          "seq": 24,
+          "seq": 44,
           "session_id": "ses-golden-b",
           "type": "run.cancelled"
         }
@@ -1056,34 +2260,55 @@
         {
           "created_at": "2026-01-01T00:00:00+00:00",
           "data": {
-            "cwd": "/tmp/golden",
-            "forked_at_seq": 2,
+            "cwd": "/workspace",
+            "forked_at_seq": 4,
+            "harness_version": "0.1.0",
             "model": "fake-model",
             "parent_session_id": "ses-golden-a",
             "provider": "fake"
           },
           "ephemeral": false,
-          "id": "evt-c-01",
+          "id": "evt-108",
           "run_id": null,
           "schema_version": 1,
           "seq": 1,
-          "session_id": "ses-golden-c",
+          "session_id": "ses-golden-forked",
           "type": "session.created"
         },
         {
           "created_at": "2026-01-01T00:00:00+00:00",
           "data": {
-            "copied_event_count": 1,
-            "forked_at_seq": 2,
+            "copied_event_count": 3,
+            "forked_at_seq": 4,
             "parent_session_id": "ses-golden-a"
           },
           "ephemeral": false,
-          "id": "evt-c-02",
+          "id": "evt-109",
           "run_id": null,
           "schema_version": 1,
           "seq": 2,
-          "session_id": "ses-golden-c",
+          "session_id": "ses-golden-forked",
           "type": "session.forked"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "message": {
+              "content": [],
+              "id": "msg-1",
+              "metadata": {
+                "origin": "project_rules"
+              },
+              "role": "system"
+            }
+          },
+          "ephemeral": false,
+          "id": "evt-110",
+          "run_id": null,
+          "schema_version": 1,
+          "seq": 3,
+          "session_id": "ses-golden-forked",
+          "type": "system.message"
         },
         {
           "created_at": "2026-01-01T00:00:00+00:00",
@@ -1093,24 +2318,54 @@
                 {
                   "kind": "text",
                   "stable_prefix": false,
-                  "text": "write a.txt"
+                  "text": "write with a lease"
                 }
               ],
-              "id": "msg-cu",
+              "id": "msg-2",
               "metadata": {},
               "role": "user"
             }
           },
           "ephemeral": false,
-          "id": "evt-c-03",
-          "run_id": "run-a",
+          "id": "evt-111",
+          "run_id": "run-1",
           "schema_version": 1,
-          "seq": 3,
-          "session_id": "ses-golden-c",
+          "seq": 4,
+          "session_id": "ses-golden-forked",
           "type": "user.message"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "model": "fake-model",
+            "permission_mode": "default",
+            "provider": "fake",
+            "require_capability_lease": true,
+            "sandbox": "host",
+            "sandbox_descriptor": {
+              "filesystem_isolated": false,
+              "filesystem_write_isolated": false,
+              "image": null,
+              "mechanism": "unspecified",
+              "mount_scope": null,
+              "name": "host",
+              "network_isolated": false,
+              "network_mode": null,
+              "process_isolated": false,
+              "unsafe": true
+            },
+            "unsafe": true
+          },
+          "ephemeral": false,
+          "id": "evt-112",
+          "run_id": "run-1",
+          "schema_version": 1,
+          "seq": 5,
+          "session_id": "ses-golden-forked",
+          "type": "run.started"
         }
       ],
-      "session_id": "ses-golden-c"
+      "session_id": "ses-golden-forked"
     }
   ]
 }
