@@ -69,10 +69,17 @@ result = await runtime.coordinator.run(
 - [aicode](aicode/README.md) —— 用这套 Harness 组装出的 Coding Agent
 - [ADR](docs/adr/) —— 30 篇决策记录；每条安全默认值的变更都在其中留档
 
+## 安装
+
+```bash
+pip install -e . -e aicode/     # 两个包一起装；aicode 把 aiharness 钉死到同版本
+aicode                          # 任意目录，workspace 就是当前目录
+```
+
 ## 开发
 
 ```bash
-python3 -m pytest          # 291 harness + 86 aicode
+python3 -m pytest          # 291 harness + 93 aicode
 ruff check .
 mypy                       # strict，覆盖 aiharness 与 aicode
 ```

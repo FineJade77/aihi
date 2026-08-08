@@ -12,6 +12,15 @@ license = { text = "MIT" }
 dependencies = [
   "httpx>=0.27",
 ]
+classifiers = [
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Software Development :: Libraries",
+  "Typing :: Typed",
+]
 
 [project.optional-dependencies]
 # The harness is a library. Its CLI lives in an application.
@@ -28,6 +37,9 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/aiharness"]
+# Without this the marker is dropped and every consumer's type checker treats
+# this strictly typed library as untyped.
+artifacts = ["src/aiharness/py.typed"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

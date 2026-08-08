@@ -67,6 +67,41 @@ async def ensure_configured(
         return None
 
 
+async def acknowledge_host(
+    console: Console, config: AICodeConfig, *, reader: Reader | None = None
+) -> bool:
+    """Get a deliberate yes before running tools with no isolation.
+
+    The Harness refuses to build a Host sandbox without `unsafe=True`, and it is
+    right to: on Host, a tool call is a command on this machine. Answering here
+    is the same explicit act as passing `--unsafe-host`, and it is recorded the
+    same way in `run.started`. It is deliberately not remembered — no config
+    file may set it, so the question comes back next time.
+    """
+
+    if config.unsafe_host:
+        return True
+    palette = console.palette
+    console.line()
+    console.line("  This workspace will be edited directly on this machine.", palette.yellow)
+    console.line(
+        "  aicode runs tools on the host: there is no container between a command", palette.dim
+    )
+    console.line(
+        f"  and {config.workspace}. Every write and every command still asks.", palette.dim
+    )
+    ask = reader if reader is not None else input
+    try:
+        answer = (await asyncio.to_thread(ask, "  continue? [y/N]: ")).strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        answer = ""
+    if answer in {"y", "yes"}:
+        return True
+    console.line()
+    console.notice("Stopped. Pass --unsafe-host to skip this question next time.")
+    return False
+
+
 async def run_setup(
     console: Console,
     config: AICodeConfig,

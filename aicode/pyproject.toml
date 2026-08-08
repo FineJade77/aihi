@@ -5,11 +5,25 @@ build-backend = "hatchling.build"
 [project]
 name = "aicode"
 version = "0.1.0"
-description = "Coding Agent application composed from the AIHarness runtime"
+description = "A terminal coding agent composed from the AIHarness runtime"
+readme = "README.md"
 requires-python = ">=3.11"
+license = { text = "MIT" }
 dependencies = [
-  "aiharness>=0.1.0",
+  # Pinned to the exact version: the two are developed together and the app
+  # reaches into a public API that is still moving. A range here would let pip
+  # pair an app with a runtime it was never tested against.
+  "aiharness==0.1.0",
   "typer>=0.12",
+]
+classifiers = [
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Software Development",
 ]
 
 [project.optional-dependencies]
@@ -22,6 +36,9 @@ aicode = "aicode.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/aicode"]
+# Without this the marker is dropped and every consumer's type checker treats
+# the package as untyped.
+artifacts = ["src/aicode/py.typed"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src", "../src"]

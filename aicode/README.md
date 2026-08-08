@@ -19,6 +19,31 @@ Runtime 和 Session 实现。应用层只负责配置、Coding Tool 组合、CLI
 - `src/aicode/cli.py`：独立 `aicode` CLI，支持 Fake/真实 Provider 配置和持久化 Session；
 - `tests/`：应用层组合契约测试。
 
+## 安装
+
+装完之后 `aicode` 在 PATH 上，任何目录直接跑，workspace 就是当前目录。
+
+```bash
+pip install ./aiharness ./aiharness/aicode      # 两个包必须一起装
+aicode                                          # 在任意项目里
+```
+
+**必须同时安装两个包。** `aicode` 把依赖钉死成 `aiharness==0.1.0`（不是范围）：
+两者一起开发，应用层用的公开 API 还在动，范围会让 pip 配出一个从没被一起测过的组合。
+
+开发时用可编辑安装，改代码立即生效：
+
+```bash
+pip install -e ./aiharness -e ./aiharness/aicode
+pip install -e './aiharness/aicode[tui]'        # 顺带装上行编辑和历史
+```
+
+两个包都带 `py.typed`，所以嵌入 `aiharness` 的项目跑 mypy 能拿到类型。
+
+> **发布前必读**：PyPI 上 `aicode` 这个名字**已被占用**（`aiCode 23.6.22.0`，
+> PyPI 会把 `aiCode` 归一化成 `aicode`）。现在 `pip install aicode` 拿到的是别人的包。
+> `aiharness` 未被占用。发布前必须改名，否则用户装到的不是这个项目。
+
 ## 配置
 
 两个作用域，回答的是不同的问题：

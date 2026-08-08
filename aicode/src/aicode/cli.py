@@ -12,6 +12,7 @@ import json
 import os
 from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 import typer
 
@@ -21,7 +22,7 @@ from aicode.config import AICodeConfig
 from aicode.project import ensure_project_dir
 from aicode.tui import Console
 from aicode.tui.chat import ChatLoop
-from aicode.tui.setup import ensure_configured
+from aicode.tui.setup import acknowledge_host, ensure_configured
 from aiharness import (
     ApprovalResolver,
     EventInvariantViolation,
@@ -42,35 +43,99 @@ app = typer.Typer(
 SUSPENDED_EXIT_CODE = 2
 
 
-@app.callback(invoke_without_command=True)
-def default(ctx: typer.Context) -> None:
-    """Start the interactive session when no subcommand is given."""
+# Declared as factories rather than shared objects: Typer reads these while
+# building each command's schema, and two commands must not share one instance.
+def _opt_session() -> Any:
+    return typer.Option(None, "--session", help="Continue an existing session.")
 
-    if ctx.invoked_subcommand is None:
-        ctx.invoke(chat)
+
+def _opt_workspace() -> Any:
+    return typer.Option(
+        None,
+        "--workspace",
+        file_okay=False,
+        dir_okay=True,
+        help="Defaults to the current directory.",
+    )
+
+
+def _opt_db() -> Any:
+    return typer.Option(None, "--db", help="Defaults to <workspace>/.aicode/events.db.")
+
+
+def _opt_provider() -> Any:
+    return typer.Option(None, "--provider")
+
+
+def _opt_model() -> Any:
+    return typer.Option(None, "--model")
+
+
+def _opt_unsafe_host() -> Any:
+    return typer.Option(
+        False, "--unsafe-host", help="Explicitly acknowledge that Host execution is not isolated."
+    )
+
+
+def _opt_plan() -> Any:
+    return typer.Option(False, "--plan", help="Read-only: refuse every mutation.")
+
+
+def _opt_accept_edits() -> Any:
+    return typer.Option(
+        False, "--accept-edits", help="Auto-allow workspace edits; commands still ask."
+    )
+
+
+def _opt_setup() -> Any:
+    return typer.Option(False, "--setup", help="Ask the configuration questions again.")
+
+
+@app.callback(invoke_without_command=True)
+def default(
+    ctx: typer.Context,
+    session: str | None = _opt_session(),
+    workspace: Path | None = _opt_workspace(),
+    db: Path | None = _opt_db(),
+    provider: str | None = _opt_provider(),
+    model: str | None = _opt_model(),
+    unsafe_host: bool = _opt_unsafe_host(),
+    plan: bool = _opt_plan(),
+    accept_edits: bool = _opt_accept_edits(),
+    setup: bool = _opt_setup(),
+) -> None:
+    """Start the interactive session when no subcommand is given.
+
+    The options are repeated here so `aicode --model x` works, not only
+    `aicode chat --model x`: the bare command is what people actually type.
+    """
+
+    if ctx.invoked_subcommand is not None:
+        return
+    chat(
+        session=session,
+        workspace=workspace,
+        db=db,
+        provider=provider,
+        model=model,
+        unsafe_host=unsafe_host,
+        plan=plan,
+        accept_edits=accept_edits,
+        setup=setup,
+    )
 
 
 @app.command()
 def chat(
-    session: str | None = typer.Option(None, "--session", help="Continue an existing session."),
-    workspace: Path | None = typer.Option(None, "--workspace", file_okay=False, dir_okay=True),
-    db: Path | None = typer.Option(None, "--db"),
-    provider: str | None = typer.Option(None, "--provider"),
-    model: str | None = typer.Option(None, "--model"),
-    unsafe_host: bool = typer.Option(
-        False,
-        "--unsafe-host",
-        help="Explicitly acknowledge that Host execution is not isolated.",
-    ),
-    plan: bool = typer.Option(False, "--plan", help="Start read-only: refuse every mutation."),
-    accept_edits: bool = typer.Option(
-        False,
-        "--accept-edits",
-        help="Start with workspace edits auto-allowed; commands still ask.",
-    ),
-    setup: bool = typer.Option(
-        False, "--setup", help="Ask the configuration questions again before starting."
-    ),
+    session: str | None = _opt_session(),
+    workspace: Path | None = _opt_workspace(),
+    db: Path | None = _opt_db(),
+    provider: str | None = _opt_provider(),
+    model: str | None = _opt_model(),
+    unsafe_host: bool = _opt_unsafe_host(),
+    plan: bool = _opt_plan(),
+    accept_edits: bool = _opt_accept_edits(),
+    setup: bool = _opt_setup(),
 ) -> None:
     """Talk to the Coding Agent on this terminal until you leave.
 
@@ -122,6 +187,9 @@ async def _chat(
         if configured is None:
             return 1
         config = configured
+        if not await acknowledge_host(console, config):
+            return 1
+        config = replace(config, unsafe_host=True)
         ensure_project_dir(config.workspace)
         store = SQLiteEventStore(config.db_path)
         try:

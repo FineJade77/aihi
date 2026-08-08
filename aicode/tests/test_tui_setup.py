@@ -5,13 +5,14 @@ from __future__ import annotations
 import io
 import json
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 from aicode.config import AICodeConfig
 from aicode.project import ProjectPaths, credentials_path, user_paths, write_user_config
 from aicode.tui.console import Console
-from aicode.tui.setup import ensure_configured, run_setup
+from aicode.tui.setup import acknowledge_host, ensure_configured, run_setup
 from aicode.tui.theme import Palette
 
 
@@ -158,6 +159,44 @@ async def test_a_missing_key_reopens_setup_even_when_configured(tmp_path: Path) 
 
     assert result is not None
     assert result.api_key == "sk-late"
+
+
+@pytest.mark.asyncio
+async def test_running_on_the_host_needs_a_deliberate_yes(tmp_path: Path) -> None:
+    """No isolation is a real choice, so silence and Enter both mean no."""
+
+    console, stream = console_for()
+    config = AICodeConfig.load(workspace=tmp_path)
+
+    assert await acknowledge_host(console, config, reader=scripted([""])) is False
+    assert await acknowledge_host(console, config, reader=scripted(["n"])) is False
+    assert await acknowledge_host(console, config, reader=scripted([])) is False  # EOF
+    assert await acknowledge_host(console, config, reader=scripted(["y"])) is True
+    assert "no container between a command" in stream.getvalue()
+
+
+@pytest.mark.asyncio
+async def test_the_flag_answers_the_host_question_in_advance(tmp_path: Path) -> None:
+    console, stream = console_for()
+    acknowledged = replace(AICodeConfig.load(workspace=tmp_path), unsafe_host=True)
+
+    def refuse(_: str) -> str:
+        raise AssertionError("--unsafe-host already said yes")
+
+    assert await acknowledge_host(console, acknowledged, reader=refuse) is True
+    assert stream.getvalue() == ""
+
+
+@pytest.mark.asyncio
+async def test_the_host_acknowledgement_is_never_persisted(tmp_path: Path) -> None:
+    """It has to be asked again; a forgotten setting is not consent."""
+
+    console, _ = console_for()
+    await acknowledge_host(
+        console, AICodeConfig.load(workspace=tmp_path), reader=scripted(["y"])
+    )
+
+    assert AICodeConfig.load(workspace=tmp_path).unsafe_host is False
 
 
 @pytest.mark.asyncio
