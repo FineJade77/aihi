@@ -13,9 +13,95 @@ Runtime 和 Session 实现。应用层只负责配置、Coding Tool 组合、CLI
 - `src/aicode/prompt.py`：Coding Agent 的系统提示词（产品决策，不进 Harness）；
 - `src/aicode/context.py`：把仓库的 `AGENTS.md`/`CLAUDE.md` 作为项目规则注入上下文；
 - `src/aicode/app.py`：组装现有 Harness 能力的 `build_runtime`；
-- `src/aicode/approvals.py`：终端 Approval UX（Harness 只定义 Resolver 契约）；
+- `src/aicode/approvals.py`：一次性 CLI 的 Approval UX（Harness 只定义 Resolver 契约）；
+- `src/aicode/tui/`：交互式终端前端；
 - `src/aicode/cli.py`：独立 `aicode` CLI，支持 Fake/真实 Provider 配置和持久化 Session；
 - `tests/`：应用层组合契约测试。
+
+## 交互模式
+
+直接跑 `aicode` 就进入交互会话（等价于 `aicode chat`）：
+
+```
+  aicode · claude-opus-5
+  /Users/me/project
+  /help for commands, ctrl-d to leave
+
+› 把 greet 改好看点，然后跑一下
+
+我先看一下文件。
+
+● read_file(app.py)
+  ⎿      1	def greet(name):
+         2	    return 'hi ' + name
+    … +2 lines
+
+● edit_file(app.py)
+
+Approval required edit_file
+  --- app.py
+  +++ app.py
+  -    return 'hi ' + name
+  +    return f'hello {name}!'
+  reason:  This tool can mutate external state and requires approval.
+  sandbox: host (not isolated)
+  y=once  a=this tool for the rest of the run  n=deny  s=decide later
+  approve? [y/a/n/s] y
+  ⎿ Edited app.py; replaced 1 occurrence(s).
+```
+
+`aicode run` 保持原样不变——脚本和 CI 要的是 JSON Lines，不是终端 UI。
+
+### 它建在什么之上
+
+整个前端只用了 Harness 的四个公开接缝，**没有为它扩过一次 Harness**：
+
+| 前端能力 | 用的接缝 |
+|---|---|
+| 流式输出 | `Session.add_event_observer` + `model.chunk` 临时事件（ADR-0021，不落盘） |
+| 工具可视化 | `tool.requested` / `tool.started` / `tool.result` 事件 |
+| Esc / Ctrl-C 打断 | `RunCoordinator.run(cancel_event=...)` → `run.interrupted` |
+| 行内审批 | `ApprovalResolver` 协议 |
+
+因此终端里看到的每一件事都已经在事件日志里，`aicode events <session>` 能原样复现。
+
+### 斜杠命令
+
+| 命令 | 作用 |
+|---|---|
+| `/help` | 命令列表 |
+| `/clear` | 开一个**新** Session。日志只追加，遗忘是换一份日志，旧的仍在盘上 |
+| `/mode [plan\|default\|accept-edits\|bypass]` | 切换权限档位 |
+| `/model [name]` | 切换模型（下一回合生效） |
+| `/tools` | 列出模型能调用的工具 |
+| `/usage` | 本 Session 的 token 累计 |
+| `/session` | Session id、workspace、事件数 |
+| `/resume [run_id]` | 继续一个挂起等审批的 Run |
+| `/thinking` | 显示/隐藏推理过程 |
+| `/exit` | 离开（Ctrl-D 同效） |
+
+斜杠命令改的是**这个终端**的行为，永远不会被当成 Prompt 发给模型。
+
+### 打断
+
+Run 执行期间 Esc 或 Ctrl-C 会设置 `cancel_event`，Harness 在步骤之间检查它并写出 `run.interrupted`，
+所以被打断的 Run 仍然可重放。再按一次 Ctrl-C 交还默认处理，不会把人困住。
+
+Esc 需要把终端切到 cbreak，因此只在 POSIX 真 TTY 上启用；条件不满足就静默跳过，
+绝不把一个需要 shell 善后的 tty 交出去。审批提问期间会临时把终端还回去（`Interrupts.paused()`）。
+
+### 依赖
+
+**不新增必需依赖**。装了 `prompt_toolkit` 就有历史、行编辑和 `/` 补全，没装就退回 `input()`：
+
+```bash
+pip install 'aicode[tui]'
+```
+
+流式文本按原样输出、不做 Markdown 重渲染——边流边重绘 Markdown 必须缓冲加重画，
+长回复会闪。代价是代码块没有语法高亮。
+
+颜色遵循 `NO_COLOR` / `FORCE_COLOR`，非 TTY 自动关闭；`NO_COLOR` 优先级高于 `FORCE_COLOR`。
 
 ## 工具
 
@@ -100,14 +186,18 @@ aicode abandon <session> --run <run_id>          # 放弃这个 Run
 aicode run "重构这个模块" --unsafe-host -i       # y=批准 n=拒绝 其他=挂起
 ```
 
-`--accept-edits` 只自动放行工作区编辑；`shell` / `run_tests` 这类执行进程的工具
-仍然逐次需要批准。批准一次后，该工具在当前 Run 内不再询问。
+`--accept-edits` 只自动放行工作区编辑；`bash` 这类执行进程的工具仍然逐次需要批准。
+批准一次后（`a`），该工具在当前 Run 内不再询问。`--plan` 与 `--accept-edits` 互斥：
+一个拒绝全部改动，一个预先放行改动，同时给出的是矛盾而不是优先级。
 
-`AGENTS.md`/Skill 注入、Memory 和真实 Subagent 工作流仍属于后续 H-02 与应用层任务。
+交互模式下直接回答即可，挂起仍然可用（选 `s`）——挂起是写进日志的持久状态，
+可以换一个终端用 `aicode approve` / `aicode resume` 接着处理。
 
 ## 查看会话
 
 ```bash
+aicode                          # 进入交互会话
+aicode chat --session <id>      # 接着某个会话聊
 aicode sessions                 # 列出持久化的会话
 aicode events <session>         # 打印该会话的事件日志（JSON Lines）
 ```

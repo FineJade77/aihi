@@ -18,6 +18,8 @@ import typer
 from aicode.app import build_runtime
 from aicode.approvals import TerminalApprovalResolver
 from aicode.config import AICodeConfig
+from aicode.tui import Console
+from aicode.tui.chat import ChatLoop
 from aiharness import (
     ApprovalResolver,
     EventInvariantViolation,
@@ -30,9 +32,83 @@ from aiharness import (
     SQLiteEventStore,
 )
 
-app = typer.Typer(no_args_is_help=True, help="Local Coding Agent composed from AIHarness.")
+app = typer.Typer(
+    invoke_without_command=True,
+    help="Local Coding Agent composed from AIHarness.",
+)
 
 SUSPENDED_EXIT_CODE = 2
+
+
+@app.callback(invoke_without_command=True)
+def default(ctx: typer.Context) -> None:
+    """Start the interactive session when no subcommand is given."""
+
+    if ctx.invoked_subcommand is None:
+        ctx.invoke(chat)
+
+
+@app.command()
+def chat(
+    session: str | None = typer.Option(None, "--session", help="Continue an existing session."),
+    workspace: Path | None = typer.Option(None, "--workspace", file_okay=False, dir_okay=True),
+    db: Path | None = typer.Option(None, "--db"),
+    provider: str | None = typer.Option(None, "--provider"),
+    model: str | None = typer.Option(None, "--model"),
+    unsafe_host: bool = typer.Option(
+        False,
+        "--unsafe-host",
+        help="Explicitly acknowledge that Host execution is not isolated.",
+    ),
+    plan: bool = typer.Option(False, "--plan", help="Start read-only: refuse every mutation."),
+    accept_edits: bool = typer.Option(
+        False,
+        "--accept-edits",
+        help="Start with workspace edits auto-allowed; commands still ask.",
+    ),
+) -> None:
+    """Talk to the Coding Agent on this terminal until you leave."""
+
+    config = AICodeConfig.from_env(workspace=workspace)
+    config = replace(
+        config,
+        unsafe_host=True if unsafe_host else config.unsafe_host,
+        provider=provider or config.provider,  # type: ignore[arg-type]
+        model=model or config.model,
+        db_path=db or config.db_path,
+    )
+    store = SQLiteEventStore(config.db_path)
+    try:
+        current: Session | None = None
+        if session is not None:
+            current = _load_session(store, session)
+            config = _resume_config(
+                config,
+                current,
+                workspace_explicit=workspace is not None
+                or os.getenv("AICODE_WORKSPACE") is not None,
+                provider_explicit=provider is not None or os.getenv("AICODE_PROVIDER") is not None,
+                model_explicit=model is not None or os.getenv("AICODE_MODEL") is not None,
+            )
+        loop = ChatLoop(
+            config,
+            store,
+            Console(),
+            session=current,
+            permission_mode=_permission_mode(plan=plan, accept_edits=accept_edits),
+        )
+        try:
+            code = asyncio.run(_drive(loop))
+        except KeyboardInterrupt:
+            code = 130
+    finally:
+        store.close()
+    raise typer.Exit(code=code)
+
+
+async def _drive(loop: ChatLoop) -> int:
+    async with loop.console:
+        return await loop.run()
 
 
 @app.command()
@@ -48,6 +124,7 @@ def run(
         "--unsafe-host",
         help="Explicitly acknowledge that Host execution is not isolated.",
     ),
+    plan: bool = typer.Option(False, "--plan", help="Read-only: refuse every mutation."),
     accept_edits: bool = typer.Option(
         False,
         "--accept-edits",
@@ -101,9 +178,7 @@ def run(
                 current,
                 model=config.model,
                 user_message=Message.text("user", prompt),
-                permission_mode=(
-                    PermissionMode.ACCEPT_EDITS if accept_edits else PermissionMode.DEFAULT
-                ),
+                permission_mode=_permission_mode(plan=plan, accept_edits=accept_edits),
                 system_prompt=runtime.system_prompt,
             )
         )
@@ -119,6 +194,7 @@ def resume(
     db: Path | None = typer.Option(None, "--db"),
     workspace: Path | None = typer.Option(None, "--workspace", file_okay=False, dir_okay=True),
     unsafe_host: bool = typer.Option(False, "--unsafe-host"),
+    plan: bool = typer.Option(False, "--plan"),
     accept_edits: bool = typer.Option(False, "--accept-edits"),
     interactive: bool = typer.Option(False, "--interactive", "-i"),
 ) -> None:
@@ -155,9 +231,7 @@ def resume(
                 current,
                 run_id=target,
                 model=config.model,
-                permission_mode=(
-                    PermissionMode.ACCEPT_EDITS if accept_edits else PermissionMode.DEFAULT
-                ),
+                permission_mode=_permission_mode(plan=plan, accept_edits=accept_edits),
                 system_prompt=runtime.system_prompt,
             )
         )
@@ -305,6 +379,21 @@ def main() -> None:
 
 def _resolver(interactive: bool) -> ApprovalResolver | None:
     return TerminalApprovalResolver() if interactive else None
+
+
+def _permission_mode(*, plan: bool, accept_edits: bool) -> PermissionMode:
+    """Two flags, one axis: asking for both is a contradiction, not a precedence."""
+
+    if plan and accept_edits:
+        raise typer.BadParameter(
+            "--plan refuses every mutation and --accept-edits pre-approves them",
+            param_hint="--plan",
+        )
+    if plan:
+        return PermissionMode.PLAN
+    if accept_edits:
+        return PermissionMode.ACCEPT_EDITS
+    return PermissionMode.DEFAULT
 
 
 def _load_session(store: SQLiteEventStore, session_id: str) -> Session:

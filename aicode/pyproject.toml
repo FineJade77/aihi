@@ -12,6 +12,11 @@ dependencies = [
   "typer>=0.12",
 ]
 
+[project.optional-dependencies]
+# Line editing, history and slash-command completion for `aicode chat`. The TUI
+# degrades to input() without it rather than refusing to start.
+tui = ["prompt_toolkit>=3.0"]
+
 [project.scripts]
 aicode = "aicode.cli:main"
 

@@ -47,3 +47,9 @@ strict = true
 # The application layer is checked too: it is where composition mistakes land.
 packages = ["aiharness", "aicode"]
 mypy_path = "src:aicode/src"
+
+# An optional extra: aicode falls back to input() when it is absent, so the
+# type check must pass whether or not it is installed.
+[[tool.mypy.overrides]]
+module = "prompt_toolkit.*"
+ignore_missing_imports = true

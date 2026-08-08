@@ -128,18 +128,23 @@ def build_runtime(
     *,
     approval_resolver: ApprovalResolver | None = None,
     store: EventStore | None = None,
+    provider: Provider | None = None,
 ) -> AICodeRuntime:
     """Assemble aicode from Harness parts.
 
     Only the product decisions live here: which provider, which tools, the
     prompt, and how much authority a subagent may inherit. The wiring is the
     builder's job.
+
+    `provider` overrides what `config` would select. It exists so a caller can
+    drive the whole composition against a scripted model — the front end is
+    exactly where scripted models earn their keep.
     """
 
     sandbox = HostBackend(config.workspace, unsafe=config.unsafe_host)
     builder = (
         RuntimeBuilder(
-            provider=build_provider(config),
+            provider=provider if provider is not None else build_provider(config),
             sandbox=sandbox,
             tools=build_tool_registry(),
         )

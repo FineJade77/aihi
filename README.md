@@ -20,7 +20,7 @@ M0–M7 与 H-01 ~ H-13 全部完成。约 16.9k 行，17 个包，运行时依�
 ```
 L0 内核        对话表示 · 会话日志 · 事件流 · Provider 协议 · Tool 协议
 L1 能力层      工具集 · skills · memory · MCP · plugins · hooks · subagent
-L2 应用层      aicode/：Prompt · 工具选择 · CLI · 审批交互
+L2 应用层      aicode/：Prompt · 工具选择 · CLI · 终端 TUI · 审批交互
 ```
 
 内核只表达**意图**，厂商机制留在适配器。任何以厂商术语命名的内核字段都是设计错误。
@@ -72,7 +72,7 @@ result = await runtime.coordinator.run(
 ## 开发
 
 ```bash
-python3 -m pytest          # 268 harness + 42 aicode
+python3 -m pytest          # 291 harness + 64 aicode
 ruff check .
 mypy                       # strict，覆盖 aiharness 与 aicode
 ```
