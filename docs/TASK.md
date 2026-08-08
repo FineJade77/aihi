@@ -1,8 +1,11 @@
 # AIHarness 实施任务
 
-状态：实施中
+状态：M0–M7 与 H-01 ~ H-13 全部完成；当前无 Planned 项
 架构基线：[ARCHITECTURE.md](ARCHITECTURE.md)
 定位：**单机可嵌入库**。不做平台增强 —— 详见下节。
+
+规模：harness 16.9k 行 / 17 包，应用层 1.1k 行，测试 8.6k 行；
+运行时依赖仅 `httpx`；公共 API 154 个名字；30 篇 ADR。
 
 ## 范围：不做平台增强
 
@@ -319,6 +322,11 @@ PostgreSQL 生产化、Worker Control Plane 与部署安全、生产隔离 profi
 - ✅ 首次生成即暴露一处真实设计问题：`capability.lease.revoked` 合法地发生在 Run 终态之后，
   但 ReplayEngine 把任何带 `run_id` 的事件都当作 Run 成员。现已区分
   **推进 Run 的执行事件**与**引用 Run 的记账事件**。
+
+### 当前无待办
+
+H-01 ~ H-13 已全部关闭，H-03 ~ H-06 随平台增强移出范围。下一批工作应先做一次现状评估，
+而不是从既有清单里继续取项 —— 上一轮 backlog 的价值恰恰来自「先量化、再决定」。
 
 ### 待开发清单维护规则
 
