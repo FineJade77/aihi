@@ -47,7 +47,7 @@ ADR-0020 引入 `WAITING_APPROVAL` 之后还暴露出第二个问题：**挂起�
 
 ## 后果
 
-- `aicode` 的产品闭环补齐为 `approve` / `--deny` / `resume` / `abandon`；
+- 应用层的产品闭环补齐为 `approve` / `--deny` / `resume` / `abandon`；
 - `run.cancelled` 是新增事件类型，消费者需要识别；`run.interrupted` 语义不变，
   只是它现在真的对应 `INTERRUPTED` 状态；
 - `RunResult.error` 从 `run_cancelled` 变为 `run_interrupted`（打断路径）。

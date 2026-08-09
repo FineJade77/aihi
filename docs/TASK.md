@@ -1,30 +1,49 @@
 # AIHarness 实施任务
 
-状态：M0–M7 与 H-01 ~ H-13 全部完成；当前无 Planned 项
+状态：M0–M7 与 H-01 ~ H-14 全部完成；下一批方向见「范围与方向」
 架构基线：[ARCHITECTURE.md](ARCHITECTURE.md)
-定位：**单机可嵌入库**。不做平台增强 —— 详见下节。
+定位：**支撑多条 Agent 产品线的 Harness**。Coding 只是其中一条，Cowork（多人/多角色协作）
+等形态同样建立在它之上。
 
-规模：harness 16.9k 行 / 17 包，应用层 1.1k 行，测试 8.6k 行；
-运行时依赖仅 `httpx`；公共 API 154 个名字；30 篇 ADR。
+规模：harness 17.2k 行 / 17 包，测试 8.0k 行 / 296 用例；
+运行时依赖仅 `httpx`；公共 API 156 个名字；30 篇 ADR。
 
-## 范围：不做平台增强
+## 范围与方向
 
-`aiharness` 是库，不是服务。凡是「需要第二台机器、第二个进程或第二个团队才有意义」的能力
-都不在范围内。2026-08-07 按此判据移除了约 4,000 行已实现代码：
+2026-08-08 的范围调整，三条：
 
-| 已移除 | 行数 | 理由 |
+### 1. 目标不只是 Coding
+
+Harness 不知道自己在服务哪条产品线。Coding Agent 是第一个消费者，Cowork 等形态是下一批；
+凡是只对某一条产品线成立的 Prompt、角色编排、工具选择和默认策略，都留在应用层。
+
+### 2. 平台增强重新纳入范围（尚无实现代码）
+
+此前的判据是「凡是需要第二台机器、第二个进程或第二个团队才有意义的能力都不做」，
+2026-08-07 按此移除了约 4,000 行已实现代码。多人协作形态让「第二个团队」成为目标本身，
+这条判据因此作废。
+
+| 平台能力 | 曾经的实现 | 接入点（协议已在） |
 |---|---:|---|
-| `api/` FastAPI 控制面 | 620 | 带外 Approval 由应用 CLI 覆盖；唯一的 fastapi 依赖 |
-| Worker / Run lease / IPC 认证 | 1,108 | 只在多 Worker 部署下有意义 |
-| `PostgresEventStore` | 366 | 其价值是多进程并发写，即上一条的场景 |
-| 远程 OTel 管线与 exporter | ~700 | 单机观测用 JSONL sink 足够 |
-| `Mailbox` / `SubagentCoordinator` | 408 | 子代理互发消息是编排平台形态；`SubagentTool` 直连 `TaskGraph` |
-| Worktree / Patch 边界 | 221 | 没有执行体的校验器：既不创建 worktree 也不合并 patch |
-| Provider Golden / `EvalGate` | 631 | CI 工具而非 Harness 能力，且无 CI 在用 |
-| `cli/` | 175 | 它把 Provider 和工具集写死，违反自身分层原则；命令行属于应用层 |
+| HTTP 控制面 / 服务化 | `api/` FastAPI，620 行 | 公共 API + `EventStore` 投影 |
+| 多 Worker / Run lease / IPC 认证 | 1,108 行 | `EventStore`（`expected_seq` 已是并发写入必要条件） |
+| PostgreSQL Store | `PostgresEventStore`，366 行 | `EventStore` |
+| 远程 OTel 管线与 exporter | ~700 行 | `TelemetrySink` |
 
-**保留的是协议而非部署实现**：`EventStore`、`TelemetrySink`、`SandboxBackend` 都在。
-将来要做分布式是新增适配器，不是重写运行时。运行时依赖因此只剩 `httpx`。
+**重新纳入范围 ≠ 现在实现**：它们今天一行代码都没有，按需逐项立项。约束是硬的 ——
+只能以适配器形式接入既有协议，不得改变 Runtime 契约或安全默认值。需要改 `RunCoordinator`
+契约才能落地的「平台能力」，说明设计走错了方向。
+
+移除时判据仍然成立、不随本次调整回归的是：`Mailbox`/`SubagentCoordinator`（编排平台形态，
+`SubagentTool` 直连 `TaskGraph` 已够）、Worktree/Patch 边界（没有执行体的校验器）、
+Provider Golden/`EvalGate`（CI 工具而非 Harness 能力）、`cli/`（把 Provider 和工具集写死，
+违反自身分层原则）。
+
+### 3. 前端只做 TUI
+
+应用层的前端形态当前只有一个：终端 TUI。Web 与桌面是**待办**，不是不做 —— 但在 TUI
+形态跑通之前不开工。原 `aicode/`（终端 Coding Agent，约 1.1k 行）已于本次删除，
+应用层将按新定位重建。
 
 ## 交付原则
 
@@ -182,7 +201,8 @@ Plugin Host、激活前重新 Hash/Trust 校验、能力/权限子集策略、�
 - `sandbox/local`、`sandbox/docker`：OS-native 与容器执行后端。
 
 > 范围调整（2026-08-07）：本里程碑原含 `api/` 控制面、PostgreSQL Store、Worker lease 与
-> Mailbox/Worktree。它们曾实现并通过测试，现已按「不做平台增强」移除，见本文件顶部。
+> Mailbox/Worktree。它们曾实现并通过测试，现已移除；其中控制面、PostgreSQL 与 Worker
+> 已于 2026-08-08 重新纳入范围（待重做），见本文件顶部「范围与方向」。
 
 当前进度：M6a 完成子代理治理核心：`TaskSpec`/`TaskResult` canonical 类型、可快照 `TaskGraph`
 状态机、父子 capability/预算/深度/只读 workspace 子集校验、取消递归收尾和 Interrupted Resume。
@@ -210,7 +230,8 @@ M6d（控制面 / PostgreSQL / Run lease）与 Worktree/Patch 契约曾完成，
 - 事件轨迹导出、离线回放和评分器接口。
 
 > 范围调整（2026-08-07）：远程 OTel 管线、OTLP 传输、Worker trace 与 Provider Golden/EvalGate
-> 已移除。`TelemetrySink` Protocol 保留，远程导出属于部署适配器。
+> 已移除。`TelemetrySink` Protocol 保留，远程导出属于部署适配器；远程 OTel 已于 2026-08-08
+> 重新纳入范围（待重做），Provider Golden/EvalGate 不回归。
 
 当前进度：M7a 完成不绑定厂商的 `TraceContext`、`Observation`、`MetricPoint`、`CostRecord`、
 有界 `InMemoryTelemetrySink` 和 `Telemetry` facade。Session 旁路观察已持久化事件，观测故障
@@ -232,14 +253,15 @@ Provider 兼容性覆盖由 `tests/contract/test_model_providers.py` 承担。
 
 ## AIHarness 待开发 Backlog
 
-本节是 `aiharness` 基础层的持续任务清单，不是 `aicode` 或其他具体 Agent 的产品需求。
-目标形态是单机可嵌入库；平台类能力见顶部「范围」一节，不再作为待办。
+本节是 `aiharness` 基础层的持续任务清单，不是某个具体 Agent 产品的需求。
+产品侧的待办（应用层重建、前端形态）见顶部「范围与方向」。
 
 ### H-01：公共组合边界与兼容性
 
 - 状态：Done；验收：应用只依赖稳定 public API，公共 Schema 有兼容性测试。
-- ✅ 顶层 `aiharness.__all__` 作为唯一组合面；`aicode` 全部改为 `from aiharness import ...`；
-  AST import 边界测试 + 公共 API 契约测试（导出可解析/有序、不拉入可选依赖）；
+- ✅ 顶层 `aiharness.__all__` 作为唯一组合面；应用层全部改为 `from aiharness import ...`；
+  AST import 边界测试（随应用层删除，重建时补回）+ 公共 API 契约测试（导出可解析/有序、
+  不拉入可选依赖）；
 - ✅ Event 信封版本、迁移钩子（fail closed）、事件类型目录（durable/ephemeral/legacy）和
   冻结 v1 会话语料的兼容性测试；
 - ✅ 提升规则：**先有 Runtime 注入点，再写 ADR，最后才进公共 API**。`skills`/`memory`（ADR-0022）、
@@ -249,29 +271,29 @@ Provider 兼容性覆盖由 `tests/contract/test_model_providers.py` 承担。
 
 - 状态：Done；验收：终端可 Approval、Resume、取消并恢复完整 Tool 生命周期。
 - ✅ Runtime 可选注入边界（ADR-0022）：`RuntimeExtensions` + `ContextContributor`/`RunRecorder`；
-  Skill 索引进上下文、Memory 检索与候选抽取接入 Run；`aicode` 自动组合项目 Skill 索引；
+  Skill 索引进上下文、Memory 检索与候选抽取接入 Run；应用层自动组合项目 Skill 索引；
 - ✅ Approval Resolver 与挂起态（ADR-0020）：`RunState.WAITING_APPROVAL`、`run.suspended`/
   `run.resumed`、`ApprovalResolver` Protocol、默认挂起、Resume 执行挂起的 Tool Call；
-  `aicode` 提供终端 Resolver 与 `run -i` / `approve` / `resume`；
+  应用层提供终端 Resolver 与 `run -i` / `approve` / `resume`；
 - ✅ Execution 授权轴（ADR-0020）：`accept_edits` 不再放行 `process.exec` 工具，
   放行事件的 `rule_id` 与依据一致；
 - ✅ Subagent 接入（ADR-0023）：`SubagentTool` 走工具链路、子 Run 独立 Session、权限模式取严、
-  预算（超时/Token/Tool Call）真实生效、子代理默认不可再派生；`aicode` 以只读授权启用；
+  预算（超时/Token/Tool Call）真实生效、子代理默认不可再派生；应用层以只读授权启用；
 - ✅ 终态语义（ADR-0024）：`INTERRUPTED`/`CANCELLED` 分离，`abandon()` 补上挂起 Run 的出口；
 - ✅ 一次性 Approval（ADR-0025）：`GRANTED_ONCE` 与 `approval.consumed`，终端默认收紧为单次；
 - ✅ 工具面重整（ADR-0028）：`bash` 取代 argv 执行，新增只读 `glob`/`grep`，搜索不再需要审批。
 
-### H-03 ~ H-06：已移出范围
+### H-03 ~ H-06：重新纳入范围，未立项
 
 PostgreSQL 生产化、Worker Control Plane 与部署安全、生产隔离 profile、远程观测门禁 —— 四项
-均属平台增强，随对应代码一并移除（见顶部「范围」）。若将来确有分布式部署需求，它们是**新增
-适配器**，基于保留下来的 `EventStore` / `TelemetrySink` / `SandboxBackend` Protocol 实现，
-不需要改动运行时。
+曾随「不做平台增强」的判据一并移除，2026-08-08 判据作废后重新纳入范围（见顶部「范围与方向」），
+但**当前没有实现代码，也没有排期**。落地方式不变：基于保留下来的
+`EventStore` / `TelemetrySink` / `SandboxBackend` Protocol 新增适配器，不改动运行时。
 
 ### H-07：Plugin/MCP 应用层接入
 
 - 状态：Done（ADR-0026）；`register_mcp_tools`/`register_plugin_tools`、`StdioMcpTransport`、
-  `aicode` 的 `AICODE_MCP` 声明式接入；`Tool.spec` 改为只读属性以容纳远程工具的计算属性。
+  应用层以声明文件接入 MCP 服务器；`Tool.spec` 改为只读属性以容纳远程工具的计算属性。
 
 ### H-08：父子会话联合回放
 
@@ -285,7 +307,7 @@ PostgreSQL 生产化、Worker Control Plane 与部署安全、生产隔离 profi
 - ✅ `SummaryGenerator.generate` 改为 async；只有 `compact_l2()` 需要它，`compile()` 保持同步；
 - ✅ `ModelSummaryGenerator`：输入有界、回复必须落回同一 schema、任何故障降级而非失败；
 - ✅ 降级留痕：`strategy` 随摘要进入 `compaction.created`，`l2_model_fallback` 可见；
-- ✅ `ModelRoles.compact` + `aicode` 的 `AICODE_COMPACT_MODEL`（不设置则用离线摘要器）。
+- ✅ `ModelRoles.compact` + 应用层可配置压缩模型（不配置则用离线摘要器）。
 
 ### H-10：Session 分支
 
@@ -297,12 +319,12 @@ PostgreSQL 生产化、Worker Control Plane 与部署安全、生产隔离 profi
 
 ### H-11：Hook 的应用层入口
 
-- 状态：Done；验收：`aicode` 可配置「编辑后自动 format/lint」并有测试。
-- ✅ `AICODE_FORMAT_COMMAND` 注册 `FormatOnEditHook`：`mutates=True` 因而必须显式 trust
+- 状态：Done；验收：应用层可配置「编辑后自动 format/lint」并有测试。
+- ✅ 应用层用一条格式化命令注册 `FormatOnEditHook`：`mutates=True` 因而必须显式 trust
   （配置这个命令就是那次授权），只在 `governance.allows_mutation` 为真时执行，走沙箱，
   失败不影响 Run；被拒绝的编辑绝不会被格式化（有测试）；
 - ✅ `HookEvent`/`HookGovernance`/`HookOutcome` 进入公共 API；
-- ✅ **`aicode` 纳入 mypy 门禁**（此前从未被类型检查，因此 `config.shell_path` 这类
+- ✅ **应用层纳入 mypy 门禁**（此前从未被类型检查，因此 `config.shell_path` 这类
   笔误可以一路进到运行时）；修正 `ChildCoordinator` Protocol —— `RunCoordinator`
   原本不满足它（第三例「自己的实现满足不了自己的 Protocol」）。
 
@@ -323,10 +345,9 @@ PostgreSQL 生产化、Worker Control Plane 与部署安全、生产隔离 profi
   但 ReplayEngine 把任何带 `run_id` 的事件都当作 Run 成员。现已区分
   **推进 Run 的执行事件**与**引用 Run 的记账事件**。
 
-### 当前无待办
+### Harness 基础层：H-01 ~ H-14 全部关闭
 
-H-01 ~ H-13 已全部关闭，H-03 ~ H-06 随平台增强移出范围。下一批工作应先做一次现状评估，
-而不是从既有清单里继续取项 —— 上一轮 backlog 的价值恰恰来自「先量化、再决定」。
+基础层当前没有进行中的任务。下一批工作见本节末尾的「下一批：应用层与平台增强」。
 
 ### H-14：组合边界（policy vs plumbing）
 
@@ -336,18 +357,34 @@ H-01 ~ H-13 已全部关闭，H-03 ~ H-06 随平台增强移出范围。下一�
   `with_compaction`/`with_subagents` 各自显式开启；每个 `with_*` 返回新 builder；
 - ✅ 判据写进 ARCHITECTURE：「每个合理应用是否都会做同样选择，且做错了是否无声」；
 - ✅ 刻意不提供 `default_runtime()` —— 那是已删除的 `aiharness/cli` 犯过的错；
-- ✅ `aicode/app.py` 269 → 178 行，剩下的基本只是产品决策。
+- ✅ 应用层组合代码 269 → 178 行，剩下的基本只是产品决策。
+
+### 下一批：应用层与平台增强
+
+按顶部「范围与方向」立项，全部处于 **Planned，无实现代码**：
+
+| 编号 | 项 | 状态 | 说明 |
+|---|---|---|---|
+| P-01 | 应用层重建（TUI 前端） | Planned | 按「不只是 Coding」的定位重建：Prompt、工具选择、配置、审批交互、终端 TUI；必须带回 AST import 边界测试 |
+| P-02 | Cowork 形态所需的 Harness 缺口 | Planned | 先做现状评估再立项。只有 Provider-neutral、跨产品线可复用的缺口才进 Harness |
+| P-03 | 平台增强（H-03 ~ H-06） | Planned | 控制面、多 Worker、PostgreSQL、远程 OTel。只能是既有协议的新增适配器 |
+| P-04 | Web 前端 | 待办 | TUI 形态跑通前不开工 |
+| P-05 | 桌面前端 | 待办 | 同上 |
+
+顺序判据：**P-01 之前不做 P-03**。没有真实前端消费的平台能力，会重演一次「实现了、测试过、
+然后按判据删掉 4,000 行」——那正是这份文档顶部记录的事。
 
 ### 待开发清单维护规则
 
-1. `aicode`、`personal` 或其他 Agent 开发时，只有当缺口是 Provider-neutral、可复用且不携带具体
+1. 开发具体 Agent 产品时，只有当缺口是 Provider-neutral、可复用且不携带具体
    Agent Prompt/Policy 时，才提升为 `aiharness` 任务；否则留在对应 Agent 目录。
 2. 任何 Harness 改动必须在同一变更中更新本节状态、契约/安全测试，并在破坏公共 Schema 或默认值
    时新增或更新 ADR/RFC。
 3. Agent 开发过程中发现 Harness 缺口，可以先记录为 `H-*`，完成后回填实现文件、测试、ADR 和
    验收结果；不得创建第二份相互冲突的任务清单。
 4. 每个任务仍遵守 [AGENTS.md](../AGENTS.md) 的流程：先补契约和测试，再写实现，最后跑全量门禁。
-5. 新增能力前先问它是否属于顶部「范围」排除的平台增强；是则不做，只保留协议。
+5. 平台能力可以做，但只能是既有协议（`EventStore`/`TelemetrySink`/`SandboxBackend`）的新增
+   适配器；需要改 Runtime 契约或放松安全默认值才能落地的，先停下来写 ADR。
 
 ### 验收
 
@@ -368,4 +405,5 @@ H-01 ~ H-13 已全部关闭，H-03 ~ H-06 随平台增强移出范围。下一�
 | Provider 差异泄漏到内核 | Canonical Contract Test + 依赖方向检查 |
 | 应用层耦合 Harness 内部实现 | 顶层 `__all__` 是唯一组合面 + AST import 边界测试 |
 | 事件 Schema 悄悄漂移 | 信封版本 fail closed + 冻结语料覆盖全部 durable 类型 |
-| 平台能力重新蔓延回库 | 范围判据写在本文件顶部；新增前先自查 |
+| 平台能力侵入运行时契约 | 只能是既有协议的新增适配器；改 `RunCoordinator` 契约即先写 ADR |
+| 平台能力先于消费者实现 | P-01 之前不做 P-03；没有前端消费的能力不立项 |

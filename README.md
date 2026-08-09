@@ -2,19 +2,26 @@
 
 **Agent Harness 基础设施**——模型之外的全部：手、眼、记忆和安全边界，做成一个可嵌入的库。
 
-一套底座，支撑多条 Agent 产品线。`aicode`（终端 Coding Agent）是第一条，不是唯一一条。
+一套底座，支撑多条 Agent 产品线：Coding 只是其中一条，Cowork（多人/多角色协作）等形态同样
+建立在它之上。Harness 本身不知道自己在服务哪条产品线 —— 那是应用层的事。
 
-不是 SDK：SDK 意味着背后有一个平台。这里没有，也不绑任何厂商——`Provider` 协议加
-anthropic / openai / openai-compatible 适配器。也不是编排框架：核心难点在上下文管理、
-工具执行安全、会话可恢复，而不是编排抽象的可插拔性。
+不是某个厂商的 SDK：不绑任何厂商——`Provider` 协议加 anthropic / openai / openai-compatible
+适配器。也不是编排框架：核心难点在上下文管理、工具执行安全、会话可恢复，而不是编排抽象的
+可插拔性。将来要接的平台能力（控制面、多 Worker）也是既有协议的适配器，不是另一层抽象。
 
 ## 状态
 
-M0–M7 与 H-01 ~ H-14 全部完成。约 16.9k 行，19 个包，运行时依赖只有 `httpx`。
+M0–M7 与 H-01 ~ H-14 全部完成。约 17.2k 行，17 个包，运行时依赖只有 `httpx`。
 
-`aiharness` 是**库**，不带 CLI、不带 HTTP 服务。命令行、Prompt 和产品默认值属于 `aicode/`
-这样的应用层。平台类能力（控制面、多 Worker、PostgreSQL、远程 OTel）**刻意不做**，
-判据与已移除清单见 [TASK.md](docs/TASK.md#范围不做平台增强)。
+`aiharness` 今天仍是**库**，不带 CLI、不带 HTTP 服务。命令行、Prompt、前端和产品默认值属于
+应用层；本仓库当前不含应用层（原 `aicode/` 已删除）。
+
+范围上有两条正在推进的方向，都还没有实现代码，见 [TASK.md](docs/TASK.md#范围与方向)：
+
+- **平台增强重新纳入范围**：控制面、多 Worker、PostgreSQL、远程 OTel 不再是「刻意不做」，
+  而是按需实现的 backlog —— 保留下来的 `EventStore` / `TelemetrySink` / `SandboxBackend`
+  协议决定了它们是新增适配器，不是重写运行时；
+- **前端只做 TUI**：终端是唯一在做的前端形态，Web 与桌面是待办。
 
 本地默认执行后端为 Host。由于 Host 不能提供真正的系统隔离，启用时必须显式传入
 `unsafe=true`，并把该事实写入运行事件。Docker 与 OS-native 隔离是可选后端。
@@ -37,7 +44,8 @@ M0–M7 与 H-01 ~ H-14 全部完成。约 16.9k 行，19 个包，运行时依�
 组合层  builder · evals · __init__
         唯一知道全部的地方——这是 builder 的职责，也是别处不需要知道的原因
 
-应用层  aicode/ 这样的产品：Prompt · 工具选择 · CLI · 终端 TUI · 审批交互
+应用层  Coding / Cowork 等产品：Prompt · 工具选择 · CLI · 终端 TUI · 审批交互
+        （当前仓库不含应用层；前端形态只做 TUI，Web 与桌面待办）
 ```
 
 ★ 这条不变式由 [`tests/contract/test_layering.py`](tests/contract/test_layering.py) 强制执行。
@@ -49,7 +57,7 @@ M0–M7 与 H-01 ~ H-14 全部完成。约 16.9k 行，19 个包，运行时依�
 ### 为什么是一个发行包，不是 `aiharness-*` 多个
 
 拆发行包的标准理由是**依赖隔离**——让不用某功能的人不背它的依赖。这里没有可隔离的东西：
-19 个包里 18 个纯 stdlib，唯一的第三方依赖是 `models` 用的 `httpx`。
+17 个包里 16 个纯 stdlib，唯一的第三方依赖是 `models` 用的 `httpx`。
 而多包的成本是实的：一个没人测过的版本矩阵。
 
 判据（满足任一条才独立发行）：
@@ -57,7 +65,8 @@ M0–M7 与 H-01 ~ H-14 全部完成。约 16.9k 行，19 个包，运行时依�
 1. 它需要一个内核不该背的第三方依赖（例如 Docker SDK、厂商 SDK）；
 2. 它能脱离内核单独使用。
 
-今天没有任何包满足。「不做平台增强」的范围决定已经砍掉了主要候选（PostgreSQL、远程 OTel）。
+今天没有任何包满足。平台增强重新纳入范围后，主要候选（PostgreSQL Store、远程 OTel exporter、
+Docker SDK）会真正带来第三方依赖 —— **等它们有实现代码时再拆**，不是现在按预期拆。
 分层的价值来自被强制执行的边界，而不是 metadata 里的包名——边界在了，将来要拆随时能拆。
 
 ## 三条支撑其余一切的不变式
@@ -94,27 +103,25 @@ result = await runtime.coordinator.run(
 装配（Gateway 重试、Artifact 路径、Hook Bus、子代理接线）由 builder 承担。
 
 应用只能 `from aiharness import ...`：顶层 `__all__`（156 个名字）是唯一受支持的组合面，
-子模块路径一律视为内部实现。可运行的完整组合见 [`aicode/`](aicode/README.md)。
+子模块路径一律视为内部实现。上面的片段就是最小可运行组合；完整的产品级组合属于应用层。
 
 ## 文档
 
 - [Agent 开发规范](AGENTS.md) —— 项目级约束与安全不变式
 - [架构设计](docs/ARCHITECTURE.md) —— 稳定契约：分层、协议、权限、上下文、回放
-- [任务分解](docs/TASK.md) —— 里程碑、范围判据与已完成的 Backlog
-- [aicode](aicode/README.md) —— 用这套 Harness 组装出的 Coding Agent
+- [任务分解](docs/TASK.md) —— 里程碑、范围方向与已完成的 Backlog
 - [ADR](docs/adr/) —— 30 篇决策记录；每条安全默认值的变更都在其中留档
 
 ## 安装
 
 ```bash
-pip install -e . -e aicode/     # 两个包一起装；aicode 把 aiharness 钉死到同版本
-aicode                          # 任意目录，workspace 就是当前目录
+pip install -e .           # 库；应用层（TUI 前端）尚未在本仓库中
 ```
 
 ## 开发
 
 ```bash
-python3 -m pytest          # 296 harness + 93 aicode
+python3 -m pytest          # 296 passed
 ruff check .
-mypy                       # strict，覆盖 aiharness 与 aicode
+mypy                       # strict，零错误
 ```

@@ -67,7 +67,7 @@
 
 ## 后果
 
-- `aicode` 用 `AICODE_SUBAGENTS=true` 启用：只读工作区、无 `process.exec`、`max_depth=1`，
+- 应用层显式开启后使用：只读工作区、无 `process.exec`、`max_depth=1`，
   即「派一个子代理去读代码并汇报」，它自己不能改文件也不能再派人；
 - 子代理被审批挂起时，父 Run **不失败**：Tool Result 报告 `state=waiting` 和 `approval_id`，
   父代理可以据此决定下一步；

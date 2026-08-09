@@ -1,7 +1,7 @@
 # AIHarness 架构设计
 
 状态：Accepted
-版本：v0.2
+版本：v0.3
 日期：2026-08-08
 
 本文件只描述**稳定契约**：不变式、边界和协议。里程碑顺序与完成进度属于
@@ -16,8 +16,9 @@ AIHarness 是面向多种 Agent 的可复用运行时基础设施。模型只负
 当前规划分为两层：
 
 - `aiharness`：可嵌入 SDK，提供公共协议、实现、安全边界和可恢复运行时；它是库，不带 CLI；
-- `aicode/`、`personal/` 等应用：直接复用 Harness 的 Provider、Tool、Policy、Sandbox、Runtime
-  和 Context，负责 Prompt、Agent 角色、工具集合、项目规则、交互和产品默认值。
+- 应用层（Coding、Cowork 等产品）：直接复用 Harness 的 Provider、Tool、Policy、Sandbox、Runtime
+  和 Context，负责 Prompt、Agent 角色、工具集合、项目规则、交互和产品默认值。应用层的前端形态
+  当前只做 TUI，Web 与桌面是待办；本仓库目前不含应用层。
 
 Harness 不复制或内置某个产品 Agent；应用层也不得复制 Harness 实现。
 
@@ -36,15 +37,15 @@ AIHarness 负责：
 - 不把完整历史覆盖成摘要；
 - 不把第三方插件代码直接加载进 Harness 主进程；
 - 不把 Host 执行描述成真正的安全隔离；
-- 不在第一阶段构建复杂 TUI、聊天渠道或控制台。
-- 不把 Coding Agent、个人助理或其他具体 Agent 的 Prompt、项目规则、角色编排和 CLI 交互写进
+- 不在基础层构建 TUI、聊天渠道或控制台 —— 前端属于应用层；
+- 不把 Coding、Cowork 或其他具体 Agent 的 Prompt、项目规则、角色编排和 CLI 交互写进
   基础层。
 
 ## 2. 总体拓扑
 
 ```mermaid
 flowchart TB
-    A1["aicode / personal / other Agents"] --> H["aiharness public SDK"]
+    A1["Coding / Cowork / other Agents"] --> H["aiharness public SDK"]
     U["Generic CLI / HTTP API / Python SDK"] --> H
     H --> R["runtime: Run Coordinator"]
     R --> C["context: Context Compiler"]
@@ -75,15 +76,15 @@ flowchart TB
 控制面决定执行计划和上下文；执行面承载有副作用的工具、Hook 和插件。所有副作用必须
 经过 `tools → policy → hooks → sandbox` 链路。
 
-应用层只负责组装，不建立第二套 Runtime。典型 Coding Agent 组合是：
+应用层只负责组装，不建立第二套 Runtime。典型组合是：
 
 ```text
-aicode config / Prompt / AGENTS.md / terminal approval
+应用 config / Prompt / 项目规则 / TUI approval
   → aiharness Provider + Context + ToolRegistry + Policy + HostBackend
   → aiharness RunCoordinator + Session/EventStore
 ```
 
-`aicode` 通过 `from aiharness import ...` 取得 Provider、Tool、Policy、Sandbox、Runtime 和
+应用通过 `from aiharness import ...` 取得 Provider、Tool、Policy、Sandbox、Runtime 和
 `RuntimeExtensions`；是否注册 Edit/Shell/Test、选择哪个模型、如何展示 Approval 和是否组合
 Skill/Memory，由应用自行决定（见 §3.1 公共 API 边界）。
 
@@ -107,12 +108,6 @@ src/aiharness/
   artifacts/            # Large output and patch storage
   observability/        # OTel, logging, cost accounting
   evals/                # Datasets, replay, graders
-aicode/
-  src/aicode/            # Coding Agent composition, CLI and product workflows
-  tests/                 # Coding Agent acceptance and product tests
-personal/
-  src/personal_agent/    # Optional personal Agent composition
-  tests/
 tests/
   unit/
   contract/
@@ -122,12 +117,13 @@ tests/
 docs/
   rfcs/
   adr/
-plugins/
-examples/
 ```
 
+应用目录（Coding、Cowork 等产品：Prompt、工具选择、TUI 前端、审批交互）与 Harness 平级，
+当前不在本仓库中。
+
 依赖方向：`core` 不依赖其他业务包；领域包依赖 `core`；`runtime` 组装依赖；
-`aicode` 和其他应用依赖 `aiharness`，反向依赖一律禁止。Runtime 和领域
+应用依赖 `aiharness`，反向依赖一律禁止。Runtime 和领域
 包内部通过 Provider、Sandbox、Store、Plugin Host 等 Protocol 访问实现；应用组合层可以实例化
 Harness 已有的具体实现并注入。`aiharness/agents` 表示 Subagent 协调基础设施，不是用户可执行
 Agent 的应用目录。
@@ -142,11 +138,11 @@ Runtime 通过 `RuntimeExtensions` 组合可选能力：`ContextContributor` 贡
 
 | 层 | 负责 | 不负责 |
 |---|---|---|
-| `aiharness` | Canonical 类型、Runtime、Session、Provider、Tool、Policy、Sandbox、Context、Memory、Skill、Subagent、Eval、Observability | Coding Prompt、AGENTS.md 产品规则、具体 Agent 角色、终端 UI、产品凭据和应用默认工具集合 |
-| `aicode` | Coding Agent 组装、真实 Provider 配置、Coding 工具选择、项目上下文、Approval UX、Coding Memory/Subagent 工作流 | 复制 Runtime、Provider、Policy、Sandbox 或 Event Store 实现 |
-| `personal/` 等 | 各自 Agent 的 Prompt、角色、工具组合、交互和产品策略 | 直接修改另一个 Agent，或绕过 Harness 的工具/策略/沙箱链路 |
+| `aiharness` | Canonical 类型、Runtime、Session、Provider、Tool、Policy、Sandbox、Context、Memory、Skill、Subagent、Eval、Observability | 产品 Prompt、项目规则文件、具体 Agent 角色、终端 UI、产品凭据和应用默认工具集合 |
+| 应用层（Coding、Cowork 等） | Agent 组装、真实 Provider 配置、工具选择、项目上下文、Approval UX、Memory/Subagent 工作流、TUI 前端 | 复制 Runtime、Provider、Policy、Sandbox 或 Event Store 实现 |
+| 应用之间 | 各自 Agent 的 Prompt、角色、工具组合、交互和产品策略 | 直接修改另一个 Agent，或绕过 Harness 的工具/策略/沙箱链路 |
 
-基础实现可以直接复用，不需要搬移或复制：例如 `aicode` 直接实例化已有 Provider，创建
+基础实现可以直接复用，不需要搬移或复制：应用直接实例化已有 Provider，创建
 `ToolRegistry`，注册已有工具，注入 `DefaultPolicyEngine` 和 `HostBackend`，再构造
 `RunCoordinator`。只有跨应用可复用的缺口才进入 Harness H-* Backlog；应用专属逻辑留在应用目录。
 
@@ -169,9 +165,9 @@ mutating hook 需 trust）仍由 Harness 决定 —— 那里的「灵活」等�
 
 应用只能 `from aiharness import ...`：顶层 `aiharness/__init__.py` 的 `__all__` 是**唯一**受支持
 的组合面，只能通过子模块路径访问的一切都是内部实现，可以在没有 ADR 的情况下变更。
-`aicode/tests/test_import_boundary.py` 用 AST 扫描强制这条规则，
 `tests/contract/test_public_api.py` 保证导出集合可解析、有序，且导入公共 API 不会拉进任何可选
-依赖（`fastapi`、`psycopg`、`opentelemetry`）。
+依赖（`fastapi`、`psycopg`、`opentelemetry`）。应用侧的 AST import 边界扫描随删除的应用层一并
+移除，应用层重建时必须一起补回来 —— 这条规则只有在应用侧才可执行。
 
 `evals`、`api`、`cli` **刻意不导出**：它们尚未可注入
 `RunCoordinator`，因此不存在可承诺的组合契约。提升顺序不可颠倒 —— 先有 Runtime 注入点，
@@ -341,7 +337,7 @@ Token Counting、Context Window、Max Output 和 Effort Levels。
 
 `ModelGateway` 自身满足 `Provider` 协议，因此 Runtime 接受 Provider 的任何位置都可以接受
 Gateway；路由、有界重试、请求截止时间和 Fallback 对每次模型请求生效，而 `RunCoordinator`
-无需知道它们的存在。`aicode` 即使只配置一个 Provider 也走 Gateway —— 仅重试与截止时间就
+无需知道它们的存在。应用即使只配置一个 Provider 也应该走 Gateway —— 仅重试与截止时间就
 是净收益。
 
 `ModelRoles` 目前只定义**有真实消费者**的角色：
@@ -610,17 +606,18 @@ Worker 相关的 Trace 结构只用于**可观测性关联**，不承载授权�
 Python 3.11+、asyncio、SQLite。运行时依赖只有 `httpx`（Provider 适配需要）；核心不依赖
 LangChain/LangGraph，保持对 Provider 和执行面的控制。
 
-`aiharness` 的形态是**可嵌入库**：它不提供 CLI、HTTP 控制面或后台服务。命令行、交互方式和
-产品默认值属于 `aicode/` 这样的应用层（见 §3.1）。
+`aiharness` 今天的形态是**可嵌入库**：它不提供 CLI、HTTP 控制面或后台服务。命令行、交互方式和
+产品默认值属于应用层（见 §3.1）。
 
-不做的事，以及理由：
+平台类能力（下表）**已重新纳入范围**，但尚无实现代码。它们只能以适配器形式接入既有协议，
+不得改变 Runtime 的契约或安全默认值；范围与优先级见 [TASK.md](TASK.md#范围与方向)。
 
-| 不做 | 理由 |
+| 平台能力 | 接入点（已存在的协议） |
 |---|---|
-| HTTP 控制面 / 服务化 | 单机嵌入式 runtime 不需要；带外 Approval 由应用 CLI 覆盖 |
-| 多 Worker、Run lease、fencing | 只在分布式部署下有意义；`EventStore` Protocol 保留，需要时再实现 |
-| PostgreSQL | 其价值是多进程并发写，即上一条的场景 |
-| 远程 OTel 管线 | 单机可观测性用 JSONL sink 足够；`TelemetrySink` Protocol 保留 |
+| HTTP 控制面 / 服务化 | 公共 API + `EventStore` 投影；带外 Approval 走既有 Approval 事件 |
+| 多 Worker、Run lease、fencing | `EventStore`（`expected_seq` 已是并发写入的必要条件） |
+| PostgreSQL Store | `EventStore` |
+| 远程 OTel 管线 | `TelemetrySink` |
 
-保留的是能力协议而非具体部署实现：`EventStore`、`TelemetrySink`、`SandboxBackend` 都还在，
-将来要做分布式时是新增适配器，不是重写运行时。
+不变的是这一条：新增适配器，不是重写运行时。任何要求修改 `RunCoordinator` 契约才能落地的
+「平台能力」，都说明它的设计走错了方向。

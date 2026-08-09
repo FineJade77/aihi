@@ -30,7 +30,7 @@ ADR-0020 让 Policy 的 `ASK` 真正挂起 Run，但授权粒度只有一种：�
 
 Runtime 在一次调用被 `rule_id="approval.granted"` 放行后，如果匹配的授权是一次性的，
 就追加 `approval.consumed`，投影随即移除该授权。消费路径覆盖两种来源：Resolver 当场批准，
-以及带外 `aicode approve --once` 后 Resume 再使用。
+以及应用层带外授予一次性 Approval 后 Resume 再使用。
 
 投影 fail closed：消费未知授权、重复消费、消费 Run 级授权、`run_id` 不匹配，都会让
 `AuthorizationState` 抛错，而不是静默放行。
@@ -38,7 +38,7 @@ Runtime 在一次调用被 `rule_id="approval.granted"` 放行后，如果匹配
 ### 3. 终端默认改为一次性
 
 `y` = 只这一次，`a` = 本 Run 都行，`n` = 拒绝，其他/EOF = 挂起。
-`aicode approve` 新增 `--once`。
+应用层的带外 `approve` 需要提供「只这一次」的选项。
 
 ## 后果
 

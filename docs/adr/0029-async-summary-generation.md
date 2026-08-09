@@ -52,7 +52,7 @@
 `ModelRoles` 新增 `compact`（未设置时回落到 primary）。`vision`/`memory`/`judge` 仍不定义 ——
 同一条规则：没有消费者的角色是兑现不了的承诺。
 
-`aicode` 通过 `AICODE_COMPACT_MODEL` 启用；不设置时用离线摘要器，
+应用层配置压缩模型即启用；不配置时用离线摘要器，
 **压缩因此不依赖第二个模型可达**。
 
 ## 后果

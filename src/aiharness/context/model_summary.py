@@ -27,7 +27,7 @@ from aiharness.models.base import MessageEnd, Provider
 STRATEGY_MODEL = "l2_model"
 STRATEGY_FALLBACK = "l2_model_fallback"
 
-_INSTRUCTIONS = """You compact an AI coding agent's conversation so work can continue.
+_INSTRUCTIONS = """You compact an AI agent's conversation so work can continue.
 
 Reply with one JSON object and nothing else. Use these keys, all optional except
 objective; every value except objective is an array of short strings:

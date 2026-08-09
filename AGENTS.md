@@ -16,8 +16,8 @@
 
 AIHarness 是可复用的 Agent Harness 基础层，不是某一个具体 Agent 产品。它负责会话、上下文、
 模型适配、工具执行、策略、安全、记忆、Skill、Subagent、评估和可观测性；模型不是系统事实源，
-事件日志才是。Coding Agent、个人助理或其他 Agent 应在 `aicode/`、`personal/` 等应用目录中
-组合这些能力。
+事件日志才是。Coding、Cowork（多人/多角色协作）或其他形态的 Agent 应在各自的应用目录中
+组合这些能力 —— 本仓库当前不含应用层，前端形态只做 TUI，Web 与桌面是待办。
 
 ## 目录边界
 
@@ -39,13 +39,12 @@ src/aiharness/
   artifacts/       # Large outputs, patches, attachments
   observability/   # OTel, logs, metrics, cost accounting
   evals/           # Replay, datasets, graders
-
-aicode/            # Coding Agent application layer (depends on aiharness)
-personal/          # Optional personal Agent application (depends on aiharness)
 ```
 
+应用目录（Coding、Cowork 等产品，各自 depends on aiharness）当前不在本仓库中。
+
 依赖方向必须单向：`core` 不导入其他业务包；`runtime` 通过 Protocol 使用 Provider、Store、
-Tool、Policy、Hook 和 Sandbox；`aicode/`、`personal/` 等应用可以直接复用 `aiharness` 已有的
+Tool、Policy、Hook 和 Sandbox；应用目录可以直接复用 `aiharness` 已有的
 Provider、Tool、Policy、Sandbox 和 Runtime 实现，但 `aiharness` 不得反向 import 任意应用目录。
 应用之间也不得互相 import。应用负责 Prompt、Agent 角色、工具集合、配置和交互体验；Harness
 负责可复用实现和公共契约。`aiharness/agents/` 是 Subagent TaskGraph/协调基础设施，不代表某个
@@ -53,7 +52,7 @@ Provider、Tool、Policy、Sandbox 和 Runtime 实现，但 `aiharness` 不得�
 
 应用层只能 `from aiharness import ...`（顶层 `__all__` 是唯一受支持的组合面，子模块路径一律
 视为内部实现），不复制 Harness 实现，
-也不得把 Coding-specific Prompt、项目规则、凭据、终端 UI 或产品默认 Policy 写回核心包。若应用
+也不得把产品专属 Prompt、项目规则、凭据、终端 UI 或产品默认 Policy 写回核心包。若应用
 开发发现 Provider-neutral、可复用的 Harness 缺口，先在 [docs/TASK.md](docs/TASK.md) 的 H-* Backlog
 登记，再补契约、测试和实现；仅服务于单个 Agent 的逻辑留在对应应用目录。
 
@@ -124,7 +123,7 @@ Runtime 是显式状态机，不把状态藏在不可恢复的局部变量中。
 按 [TASK.md](docs/TASK.md) 的 M0–M7 和 H-* Backlog 顺序推进。每个任务先补契约和测试，再写实现；不要
 为了提前扩展而创建未接入 Runtime 的空抽象。
 
-开发 `aicode` 或其他 Agent 时，先复用已有 Harness 能力完成应用组合；只有跨 Agent 可复用的缺口
+开发具体 Agent 产品时，先复用已有 Harness 能力完成应用组合；只有跨 Agent 可复用的缺口
 才修改 `src/aiharness`。应用代码和 Harness 改动必须分别补对应目录的测试；Harness 公共契约或
 安全默认值变化时同步更新 ARCHITECTURE、TASK 和必要的 RFC/ADR。ARCHITECTURE 只写稳定契约，
 里程碑进度写进 TASK，单次取舍写进 ADR；不要把「当前 Mx 提供…」写进架构文档。
@@ -137,7 +136,7 @@ python3 -m pytest
 ```
 
 若环境已安装开发依赖，再运行 `ruff check .` 和 `mypy`（`mypy --strict` 当前为零错误，
-新增代码必须保持零错误；`psycopg`/`opentelemetry` 等可选依赖已在 `pyproject.toml` 中豁免）。新增 Provider、Store、Sandbox、
+新增代码必须保持零错误）。新增 Provider、Store、Sandbox、
 Tool 或 Plugin Host 必须补对应的 contract test；涉及安全行为必须补 `tests/security/`。
 
 ## 变更与安全

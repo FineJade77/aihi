@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "aiharness"
 version = "0.1.0"
-description = "A production-shaped runtime for AI coding agents"
+description = "A production-shaped runtime for AI agents"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
@@ -23,10 +23,8 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-# The harness is a library. Its CLI lives in an application.
-aicode = [
-  "typer>=0.12",
-]
+# The harness is a library. Front ends and their dependencies live in an
+# application layer, which this repository does not currently ship.
 dev = [
   "mypy>=1.10",
   "pytest>=8.0",
@@ -56,12 +54,5 @@ select = ["E", "F", "I", "UP", "B"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
-# The application layer is checked too: it is where composition mistakes land.
-packages = ["aiharness", "aicode"]
-mypy_path = "src:aicode/src"
-
-# An optional extra: aicode falls back to input() when it is absent, so the
-# type check must pass whether or not it is installed.
-[[tool.mypy.overrides]]
-module = "prompt_toolkit.*"
-ignore_missing_imports = true
+packages = ["aiharness"]
+mypy_path = "src"

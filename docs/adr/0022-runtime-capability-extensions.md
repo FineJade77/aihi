@@ -69,9 +69,9 @@ contributor 返回**已渲染的文本段落**，因此 `context` 不需要认�
 
 ## 后果
 
-- `aicode` 检测到 `<workspace>/.aicode/skills/`（或 `AICODE_SKILLS`）即自动组合 Skill 索引，
+- 应用层检测到工作区内的 Skill 目录即自动组合 Skill 索引，
   实测索引进入系统提示词、正文不进；
-- Memory 需要选择持久 Store 和作用域策略，属于产品决策，`aicode` 暂不默认启用，
+- Memory 需要选择持久 Store 和作用域策略，属于产品决策，应用层暂不默认启用，
   但可通过公共 API 直接组合；
 - contributor 在**每次模型请求前**重新求值，因此同一 Session 的第二个 Run 不会看到第一个 Run 的
   段落，长会话中的记忆检索也随最新用户输入更新；

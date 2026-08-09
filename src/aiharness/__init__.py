@@ -1,7 +1,7 @@
 """AIHarness public composition API.
 
-This module is the whole supported surface for applications (`aicode/`,
-`personal/`, …). Everything an application needs to assemble a runtime is
+This module is the whole supported surface for applications (a coding agent, a
+cowork agent, …). Everything an application needs to assemble a runtime is
 re-exported here; anything reachable only through a submodule path is internal
 and may change without an ADR.
 
