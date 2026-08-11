@@ -39,6 +39,10 @@ npm run build
 npm start -- --store ~/.aihi/code-agent/events.sqlite3
 ```
 
+`--workspace PATH` selects the project workspace and is an alias for `--cwd PATH`.
+When `sandbox.root` is omitted, the Worker uses this workspace as the sandbox root;
+an explicit `sandbox.root` can still restrict execution to another directory.
+
 Use `--config PATH` (or a project `aihi-code.toml`) to configure a provider,
 sandbox, Skill roots, and MCP servers. Credentials are referenced by environment
 variable name and are never stored in TOML:
@@ -55,7 +59,6 @@ api_key_env = "OPENAI_API_KEY"
 
 [sandbox]
 backend = "host"
-root = "."
 unsafe = true
 
 [artifacts]

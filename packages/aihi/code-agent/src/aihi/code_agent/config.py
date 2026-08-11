@@ -129,9 +129,11 @@ class CodeAgentConfig:
         value: Mapping[str, Any],
         *,
         base_dir: str | Path,
+        workspace_root: str | Path | None = None,
         source_path: str | Path | None = None,
     ) -> CodeAgentConfig:
         root = Path(base_dir).expanduser().resolve(strict=True)
+        workspace = Path(workspace_root or root).expanduser().resolve(strict=True)
         provider_map = _section(value, "provider")
         agent_map = _section(value, "agent")
         sandbox_map = _section(value, "sandbox")
@@ -172,8 +174,10 @@ class CodeAgentConfig:
             raise CodeAgentConfigError("agent.tools must contain at least one tool")
 
         sandbox_backend = _text(sandbox_map.get("backend", "host"), "sandbox.backend").lower()
-        sandbox_root = _resolve_path(
-            sandbox_map.get("root", "."), root, "sandbox.root"
+        sandbox_root = (
+            _resolve_path(sandbox_map["root"], root, "sandbox.root")
+            if "root" in sandbox_map
+            else workspace
         )
         sandbox = SandboxSettings(
             backend=sandbox_backend,
@@ -348,7 +352,12 @@ def load_config(
         raise CodeAgentConfigError(f"Cannot load configuration: {requested}") from error
     if not isinstance(raw, dict):
         raise CodeAgentConfigError("Configuration root must be a TOML table")
-    return CodeAgentConfig.from_mapping(raw, base_dir=requested.parent, source_path=requested)
+    return CodeAgentConfig.from_mapping(
+        raw,
+        base_dir=requested.parent,
+        workspace_root=workspace,
+        source_path=requested,
+    )
 
 
 def resolve_env_mapping(value: Mapping[str, str]) -> dict[str, str]:

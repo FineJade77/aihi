@@ -77,6 +77,31 @@ allowed_tools = ["search"]
     assert config.subagents.model == "subagent-demo"
 
 
+def test_config_defaults_sandbox_root_to_workspace_when_root_is_omitted(tmp_path) -> None:
+    config_path = tmp_path / "config" / "aihi-code.toml"
+    config_path.parent.mkdir()
+    config_path.write_text(
+        """
+[provider]
+name = "fake"
+model = "demo"
+
+[sandbox]
+backend = "host"
+unsafe = true
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    config = load_config(config_path, cwd=workspace)
+
+    assert config.base_dir == config_path.parent.resolve()
+    assert config.sandbox.root == workspace.resolve()
+
+
 @pytest.mark.asyncio
 async def test_config_defaults_keep_host_execution_disabled(tmp_path) -> None:
     config = load_config(cwd=tmp_path)

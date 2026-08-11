@@ -21,10 +21,10 @@ function parseArgs(argv: string[]): CliOptions {
   };
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
-    if (argument === "--cwd" || argument === "--store" || argument === "--config" || argument === "--provider" || argument === "--model" || argument === "--session") {
+    if (argument === "--cwd" || argument === "--workspace" || argument === "--store" || argument === "--config" || argument === "--provider" || argument === "--model" || argument === "--session") {
       const value = argv[index + 1];
       if (!value) throw new Error(`${argument} requires a value`);
-      if (argument === "--cwd") options.cwd = value;
+      if (argument === "--cwd" || argument === "--workspace") options.cwd = value;
       if (argument === "--store") options.storePath = value;
       if (argument === "--config") options.configPath = value;
       if (argument === "--provider") options.provider = value;
@@ -35,7 +35,7 @@ function parseArgs(argv: string[]): CliOptions {
     }
     if (argument === "--help" || argument === "-h") {
       process.stdout.write(
-        "Usage: aihi-code [--cwd PATH] [--store PATH] [--config PATH] [--provider NAME] [--model NAME] [--session SESSION_ID]\n",
+        "Usage: aihi-code [--workspace PATH] [--cwd PATH] [--store PATH] [--config PATH] [--provider NAME] [--model NAME] [--session SESSION_ID]\n",
       );
       process.exit(0);
     }
