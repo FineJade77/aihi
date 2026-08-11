@@ -76,12 +76,17 @@ history, `/fork [SEQ]` creates a branch, and `/cancel RUN_ID` requests
 cancellation of an active run or closes a suspended/recoverable run. Model
 chunks are delivered as ephemeral Worker notifications and rendered while the
 run is in progress.
+The default Coding tool set also includes read-only `git_status` and `git_diff`;
+they never stage or modify changes and remain subject to the same Tool policy
+chain.
 
 After `/new`, ordinary input is a user turn and runs the Coding Agent loop.
 Use `/provider NAME [MODEL]` and `/model MODEL` to choose a configured Provider
 profile and model for subsequent new Runs; `/config` shows the effective,
 non-secret configuration. Provider profiles are declared under
 `[providers.<name>]`, while `[provider]` remains the default.
+Use `/mcp` and `/tools` to inspect configured integrations, and
+`/skill-disable NAME` or `/skill-untrust NAME` to remove a Skill's active trust.
 `/run MESSAGE` is an explicit equivalent; `/resume RUN_ID` continues an
 interrupted or approval-suspended run. Use `/approvals`, `/approve ID [once]`,
 and `/deny ID` to operate the Worker-owned approval projection; resolving an

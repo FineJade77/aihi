@@ -166,6 +166,10 @@ api_key_env = "OPENAI_API_KEY"
 backend = "host"
 root = "."
 unsafe = true
+
+[mcp.servers.example]
+command = ["python3", "-m", "example_server"]
+allowed_tools = ["search"]
 """,
         encoding="utf-8",
     )
@@ -186,6 +190,26 @@ unsafe = true
     assert descriptor["provider"]["name"] == "fake"
     assert {item["name"] for item in descriptor["providers"]} == {"fake", "openai"}
     assert descriptor["providers"][1]["api_key_env"] == "OPENAI_API_KEY"
+    created = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "session.create",
+            "params": {"cwd": str(tmp_path)},
+        }
+    )
+    assert created is not None
+    session_id = created["result"]["session"]["session_id"]  # type: ignore[index]
+    mcp = server.handle(
+        {"jsonrpc": "2.0", "id": 4, "method": "mcp.list", "params": {"session_id": session_id}}
+    )
+    assert mcp is not None
+    assert mcp["result"]["servers"][0]["name"] == "example"  # type: ignore[index]
+    tools = server.handle(
+        {"jsonrpc": "2.0", "id": 5, "method": "tool.list", "params": {"session_id": session_id}}
+    )
+    assert tools is not None
+    assert tools["result"]["tools"][0]["name"] == "read_file"  # type: ignore[index]
     server.close()
 
 

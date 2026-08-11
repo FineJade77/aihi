@@ -284,7 +284,7 @@ export function TuiApp({ client, cwd, provider, model, sessionId }: TuiAppProps)
         return;
       }
       if (name === "help" || name === "h") {
-        setStatus("message → run · /provider NAME · /model NAME · /config · /runs · /cancel RUN_ID · /history · /fork [SEQ] · /approvals · /approve ID [once] · /skills · /skill-trust NAME · /quit");
+        setStatus("message → run · /provider NAME · /model NAME · /config · /runs · /cancel RUN_ID · /history · /fork [SEQ] · /approvals · /approve ID [once] · /skills · /skill-trust NAME · /skill-disable NAME · /skill-untrust NAME · /mcp · /tools · /quit");
         return;
       }
       if (name === "config") {
@@ -456,6 +456,38 @@ export function TuiApp({ client, cwd, provider, model, sessionId }: TuiAppProps)
         setStatus(`Trusted and enabled Skill ${skillName}`);
         return;
       }
+      if (name === "skill-disable") {
+        if (!selectedSessionId) throw new Error("Create or open a session first");
+        const skillName = args[0];
+        if (!skillName) throw new Error("Usage: /skill-disable SKILL_NAME");
+        await client.trustSkill(selectedSessionId, skillName, false);
+        setStatus(`Disabled Skill ${skillName}`);
+        return;
+      }
+      if (name === "skill-untrust") {
+        if (!selectedSessionId) throw new Error("Create or open a session first");
+        const skillName = args[0];
+        if (!skillName) throw new Error("Usage: /skill-untrust SKILL_NAME");
+        await client.untrustSkill(selectedSessionId, skillName);
+        setStatus(`Removed trust for Skill ${skillName}`);
+        return;
+      }
+      if (name === "mcp") {
+        if (!selectedSessionId) throw new Error("Create or open a session first");
+        const servers = await client.listMcpServers(selectedSessionId);
+        setStatus(
+          servers.length === 0
+            ? "No MCP servers configured"
+            : servers.map((server) => `${server.name} · new runs`).join(" · "),
+        );
+        return;
+      }
+      if (name === "tools") {
+        if (!selectedSessionId) throw new Error("Create or open a session first");
+        const tools = await client.listTools(selectedSessionId);
+        setStatus(tools.length === 0 ? "No tools configured" : tools.map((tool) => tool.name).join(" · "));
+        return;
+      }
       if (!trimmed.startsWith("/")) {
         if (!selectedSessionId) throw new Error("Create or open a session first");
         const runId = `run_tui_${Date.now()}`;
@@ -543,7 +575,7 @@ export function TuiApp({ client, cwd, provider, model, sessionId }: TuiAppProps)
           placeholder="Type /help for commands"
         />
       </Box>
-      <Text color={COLORS.muted}>message  /provider  /model  /config  /runs  /cancel  /history  /fork  /approvals  /approve  /skills  /skill-trust  /resume  /quit · Ctrl-C exits</Text>
+      <Text color={COLORS.muted}>message  /provider  /model  /config  /runs  /cancel  /history  /fork  /approvals  /approve  /skills  /skill-trust  /skill-disable  /skill-untrust  /mcp  /tools  /resume  /quit · Ctrl-C exits</Text>
     </Box>
   );
 }

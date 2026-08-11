@@ -217,6 +217,43 @@ async def test_skill_trust_commands_enable_explicit_skill_loading(tmp_path) -> N
     )
     assert listed_again is not None
     assert listed_again["result"]["skills"][0]["loadable"] is True  # type: ignore[index]
+    disabled = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 6,
+            "method": "skill.trust",
+            "params": {"session_id": session_id, "name": "coding.demo", "enable": False},
+        }
+    )
+    assert disabled is not None
+    assert disabled["result"]["skill"]["enabled"] is False  # type: ignore[index]
+    reenabled = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 7,
+            "method": "skill.trust",
+            "params": {"session_id": session_id, "name": "coding.demo"},
+        }
+    )
+    assert reenabled is not None
+    untrusted = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 8,
+            "method": "skill.untrust",
+            "params": {"session_id": session_id, "name": "coding.demo"},
+        }
+    )
+    assert untrusted is not None
+    assert untrusted["result"]["removed"] is True  # type: ignore[index]
+    server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 9,
+            "method": "skill.trust",
+            "params": {"session_id": session_id, "name": "coding.demo"},
+        }
+    )
     server.close()
 
     config = load_config(config_path, cwd=tmp_path)

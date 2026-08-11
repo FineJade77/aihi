@@ -41,6 +41,7 @@ from aihi.models import (
     Provider,
 )
 
+from .coding_tools import GitDiffTool, GitStatusTool
 from .config import (
     CodeAgentConfig,
     CodeAgentConfigError,
@@ -263,6 +264,8 @@ def _build_tools(
         "edit_file": EditFileTool,
         "write_file": WriteFileTool,
         "bash": BashTool,
+        "git_diff": GitDiffTool,
+        "git_status": GitStatusTool,
     }
     tool_names = list(config.tools)
     if config.skill_load_tool and skill_loader is not None and "load_skill" not in tool_names:

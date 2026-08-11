@@ -21,7 +21,16 @@ from aihi.agent.skills import SkillScope
 
 _ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _CONFIG_FILENAME = "aihi-code.toml"
-_DEFAULT_TOOLS = ("read_file", "glob", "grep", "edit_file", "write_file", "bash")
+_DEFAULT_TOOLS = (
+    "read_file",
+    "glob",
+    "grep",
+    "git_status",
+    "git_diff",
+    "edit_file",
+    "write_file",
+    "bash",
+)
 
 
 class CodeAgentConfigError(ValueError):

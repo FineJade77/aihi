@@ -168,6 +168,22 @@ export interface SkillDescriptor {
   loadable: boolean;
 }
 
+export interface McpServerDescriptor {
+  name: string;
+  command: string[];
+  cwd: string | null;
+  env_keys: string[];
+  allowed_tools: string[] | null;
+  request_timeout_seconds: number;
+  reconnect_attempts: number;
+  applies_to: "new_run";
+}
+
+export interface ToolDescriptor {
+  name: string;
+  configured: boolean;
+}
+
 export interface TaskDescriptor {
   spec: JsonObject;
   state: TaskState;

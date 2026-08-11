@@ -15,3 +15,5 @@ exposed as an explicit, trust-checked `load_skill` Tool when enabled.
 Provider profiles can be declared as `[providers.<name>]`; `config.get` exposes
 only non-secret metadata, and `run.start` accepts a configured provider/model
 selection. Resume continues to enforce the persisted run configuration.
+The application adds read-only `git_status`/`git_diff` tools and exposes
+`skill.untrust`, `mcp.list`, and `tool.list` through the Worker.

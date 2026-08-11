@@ -198,6 +198,30 @@ COMMAND_DESCRIPTORS: Final[tuple[JsonObject, ...]] = (
         "mutates": True,
         "requires_approval": False,
     },
+    {
+        "name": "skill.untrust",
+        "aliases": [],
+        "scope": "skill",
+        "execution": "worker",
+        "mutates": True,
+        "requires_approval": False,
+    },
+    {
+        "name": "mcp.list",
+        "aliases": [],
+        "scope": "integration",
+        "execution": "worker",
+        "mutates": False,
+        "requires_approval": False,
+    },
+    {
+        "name": "tool.list",
+        "aliases": [],
+        "scope": "integration",
+        "execution": "worker",
+        "mutates": False,
+        "requires_approval": False,
+    },
 )
 _COMMAND_NAMES: Final[frozenset[str]] = frozenset(
     str(command["name"]) for command in COMMAND_DESCRIPTORS
@@ -448,6 +472,12 @@ class WorkerServer:
             return self._skill_list(params)
         if method == "skill.trust":
             return self._skill_trust(params)
+        if method == "skill.untrust":
+            return self._skill_untrust(params)
+        if method == "mcp.list":
+            return self._mcp_list(params)
+        if method == "tool.list":
+            return self._tool_list(params)
         raise RpcValidationError(f"Method not found: {method}", code=METHOD_NOT_FOUND)
 
     def _ensure_store(self) -> EventStore:
@@ -928,6 +958,52 @@ class WorkerServer:
             raise RpcValidationError(f"Skill was not discovered: {name}", code=INVALID_PARAMS)
         record = trust.trust(candidate, trusted_by=trusted_by, enable=enable)
         return {"session_id": session.id, "skill": record.to_dict()}
+
+    def _skill_untrust(self, params: JsonObject) -> JsonObject:
+        session = self._load_session(params)
+        name = self._required_text(params, "name", max_length=256)
+        config = load_config(self._config_path, cwd=session.cwd)
+        discovery, trust = self._skill_components(config)
+        candidate = next((item for item in discovery.discover() if item.key == name), None)
+        if candidate is None:
+            raise RpcValidationError(f"Skill was not discovered: {name}", code=INVALID_PARAMS)
+        trust.store.remove(
+            candidate.frontmatter.name, candidate.frontmatter.version, candidate.scope
+        )
+        return {"session_id": session.id, "name": name, "removed": True}
+
+    def _mcp_list(self, params: JsonObject) -> JsonObject:
+        session = self._load_session(params)
+        config = load_config(self._config_path, cwd=session.cwd)
+        return {
+            "session_id": session.id,
+            "servers": [
+                {
+                    "name": server.name,
+                    "command": list(server.command),
+                    "cwd": str(server.cwd) if server.cwd else None,
+                    "env_keys": sorted(server.env),
+                    "allowed_tools": (
+                        sorted(server.allowed_tools) if server.allowed_tools is not None else None
+                    ),
+                    "request_timeout_seconds": server.request_timeout_seconds,
+                    "reconnect_attempts": server.reconnect_attempts,
+                    "applies_to": "new_run",
+                }
+                for server in config.mcp_servers
+            ],
+        }
+
+    def _tool_list(self, params: JsonObject) -> JsonObject:
+        session = self._load_session(params)
+        config = load_config(self._config_path, cwd=session.cwd)
+        names = list(config.tools)
+        if config.skill_load_tool and config.skill_roots and "load_skill" not in names:
+            names.append("load_skill")
+        return {
+            "session_id": session.id,
+            "tools": [{"name": name, "configured": True} for name in names],
+        }
 
     @staticmethod
     def _skill_components(config: CodeAgentConfig) -> tuple[SkillDiscovery, SkillTrustManager]:

@@ -12,6 +12,8 @@ import type {
   SessionDescriptor,
   SessionEventsResult,
   SkillDescriptor,
+  McpServerDescriptor,
+  ToolDescriptor,
   RunResult,
   RunDescriptor,
   RunCancelResult,
@@ -397,6 +399,28 @@ export class RpcClient {
       trusted_by: "tui",
     });
     return result.skill;
+  }
+
+  public async untrustSkill(sessionId: string, name: string): Promise<boolean> {
+    const result = await this.request<{ removed: boolean }>("skill.untrust", {
+      session_id: sessionId,
+      name,
+    });
+    return result.removed;
+  }
+
+  public async listMcpServers(sessionId: string): Promise<McpServerDescriptor[]> {
+    const result = await this.request<{ servers: McpServerDescriptor[] }>("mcp.list", {
+      session_id: sessionId,
+    });
+    return result.servers;
+  }
+
+  public async listTools(sessionId: string): Promise<ToolDescriptor[]> {
+    const result = await this.request<{ tools: ToolDescriptor[] }>("tool.list", {
+      session_id: sessionId,
+    });
+    return result.tools;
   }
 
   public async close(): Promise<void> {
