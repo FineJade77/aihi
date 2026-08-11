@@ -10,6 +10,19 @@ from aihi.code_agent.protocol import (
     SERVER_NAME,
 )
 from aihi.code_agent.runtime import CodeAgentRuntime
+from aihi.code_agent.turns import (
+    ApprovalRequested,
+    AssistantMessage,
+    RunStateChanged,
+    SubagentCompleted,
+    SubagentSpawned,
+    SubagentStarted,
+    TextDelta,
+    ToolCallFinished,
+    ToolCallStarted,
+    TurnEvent,
+    TurnFinished,
+)
 
 
 def __getattr__(name: str) -> Any:
@@ -25,12 +38,23 @@ def __getattr__(name: str) -> Any:
 
 __all__ = [
     "COMMAND_DESCRIPTORS",
+    "ApprovalRequested",
+    "AssistantMessage",
     "CodeAgentConfig",
     "CodeAgentConfigError",
     "CodeAgentRuntime",
     "FrameError",
     "PROTOCOL_VERSION",
+    "RunStateChanged",
     "SERVER_NAME",
+    "SubagentCompleted",
+    "SubagentSpawned",
+    "SubagentStarted",
+    "TextDelta",
+    "ToolCallFinished",
+    "ToolCallStarted",
+    "TurnEvent",
+    "TurnFinished",
     "WorkerServer",
     "main",
     "load_config",

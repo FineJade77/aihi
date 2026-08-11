@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import os
-from dataclasses import dataclass
-from typing import cast
+from collections.abc import AsyncIterator, Coroutine
+from dataclasses import dataclass, field
+from typing import Any, cast
 
 from aihi.agent import (
     AgentBudget,
+    AgentRuntimeError,
     BashTool,
     DockerBackend,
     EditFileTool,
@@ -53,6 +55,7 @@ from .config import (
     resolve_env_mapping,
 )
 from .skills import LoadSkillTool
+from .turns import TurnEvent, TurnEventPump, TurnFinished, drive_turn
 
 _DEFAULT_KEY_ENV = {
     "openai": "OPENAI_API_KEY",
@@ -69,6 +72,7 @@ class CodeAgentRuntime:
     config: CodeAgentConfig
     runtime: Runtime
     mcp_clients: tuple[McpClient, ...] = ()
+    pump: TurnEventPump = field(default_factory=TurnEventPump)
 
     @classmethod
     async def create(
@@ -139,6 +143,40 @@ class CodeAgentRuntime:
             raise
         return cls(config=config, runtime=runtime, mcp_clients=tuple(clients))
 
+    def stream(
+        self,
+        session: Session,
+        *,
+        user_message: str,
+        run_id: str | None = None,
+        model: str | None = None,
+        system_prompt: str | None = None,
+        max_output_tokens: int | None = None,
+        cancel_event: asyncio.Event | None = None,
+    ) -> AsyncIterator[TurnEvent]:
+        """Stream one user turn as typed domain events, ending in `TurnFinished`."""
+
+        text = user_message.strip()
+        if not text:
+            raise CodeAgentConfigError("user_message must not be empty")
+
+        def invoke() -> Coroutine[Any, Any, RunResult]:
+            return self.runtime.coordinator.run(
+                session,
+                model=model or self.config.provider.model,
+                user_message=Message.text("user", text),
+                run_id=run_id,
+                permission_mode=self.config.permission_mode,
+                require_capability_lease=self.config.require_capability_lease,
+                system_prompt=(
+                    self.config.system_prompt if system_prompt is None else system_prompt
+                ),
+                max_output_tokens=max_output_tokens or self.config.max_output_tokens,
+                cancel_event=cancel_event,
+            )
+
+        return drive_turn(session=session, pump=self.pump, invoke=invoke)
+
     async def run(
         self,
         session: Session,
@@ -150,24 +188,26 @@ class CodeAgentRuntime:
         max_output_tokens: int | None = None,
         cancel_event: asyncio.Event | None = None,
     ) -> RunResult:
-        """Run one user turn through the Harness coordinator loop."""
+        """Run one user turn through the Harness coordinator loop.
 
-        text = user_message.strip()
-        if not text:
-            raise CodeAgentConfigError("user_message must not be empty")
-        return await self.runtime.coordinator.run(
+        Implemented on top of `stream()` so there is only one execution path.
+        """
+
+        final: RunResult | None = None
+        async for event in self.stream(
             session,
-            model=model or self.config.provider.model,
-            user_message=Message.text("user", text),
+            user_message=user_message,
             run_id=run_id,
-            permission_mode=self.config.permission_mode,
-            require_capability_lease=self.config.require_capability_lease,
-            system_prompt=(
-                self.config.system_prompt if system_prompt is None else system_prompt
-            ),
-            max_output_tokens=max_output_tokens or self.config.max_output_tokens,
+            model=model,
+            system_prompt=system_prompt,
+            max_output_tokens=max_output_tokens,
             cancel_event=cancel_event,
-        )
+        ):
+            if isinstance(event, TurnFinished):
+                final = event.result
+        if final is None:  # pragma: no cover - drive_turn always ends with TurnFinished
+            raise AgentRuntimeError("Turn ended without a result")
+        return final
 
     async def resume(
         self,
