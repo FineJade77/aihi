@@ -74,7 +74,7 @@ class JsonlTelemetrySink:
 
 def _safe_name(value: str) -> str:
     name = re.sub(r"[^A-Za-z0-9_.-]", "_", value)
-    return ("aiharness." + name)[:255]
+    return ("aihi." + name)[:255]
 
 
 def _attributes(value: dict[str, object]) -> dict[str, object]:

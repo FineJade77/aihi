@@ -148,7 +148,7 @@ def test_file_trust_store_persists_lockfile_atomically(tmp_path: Path) -> None:
     plugin_root = tmp_path / "demo"
     write_manifest(plugin_root)
     candidate = PluginDiscovery((tmp_path,), harness_version="0.1.0").discover()[0]
-    lockfile = tmp_path / ".aiharness" / "plugins.lock.json"
+    lockfile = tmp_path / ".aihi" / "plugins.lock.json"
     manager = PluginTrustManager(
         FileTrustStore(lockfile),
         discovery=PluginDiscovery((tmp_path,), harness_version="0.1.0"),

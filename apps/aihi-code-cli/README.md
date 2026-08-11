@@ -60,7 +60,7 @@ unsafe = true
 
 [artifacts]
 enabled = true
-path = ".aiharness/artifacts"
+path = ".aihi/artifacts"
 
 [agent]
 compact_model = "deepseek-chat"
@@ -77,7 +77,7 @@ scope = "project"
 
 [skills]
 load_tool = true
-trust_lockfile = ".aiharness/skills.lock.json"
+trust_lockfile = ".aihi/skills.lock.json"
 
 [mcp.servers.example]
 command = ["python3", "-m", "example_mcp_server"]

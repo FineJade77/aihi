@@ -7,6 +7,7 @@ from typing import Any
 from aihi.agent.plugins.errors import PluginHostProtocolError
 from aihi.models import JsonObject
 
+# Stable wire identifier retained for compatibility with existing Plugin Hosts.
 PLUGIN_HOST_PROTOCOL_VERSION = "aiharness.plugin.v1"
 
 

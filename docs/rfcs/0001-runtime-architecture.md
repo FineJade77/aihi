@@ -1,4 +1,4 @@
-# RFC-0001：AIHarness Runtime 与执行面
+# RFC-0001：AIHI Runtime 与执行面
 
 - 状态：Accepted；由 ADR-0030 修订发布边界
 - 日期：2026-08-04
@@ -6,7 +6,7 @@
 
 ## 摘要
 
-AIHarness 采用模块化控制面和独立执行面。`aihi.models` 提供模型契约与 Provider；
+AIHI 采用模块化控制面和独立执行面。`aihi.models` 提供模型契约与 Provider；
 `aihi.agent.runtime` 只负责状态机、上下文请求、工具意图和生命周期；`sandbox`、`plugins` 和
 外部 Worker 负责执行有副作用的动作。
 

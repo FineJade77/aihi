@@ -1,7 +1,11 @@
-# AIHarness 实施任务
+# AIHI 实施任务
 
 状态：M0–M7、H-01 ~ H-17 与 P-01 已完成；Coding 应用层首个可用纵向链路已交付
 架构基线：[ARCHITECTURE.md](ARCHITECTURE.md)
+
+项目更名说明：当前项目名称为 **AIHI**；本文中的 `aiharness` 仅指拆包前的历史 distribution
+或为兼容性保留的协议标识，不代表当前项目名称。
+
 定位：**支撑多条 Agent 产品线的 Harness**。Coding 只是其中一条，Cowork（多人/多角色协作）
 等形态同样建立在它之上。
 
@@ -256,7 +260,7 @@ M7e 完成 Runtime 接入：`RunCoordinator` 在 Run 的每个出口 flush 一�
 已移除：远程 OTel 管线、OTLP 传输、`WorkerTraceManager`、Provider Golden 与 `EvalGate`。
 Provider 兼容性覆盖由 `packages/aihi/models/tests/contract/test_providers.py` 承担。
 
-## AIHarness 待开发 Backlog
+## AIHI 待开发 Backlog
 
 本节是 AIHI 基础层的持续任务清单，不是某个具体 Agent 产品的需求。
 产品侧的待办（应用层重建、前端形态）见顶部「范围与方向」。

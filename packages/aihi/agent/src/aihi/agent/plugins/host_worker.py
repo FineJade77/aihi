@@ -220,7 +220,7 @@ async def _serve(plugin: Any, protocol_stdout: BinaryIO) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="AIHarness isolated Plugin Host worker")
+    parser = argparse.ArgumentParser(description="AIHI isolated Plugin Host worker")
     parser.add_argument("--root", required=True)
     parser.add_argument("--entrypoint", required=True)
     args = parser.parse_args()

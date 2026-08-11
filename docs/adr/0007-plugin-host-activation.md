@@ -13,8 +13,8 @@ Plugin Host 激活分为四个不可跳过的阶段：
    记录和 enabled 状态；
 3. `PluginHostPolicy` 检查 Manifest 的 `capabilities`、`permissions` 是否分别是当前 Run 显式
    allowlist 的子集；
-4. 用最小环境、`shell=False`、独立进程组启动 `aiharness.plugins.host_worker`，通过
-   `aiharness.plugin.v1` JSON-lines JSON-RPC 暴露有限的 Tool/Skill/Hook 方法。
+4. 用最小环境、`shell=False`、独立进程组启动 `aihi.agent.plugins.host_worker`，通过
+   兼容标识 `aiharness.plugin.v1` 的 JSON-lines JSON-RPC 暴露有限的 Tool/Skill/Hook 方法。
 
 主进程不 import Plugin Entry Point。Tool 通过 `PluginRemoteTool` 适配到 `ToolRegistry`，所以
 输入校验、Policy、Hook 和 Sandbox 仍由统一 Dispatcher 处理。Plugin Host 不获得或授予新的

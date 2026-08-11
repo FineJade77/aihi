@@ -102,7 +102,7 @@ class RuntimeBuilder:
     def with_artifacts(self, path: str | Path | None = None) -> RuntimeBuilder:
         """Keep large tool output out of the context and out of the event log."""
 
-        root = Path(path) if path is not None else self.sandbox.root / ".aiharness" / "artifacts"
+        root = Path(path) if path is not None else self.sandbox.root / ".aihi" / "artifacts"
         return replace(self, artifact_store=FileArtifactStore(root))
 
     def with_telemetry(self, path: str | Path) -> RuntimeBuilder:

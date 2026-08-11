@@ -26,7 +26,7 @@
 - 新增 `RunState.WAITING_APPROVAL`：非终态、可恢复。
 - 新增事件 `run.suspended`（携带 `approval_id` 与 `pending_tool_call_ids`）和 `run.resumed`。
   挂起不写任何终态事件；`run.resumed` 取代重复的 `run.started`，使恢复后的会话仍可 Replay。
-- 新增 `ApprovalResolver` Protocol（`aiharness.policy`）：
+- 新增 `ApprovalResolver` Protocol（`aihi.agent.policy`）：
   `resolve(ApprovalRequest) -> ApprovalOutcome{GRANTED, DENIED, DEFERRED}`。
   未注入 Resolver 时默认 `SuspendingApprovalResolver`，即 **默认挂起**——既不自动批准也不自动拒绝。
 - Approval 的签发与解决只发生在 `RunCoordinator` 侧，通过

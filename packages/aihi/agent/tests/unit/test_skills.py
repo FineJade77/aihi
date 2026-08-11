@@ -177,7 +177,7 @@ def test_skill_trust_store_persists_and_fails_closed(tmp_path: Path) -> None:
     write_skill(skill_root)
     discovery = SkillDiscovery((SkillRoot(tmp_path / "skills", SkillScope.PROJECT),))
     candidate = discovery.discover()[0]
-    lockfile = tmp_path / ".aiharness" / "skills.lock.json"
+    lockfile = tmp_path / ".aihi" / "skills.lock.json"
     manager = SkillTrustManager(FileSkillTrustStore(lockfile), discovery=discovery)
     manager.trust(candidate, trusted_by="alice", enable=True)
 

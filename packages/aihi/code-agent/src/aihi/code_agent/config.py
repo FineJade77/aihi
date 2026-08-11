@@ -120,7 +120,7 @@ class CodeAgentConfig:
             provider=provider,
             provider_profiles={provider.name: provider},
             sandbox=SandboxSettings(root=base_dir),
-            artifact_path=base_dir / ".aiharness" / "artifacts",
+            artifact_path=base_dir / ".aihi" / "artifacts",
         )
 
     @classmethod
@@ -216,7 +216,7 @@ class CodeAgentConfig:
         )
         skill_trust_path = (
             _resolve_path(
-                skills_map.get("trust_lockfile", ".aiharness/skills.lock.json"),
+                skills_map.get("trust_lockfile", ".aihi/skills.lock.json"),
                 root,
                 "skills.trust_lockfile",
             )
@@ -226,7 +226,7 @@ class CodeAgentConfig:
         mcp_servers = _parse_mcp_servers(mcp_map, root)
         artifact_path = (
             _resolve_path(
-                artifacts_map.get("path", ".aiharness/artifacts"),
+                artifacts_map.get("path", ".aihi/artifacts"),
                 root,
                 "artifacts.path",
             )

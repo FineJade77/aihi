@@ -173,7 +173,9 @@ class PluginDiscovery:
             if path.is_dir():
                 continue
             relative = path.relative_to(plugin_root)
-            if relative.parts[0] in {".git", "__pycache__", ".aiharness"}:
+            # Ignore both the current AIHI state directory and the pre-rename
+            # directory so old project state is never treated as plugin content.
+            if relative.parts[0] in {".git", "__pycache__", ".aihi", ".aiharness"}:
                 continue
             if path == manifest_path:
                 continue

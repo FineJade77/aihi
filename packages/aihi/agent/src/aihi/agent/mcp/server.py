@@ -24,7 +24,7 @@ class McpServer:
         self,
         tools: Iterable[McpServerTool] = (),
         *,
-        name: str = "aiharness-mcp-server",
+        name: str = "aihi-mcp-server",
         version: str = "0.1.0",
         protocol_version: str = "2025-11-25",
         list_changed: bool = False,

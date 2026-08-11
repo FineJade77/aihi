@@ -36,7 +36,7 @@ context_window = 4096
 
 [artifacts]
 enabled = true
-path = ".aiharness/artifacts"
+path = ".aihi/artifacts"
 
 [subagents]
 enabled = true
@@ -72,7 +72,7 @@ allowed_tools = ["search"]
     assert resolve_env_mapping(config.mcp_servers[0].env) == {"TOKEN": "secret-from-env"}
     assert config.compact_model == "compact-demo"
     assert config.context_window == 4096
-    assert config.artifact_path == (tmp_path / ".aiharness/artifacts").resolve()
+    assert config.artifact_path == (tmp_path / ".aihi/artifacts").resolve()
     assert config.subagents.enabled is True
     assert config.subagents.model == "subagent-demo"
 

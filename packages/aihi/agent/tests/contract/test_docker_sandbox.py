@@ -28,7 +28,7 @@ class FakeDockerRunner:
 @pytest.mark.asyncio
 async def test_docker_backend_builds_restricted_run_and_descriptor(tmp_path: Path) -> None:
     runner = FakeDockerRunner()
-    backend = DockerBackend(tmp_path, image="aiharness:test", runner=runner)
+    backend = DockerBackend(tmp_path, image="aihi:test", runner=runner)
     result = await backend.run_command(
         ("python", "-c", "print('ok')"), timeout_seconds=2, max_output_chars=100
     )
@@ -39,11 +39,11 @@ async def test_docker_backend_builds_restricted_run_and_descriptor(tmp_path: Pat
     assert "--read-only" in command
     assert "--cap-drop" in command and command[command.index("--cap-drop") + 1] == "ALL"
     assert any(item.startswith("type=bind,src=") and ",dst=/workspace" in item for item in command)
-    assert command[-4:] == ("aiharness:test", "python", "-c", "print('ok')")
+    assert command[-4:] == ("aihi:test", "python", "-c", "print('ok')")
     assert backend.descriptor.filesystem_isolated is True
     assert backend.descriptor.network_isolated is True
     assert backend.descriptor.unsafe is False
-    assert backend.descriptor.to_dict()["image"] == "aiharness:test"
+    assert backend.descriptor.to_dict()["image"] == "aihi:test"
     assert backend.descriptor.to_dict()["network_mode"] == "none"
     assert backend.descriptor.to_dict()["mount_scope"] == "/workspace"
 

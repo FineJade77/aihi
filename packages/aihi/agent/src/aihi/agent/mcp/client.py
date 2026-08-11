@@ -36,7 +36,7 @@ class McpClient:
         self,
         transport: McpTransport,
         *,
-        client_name: str = "aiharness",
+        client_name: str = "aihi",
         client_version: str = "0.1.0",
         protocol_version: str = "2025-11-25",
         request_timeout_seconds: float = 30.0,

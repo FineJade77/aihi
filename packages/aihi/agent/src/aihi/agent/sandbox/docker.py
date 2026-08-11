@@ -66,7 +66,7 @@ class DockerCliRunner:
             or max_output_chars <= 0
         ):
             raise SandboxViolation("max_output_chars must be a positive integer")
-        cid_directory = tempfile.TemporaryDirectory(prefix="aiharness-docker-")
+        cid_directory = tempfile.TemporaryDirectory(prefix="aihi-docker-")
         cidfile = Path(cid_directory.name) / "container.id"
         docker_argv = (argv[0], "--cidfile", str(cidfile), *argv[1:])
         try:

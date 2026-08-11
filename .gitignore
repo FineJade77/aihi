@@ -10,6 +10,7 @@ build/
 .ruff_cache/
 .mypy_cache/
 .aiharness/settings.local.json
+.aihi/settings.local.json
 .DS_Store
 
 # Local legacy SQLite compatibility fixture and SQLite WAL sidecars.

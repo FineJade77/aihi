@@ -1,6 +1,6 @@
-# AIHarness Agent 开发规范
+# AIHI Agent 开发规范
 
-本文件是参与 AIHarness 开发的 Coding Agent 的项目级约束。开始实现前先阅读：
+本文件是参与 AIHI 开发的 Coding Agent 的项目级约束。开始实现前先阅读：
 
 1. [架构设计](docs/ARCHITECTURE.md)
 2. [任务分解](docs/TASK.md)
@@ -17,7 +17,7 @@
 
 ## 项目目标
 
-AIHarness 是可复用的 Agent 基础设施，不是某一个具体 Agent 产品。目标发布为两个基础包：
+AIHI 是可复用的 Agent 基础设施，不是某一个具体 Agent 产品。目标发布为两个基础包：
 `aihi-models` 提供模型契约与 Provider，`aihi-agent` 依赖前者并提供完整 Agent Runtime。它们负责
 会话、上下文、模型适配、工具执行、策略、安全、记忆、Skill、Subagent、评估和可观测性；模型
 不是系统事实源，事件日志才是。Coding、Cowork（多人/多角色协作）或其他形态的 Agent 在应用层
