@@ -58,6 +58,19 @@ class SubagentAuthority:
     max_children: int = 4
 
 
+@dataclass(frozen=True, slots=True)
+class SubagentTypeSpec:
+    """An application's declaration of one named subagent type.
+
+    The application declares intent; the builder owns the wiring. Handing over
+    a finished runner is not possible for an application, which has no access
+    to the parent registry or sandbox at configuration time.
+    """
+
+    system_prompt: str = ""
+    model: str | None = None
+
+
 @runtime_checkable
 class SubagentRunner(Protocol):
     """Execute one already-authorized child task."""
@@ -533,6 +546,7 @@ __all__ = [
     "SubagentAuthority",
     "SubagentRunner",
     "SubagentTool",
+    "SubagentTypeSpec",
     "restrict_registry",
     "subagent_session_factory",
 ]

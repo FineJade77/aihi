@@ -15,6 +15,7 @@ from .subagent import (
     SubagentAuthority,
     SubagentRunner,
     SubagentTool,
+    SubagentTypeSpec,
     restrict_registry,
     subagent_session_factory,
 )
@@ -34,6 +35,7 @@ __all__ = [
     "SubagentAuthority",
     "SubagentRunner",
     "SubagentTool",
+    "SubagentTypeSpec",
     "TaskGraph",
     "TaskNode",
     "TaskResult",

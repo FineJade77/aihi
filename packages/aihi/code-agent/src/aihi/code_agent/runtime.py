@@ -27,6 +27,7 @@ from aihi.agent import (
     SkillTrustManager,
     StdioMcpTransport,
     SubagentAuthority,
+    SubagentTypeSpec,
     WorkspaceScope,
     register_mcp_tools,
 )
@@ -49,6 +50,7 @@ from .config import (
 )
 from .prompts import compose_system_prompt
 from .skills import builtin_skill_root
+from .subagents import CODING_SUBAGENTS
 from .tools import ToolBuildContext, build_tools
 from .turns import TurnEvent, TurnEventPump, TurnFinished, drive_turn
 
@@ -120,12 +122,15 @@ class CodeAgentRuntime:
                     read_only=config.sandbox.workspace_read_only,
                 ),
                 capabilities=config.subagents.capabilities,
+                max_depth=config.subagents.max_depth,
+                max_children=config.subagents.max_children,
             )
             builder = builder.with_subagents(
                 authority=authority,
                 store=store,
                 provider=provider,
                 model=config.subagents.model or config.provider.model,
+                agent_types=_build_agent_types(config),
             )
         runtime = builder.build()
         clients: list[McpClient] = []
@@ -235,6 +240,22 @@ class CodeAgentRuntime:
         for client in reversed(self.mcp_clients):
             await client.disconnect()
         await _close_provider(self.runtime.provider)
+
+
+def _build_agent_types(config: CodeAgentConfig) -> dict[str, SubagentTypeSpec]:
+    """Declare each enabled Subagent type's prompt and model to the builder."""
+
+    declared: dict[str, SubagentTypeSpec] = {}
+    for definition in CODING_SUBAGENTS:
+        override = config.subagents.types.get(definition.name)
+        if override is not None and not override.enabled:
+            continue
+        model = (override.model if override is not None else None) or definition.model
+        declared[definition.name] = SubagentTypeSpec(
+            system_prompt=definition.prompt(),
+            model=model,
+        )
+    return declared
 
 
 async def _register_mcp_server(runtime: Runtime, settings: McpServerSettings) -> McpClient:

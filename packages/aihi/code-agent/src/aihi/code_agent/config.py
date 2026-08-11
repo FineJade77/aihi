@@ -99,13 +99,26 @@ class McpServerSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class SubagentTypeSettings:
+    """Per-type overrides for one named Subagent."""
+
+    enabled: bool = True
+    model: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class SubagentSettings:
+    # Still opt-in: enabling by default makes `CodeAgentRuntime.create()` fail
+    # for every caller that has no EventStore to give it. See RFC-0003.
     enabled: bool = False
     model: str | None = None
     max_tokens: int = 8_192
     timeout_seconds: float = 600.0
     max_tool_calls: int = 100
+    max_depth: int = 1
+    max_children: int = 3
     capabilities: frozenset[str] = frozenset({"filesystem.read"})
+    types: Mapping[str, SubagentTypeSettings] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -590,7 +603,38 @@ def _parse_subagents(value: Mapping[str, Any]) -> SubagentSettings:
             value.get("max_tool_calls", 100), "subagents.max_tool_calls"
         ),
         capabilities=capabilities,
+        max_depth=_non_negative_int(value.get("max_depth", 1), "subagents.max_depth"),
+        max_children=_non_negative_int(value.get("max_children", 3), "subagents.max_children"),
+        types=_parse_subagent_types(value.get("types", {})),
     )
+
+
+def _parse_subagent_types(value: object) -> dict[str, SubagentTypeSettings]:
+    """Parse `[subagents.types.<name>]`, rejecting names with no definition."""
+
+    from .subagents import SUBAGENT_TYPE_NAMES
+
+    if not isinstance(value, dict):
+        raise CodeAgentConfigError("subagents.types must be a TOML table")
+    parsed: dict[str, SubagentTypeSettings] = {}
+    for raw_name, raw_settings in value.items():
+        name = _text(raw_name, "subagents.types")
+        if name not in SUBAGENT_TYPE_NAMES:
+            raise CodeAgentConfigError(f"Unknown subagent type: {name}")
+        if not isinstance(raw_settings, dict):
+            raise CodeAgentConfigError(f"subagents.types.{name} must be a TOML table")
+        raw_model = raw_settings.get("model")
+        parsed[name] = SubagentTypeSettings(
+            enabled=_boolean(
+                raw_settings.get("enabled", True), f"subagents.types.{name}.enabled"
+            ),
+            model=(
+                _text(raw_model, f"subagents.types.{name}.model")
+                if raw_model is not None
+                else None
+            ),
+        )
+    return parsed
 
 
 def _section(value: Mapping[str, Any], key: str) -> Mapping[str, Any]:

@@ -35,6 +35,7 @@ from aihi.agent.agents.subagent import (
     SubagentAuthority,
     SubagentRunner,
     SubagentTool,
+    SubagentTypeSpec,
     restrict_registry,
     subagent_session_factory,
 )
@@ -177,6 +178,7 @@ class RuntimeBuilder:
         provider: Provider,
         model: str,
         runners: Mapping[str, SubagentRunner] | None = None,
+        agent_types: Mapping[str, SubagentTypeSpec] | None = None,
     ) -> RuntimeBuilder:
         """Let a run delegate to a child run under `authority`.
 
@@ -188,6 +190,7 @@ class RuntimeBuilder:
             self,
             _subagents=_SubagentPlan(
                 runners=runners,
+                agent_types=agent_types,
                 authority=authority,
                 store=store,
                 provider=provider,
@@ -244,17 +247,29 @@ class RuntimeBuilder:
                 policy=self.policy or DefaultPolicyEngine(),
             )
 
-        runner = ChildRunSubagentRunner(
-            coordinator_factory,
-            subagent_session_factory(
-                plan.store,
-                provider=getattr(plan.provider, "name", "provider"),
-                model=plan.model,
-            ),
-            sandbox=sandbox,
-            model=plan.model,
-        )
-        return SubagentTool(plan.runners or runner, authority=plan.authority)
+        def make_runner(system_prompt: str, model: str) -> ChildRunSubagentRunner:
+            return ChildRunSubagentRunner(
+                coordinator_factory,
+                subagent_session_factory(
+                    plan.store,
+                    provider=getattr(plan.provider, "name", "provider"),
+                    model=model,
+                ),
+                sandbox=sandbox,
+                model=model,
+                system_prompt=system_prompt,
+            )
+
+        if plan.runners:
+            return SubagentTool(plan.runners, authority=plan.authority)
+        if plan.agent_types:
+            runners: dict[str, SubagentRunner] = {
+                name: make_runner(spec.system_prompt, spec.model or plan.model)
+                for name, spec in plan.agent_types.items()
+            }
+            runners.setdefault("general", make_runner("", plan.model))
+            return SubagentTool(runners, authority=plan.authority)
+        return SubagentTool(make_runner("", plan.model), authority=plan.authority)
 
 
 @dataclass(frozen=True, slots=True)
@@ -264,6 +279,7 @@ class _SubagentPlan:
     provider: Provider
     model: str
     runners: Mapping[str, SubagentRunner] | None = None
+    agent_types: Mapping[str, SubagentTypeSpec] | None = None
 
 
 __all__ = ["Runtime", "RuntimeBuilder"]
