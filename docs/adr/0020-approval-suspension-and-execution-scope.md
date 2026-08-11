@@ -2,7 +2,7 @@
 
 状态：Accepted
 日期：2026-08-06
-关联：ADR-0001（Host 沙箱默认）、RFC-0001、TASK.md H-02
+关联：ADR-0001（Host 沙箱默认）、ADR-0031（Resume 权限固化）、RFC-0001、TASK.md H-02
 
 ## 背景
 
@@ -34,7 +34,8 @@
 - 挂起时被暂停的 Tool Call **不合成结果**：`repair_orphan_tool_calls` 接受 `exclude`，
   Resume 时先执行这些挂起调用，再请求模型。崩溃恢复与主动挂起因此被明确区分。
 - 同一 Tool Call 上已存在未解决的 Approval 时复用它，Resume 不会重复请求。
-- Approval 被拒绝时提交一个 `permission_denied` Tool Result，Run 正常继续。
+- Approval 被拒绝时提交一个 `permission_denied` Tool Result，Run 正常继续；ADR-0031 进一步规定
+  带外拒绝必须按原 `tool_call_id` 在 Resume 时消费，不能重新申请 Approval。
 - `capability.lease_required` 的 `ASK` 被批准后签发一张 run-scoped Capability Lease
   （`issued_by=approval`），关闭原先的死路。批准后若 Policy 仍返回 `ASK`，
   返回 `permission_approval_ineffective` 而不是再次询问，避免循环。
@@ -56,6 +57,7 @@
   （`run.suspended` 必须发生在 `waiting_approval` 状态）。
 - `RunCoordinator.resume()` 现在要求显式 `run_id`；`RunCoordinator.suspended_runs(session)`
   从事件流列出可恢复的 Run。
+- ADR-0031 进一步将首次 `run.started` 定义为恢复配置事实源，Resume 参数只能省略或与其一致。
 
 ## 已知边界（登记为后续任务）
 

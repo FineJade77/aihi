@@ -11,47 +11,49 @@
 7. [ADR-0003](docs/adr/0003-plugin-host-isolation.md)
 8. [ADR-0004](docs/adr/0004-artifact-lifecycle-and-scope.md)
 9. [ADR-0020](docs/adr/0020-approval-suspension-and-execution-scope.md)
+10. [ADR-0030](docs/adr/0030-aihi-multi-package-boundary.md)
+11. [ADR-0031](docs/adr/0031-resume-authority-and-delegated-sandbox-hardening.md)
+12. [ADR-0032](docs/adr/0032-tool-spec-ownership.md)
 
 ## 项目目标
 
-AIHarness 是可复用的 Agent Harness 基础层，不是某一个具体 Agent 产品。它负责会话、上下文、
-模型适配、工具执行、策略、安全、记忆、Skill、Subagent、评估和可观测性；模型不是系统事实源，
-事件日志才是。Coding、Cowork（多人/多角色协作）或其他形态的 Agent 应在各自的应用目录中
-组合这些能力 —— 本仓库当前不含应用层，前端形态只做 TUI，Web 与桌面是待办。
+AIHarness 是可复用的 Agent 基础设施，不是某一个具体 Agent 产品。目标发布为两个基础包：
+`aihi-models` 提供模型契约与 Provider，`aihi-agent` 依赖前者并提供完整 Agent Runtime。它们负责
+会话、上下文、模型适配、工具执行、策略、安全、记忆、Skill、Subagent、评估和可观测性；模型
+不是系统事实源，事件日志才是。Coding、Cowork（多人/多角色协作）或其他形态的 Agent 在应用层
+组合这些能力。本仓库当前不建设应用层，`aihi-code-agent` 必须等两个基础包完成后再单独确认。
 
 ## 目录边界
 
 ```text
-src/aiharness/
-  core/            # Canonical types, events, IDs, errors；不得依赖业务包
-  runtime/         # Agent state machine and run coordinator
-  sessions/        # Event Store, snapshots, projection, branching
-  context/         # Context compiler and compaction
-  models/          # Gateway, router, provider adapters
-  tools/           # Tool contract, registry, dispatcher
-  plugins/         # Manifest, discovery, isolated Plugin Host
-  policy/          # Rules, decisions, approvals, capability leases
-  hooks/           # Lifecycle event bus
-  sandbox/         # Host/Docker and future execution backends
-  memory/          # Working, episodic, semantic, procedural memory
-  skills/          # SKILL.md discovery and on-demand loading
-  agents/          # Subagent task graph and coordination
-  artifacts/       # Large outputs, patches, attachments
-  observability/   # OTel, logs, metrics, cost accounting
-  evals/           # Replay, datasets, graders
+packages/aihi/models/
+  pyproject.toml
+  src/aihi/models/    # Model contracts, codecs, Provider Protocol/adapters
+  tests/
+packages/aihi/agent/
+  pyproject.toml
+  src/aihi/agent/
+    _core/            # Private Agent events, IDs, errors, schema/migrations
+    runtime/          # Agent state machine and run coordinator
+    sessions/ context/ tools/ policy/ hooks/ sandbox/
+    plugins/ mcp/ memory/ skills/ agents/ artifacts/
+    observability/ evals/
+  tests/
+tests/
+  integration/        # Installed-wheel integration
+  packaging/          # PEP 420, wheel and py.typed checks
+  fixtures/           # Frozen compatibility corpus
 ```
 
-应用目录（Coding、Cowork 等产品，各自 depends on aiharness）当前不在本仓库中。
+依赖方向必须单向：`aihi.models ← aihi.agent ← application`，应用也可以直接组合
+`aihi.models`。`aihi.models` 不得 import `aihi.agent`；两个基础包不得反向 import 任意应用。
+`aihi.agent` 内部通过 Protocol 使用 Provider、Store、Tool、Policy、Hook 和 Sandbox。
+应用之间也不得互相 import。应用负责 Prompt、模型/Provider 组合、Agent 角色、工具集合、配置和
+交互体验；基础包负责可复用实现和公共契约。`aihi.agent.agents` 是 Subagent TaskGraph/协调
+基础设施，不代表面向用户的 Agent 产品。
 
-依赖方向必须单向：`core` 不导入其他业务包；`runtime` 通过 Protocol 使用 Provider、Store、
-Tool、Policy、Hook 和 Sandbox；应用目录可以直接复用 `aiharness` 已有的
-Provider、Tool、Policy、Sandbox 和 Runtime 实现，但 `aiharness` 不得反向 import 任意应用目录。
-应用之间也不得互相 import。应用负责 Prompt、Agent 角色、工具集合、配置和交互体验；Harness
-负责可复用实现和公共契约。`aiharness/agents/` 是 Subagent TaskGraph/协调基础设施，不代表某个
-面向用户的 Agent 产品。
-
-应用层只能 `from aiharness import ...`（顶层 `__all__` 是唯一受支持的组合面，子模块路径一律
-视为内部实现），不复制 Harness 实现，
+跨包和应用层只能使用 `aihi.models.__all__`、`aihi.agent.__all__`（叶子顶层 `__all__` 是唯一受
+支持的组合面，内部子模块路径不承诺兼容），不复制基础实现，
 也不得把产品专属 Prompt、项目规则、凭据、终端 UI 或产品默认 Policy 写回核心包。若应用
 开发发现 Provider-neutral、可复用的 Harness 缺口，先在 [docs/TASK.md](docs/TASK.md) 的 H-* Backlog
 登记，再补契约、测试和实现；仅服务于单个 Agent 的逻辑留在对应应用目录。
@@ -68,8 +70,13 @@ Provider、Tool、Policy、Sandbox 和 Runtime 实现，但 `aiharness` 不得�
 - 原始 Event 永不被压缩覆盖；Compaction 只生成新的 Context View。
 - 所有副作用必须经过 `tools → policy → hooks → sandbox` 链路。
 - Provider Fallback 不得盲目重放可能已经产生副作用的工具。
+- Resume 必须沿用首次 `run.started` 固化的模型、Provider、Sandbox、工作区、权限、Prompt 摘要和
+  输出预算；调用方不得在恢复时弱化或漂移配置（ADR-0031）。
+- Provider 产生首个 Stream Chunk 后不得自动 retry 或切换；未来应用 Gateway 只能作为普通
+  `Provider` decorator，不能控制 Run 恢复或 Tool 重放。
 - 子代理的权限、预算和工作区只能是父 Run 的子集；派生必须经过工具链路，子 Run 在独立
-  Session 中执行，权限模式取父子中更严格者（ADR-0023）。
+  Session 中执行，权限模式取父子中更严格者；WorkspaceScope 必须落实为收窄后的 Sandbox，
+  不能可靠收窄的进程执行 fail closed（ADR-0023、ADR-0031）。
 - 事件、错误、模型消息和工具结果必须可 JSON 序列化和恢复。
 
 ## Host 沙箱基线
@@ -99,8 +106,10 @@ Runtime 是显式状态机，不把状态藏在不可恢复的局部变量中。
 
 ## Provider、Tool 和 Plugin 规则
 
-- Core 只使用 canonical 类型，厂商字段只能存在于 Adapter 内或 opaque payload 中。
-- Tool 必须声明 JSON Schema、是否修改外部状态、并发安全、能力需求、超时和幂等策略。
+- `aihi.models` 只拥有模型 canonical 类型，厂商字段只能存在于 Adapter 内或 opaque payload 中；
+  Event、Policy、Sandbox 和 Agent Tool 执行元数据不得进入模型包。
+- `aihi.models.ModelToolDefinition` 只包含名称、描述和输入 Schema；`aihi.agent.tools.ToolSpec` 另外声明
+  是否修改外部状态、并发安全、能力需求、超时和幂等策略，并向模型显式投影定义。
 - Tool 输入先校验和规范化，再进行 Policy 决策。
 - 命令内容的敏感路径检查是启发式，不是安全边界；命令类工具的边界是逐次审批加沙箱（ADR-0028）。
 - 只读且并发安全的工具调用可以并行；有副作用的工具必须单独执行，Tool Result 始终按调用顺序提交。
@@ -120,32 +129,36 @@ Runtime 是显式状态机，不把状态藏在不可恢复的局部变量中。
 
 ## 开发流程
 
-按 [TASK.md](docs/TASK.md) 的 M0–M7 和 H-* Backlog 顺序推进。每个任务先补契约和测试，再写实现；不要
+按 [TASK.md](docs/TASK.md) 的 AIHI 多包迁移阶段推进。每个任务先补契约和测试，再写实现；不要
 为了提前扩展而创建未接入 Runtime 的空抽象。
 
-开发具体 Agent 产品时，先复用已有 Harness 能力完成应用组合；只有跨 Agent 可复用的缺口
-才修改 `src/aiharness`。应用代码和 Harness 改动必须分别补对应目录的测试；Harness 公共契约或
+开发具体 Agent 产品时，先复用两个基础包完成应用组合；只有跨 Agent 可复用的缺口才修改
+`packages/aihi/models` 或 `packages/aihi/agent`。应用代码和基础包改动必须分别补对应目录的测试；
+公共契约或
 安全默认值变化时同步更新 ARCHITECTURE、TASK 和必要的 RFC/ADR。ARCHITECTURE 只写稳定契约，
 里程碑进度写进 TASK，单次取舍写进 ADR；不要把「当前 Mx 提供…」写进架构文档。
 
 完成改动前至少运行：
 
 ```bash
-python3 -m compileall -q src
+python3 -m compileall -q packages
 python3 -m pytest
 ```
 
 若环境已安装开发依赖，再运行 `ruff check .` 和 `mypy`（`mypy --strict` 当前为零错误，
 新增代码必须保持零错误）。新增 Provider、Store、Sandbox、
-Tool 或 Plugin Host 必须补对应的 contract test；涉及安全行为必须补 `tests/security/`。
+Tool 或 Plugin Host 必须补对应的 contract test；涉及安全行为必须补
+`packages/aihi/agent/tests/security/`。
 
 ## 变更与安全
 
 - 不覆盖或回滚用户已有修改。
 - 破坏事件 Schema、公共 Protocol 或安全默认值时，必须新增或更新 RFC/ADR。
-- 新增 durable 事件类型必须同时登记进 `core/schema.py` 的 `DURABLE_EVENT_TYPES` 并补进
+- 新增 durable 事件类型必须同时登记进 Agent schema 的 `DURABLE_EVENT_TYPES` 并补进
   `tests/fixtures/session_schema_v1.json` 冻结语料，否则兼容性测试失败。
 - 改变既有事件字段含义必须升 `EVENT_SCHEMA_VERSION` 并注册对应迁移。
+- 修改 `aihi.models` 的 Message JSON 必须同步更新版本化 codec，并通过 Message → Event Store →
+  Session reload → Replay 的跨 distribution 冻结语料；旧 fixture 不得重新生成来适配实现。
 - 不提交 API Key、Token、凭据、完整环境变量或未经脱敏的模型/工具输出。
 - 删除文件前确认其不再被 README、代码或文档引用；本项目只使用正式的
   `docs/TASK.md` 任务文档。

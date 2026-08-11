@@ -15,11 +15,10 @@ import re
 from pathlib import Path
 from typing import Any
 
-from aiharness import (
+from aihi.agent import (
     AgentBudget,
     ApprovalOutcome,
     ArtifactPolicy,
-    FakeProvider,
     FileArtifactStore,
     HostBackend,
     InMemoryEventStore,
@@ -27,7 +26,6 @@ from aiharness import (
     MemoryAccess,
     MemoryScope,
     MemoryService,
-    Message,
     PermissionMode,
     ReadFileTool,
     RunCoordinator,
@@ -37,9 +35,9 @@ from aiharness import (
     WorkspaceScope,
     WriteFileTool,
 )
-from aiharness.agents.graph import TaskGraph
-from aiharness.core.events import Event
-from aiharness.models.providers.fake import FakeStep
+from aihi.agent._core.events import Event
+from aihi.agent.agents.graph import TaskGraph
+from aihi.models import FakeProvider, FakeStep, Message
 
 FIXED_TIME = "2026-01-01T00:00:00+00:00"
 _GENERATED_ID = re.compile(r"^[a-z][a-z0-9_]*_[0-9a-f]{24}$")
@@ -161,7 +159,7 @@ async def _authorized_session(root: Path, store: InMemoryEventStore) -> Session:
 async def _delegating_session(root: Path, store: InMemoryEventStore) -> Session:
     """A child run's own log: subagent start and completion records."""
 
-    from aiharness import (
+    from aihi.agent import (
         SPAWN_CAPABILITY,
         ChildRunSubagentRunner,
         SubagentAuthority,
@@ -171,13 +169,15 @@ async def _delegating_session(root: Path, store: InMemoryEventStore) -> Session:
     )
 
     tools = ToolRegistry([ReadFileTool()])
+    sandbox = HostBackend(root, unsafe=True)
     runner = ChildRunSubagentRunner(
-        lambda spec: RunCoordinator(
+        lambda spec, child_sandbox: RunCoordinator(
             FakeProvider([FakeStep(text="the child looked around")]),
             registry=restrict_registry(tools, frozenset(spec.capabilities)),
-            sandbox=HostBackend(root, unsafe=True),
+            sandbox=child_sandbox,
         ),
         subagent_session_factory(store, provider="fake", model="fake-model"),
+        sandbox=sandbox,
         model="fake-model",
     )
     tool = SubagentTool(

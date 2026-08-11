@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "aihi-code-agent"
+version = "0.1.0"
+description = "Coding Agent domain runtime built on AIHI Agent"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+  "aihi-agent>=0.1,<0.2",
+  "aihi-models>=0.1,<0.2",
+]
+classifiers = [
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Typing :: Typed",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aihi"]
+artifacts = ["src/aihi/code_agent/py.typed"]
+
+[project.scripts]
+aihi-code-agent-worker = "aihi.code_agent.worker:main"

@@ -1,16 +1,17 @@
 # AIHarness 实施任务
 
-状态：M0–M7 与 H-01 ~ H-14 全部完成；下一批方向见「范围与方向」
+状态：M0–M7 与 H-01 ~ H-17 全部完成；Coding 应用层已确认并分阶段实现
 架构基线：[ARCHITECTURE.md](ARCHITECTURE.md)
 定位：**支撑多条 Agent 产品线的 Harness**。Coding 只是其中一条，Cowork（多人/多角色协作）
 等形态同样建立在它之上。
 
-规模：harness 17.2k 行 / 17 包，测试 8.0k 行 / 296 用例；
-运行时依赖仅 `httpx`；公共 API 156 个名字；30 篇 ADR。
+当前基础包规模：源码约 17.2k 行，测试约 8.2k 行 / 343 用例；运行时第三方依赖仅 `httpx`；
+`aihi.models` / `aihi.agent` 公共 API 分别为 51 / 134 个名字；33 篇 ADR。
 
 ## 范围与方向
 
-2026-08-08 的范围调整，三条：
+2026-08-11 已确认开始 Coding 应用层的分阶段实现；基础包仍保持 Provider-neutral，应用层
+通过 Worker RPC 组合 Session、Task、Runtime 与 TUI。此前范围原则继续有效：
 
 ### 1. 目标不只是 Coding
 
@@ -41,9 +42,9 @@ Provider Golden/`EvalGate`（CI 工具而非 Harness 能力）、`cli/`（把 Pr
 
 ### 3. 前端只做 TUI
 
-应用层的前端形态当前只有一个：终端 TUI。Web 与桌面是**待办**，不是不做 —— 但在 TUI
-形态跑通之前不开工。原 `aicode/`（终端 Coding Agent，约 1.1k 行）已于本次删除，
-应用层将按新定位重建。
+应用层首个前端形态是终端 TUI。Web 与桌面是**待办**，不是不做。`aihi-code-agent` 与
+`aihi-code-cli` 已按阶段建立，当前先完成 Worker RPC、Session/Task 与 TUI 纵向链路，
+再进入真实 Coding loop、配置、Skill/MCP。
 
 ## 交付原则
 
@@ -113,9 +114,10 @@ Provider Golden/`EvalGate`（CI 工具而非 Harness 能力）、`cli/`（把 Pr
 
 ### 任务
 
-- `models/providers/anthropic`：流式文本、工具、推理载荷、重试和 usage。
-- `models/providers/openai`：流式文本、工具、reasoning effort 和 usage。
-- `models/providers/openai_compatible`：base URL、endpoint capability 配置。
+- `models/providers/anthropic.py`：流式文本、工具、推理载荷、重试和 usage。
+- `models/providers/openai.py`：流式文本、工具、reasoning effort 和 usage。
+- `models/providers/openai_compatible.py`：base URL、endpoint capability 配置。
+- `models/providers/deepseek.py`：复用 OpenAI-compatible 协议的 DeepSeek 适配与推理回放。
 - Model Gateway、角色路由、Fallback 和请求级超时。
 - 写文件、编辑和命令执行工具（`bash`，见 ADR-0028）。
 - `policy/`：路径规则、命令规则、审批、allow-once/allow-always、Capability Lease。
@@ -249,18 +251,18 @@ M7d 完成跨会话审计：`TraceGraph`/`replay_graph` 组合单会话 Bundle �
 M7e 完成 Runtime 接入：`RunCoordinator` 在 Run 的每个出口 flush 一次，flush 失败只是观测侧失败。
 
 已移除：远程 OTel 管线、OTLP 传输、`WorkerTraceManager`、Provider Golden 与 `EvalGate`。
-Provider 兼容性覆盖由 `tests/contract/test_model_providers.py` 承担。
+Provider 兼容性覆盖由 `packages/aihi/models/tests/contract/test_providers.py` 承担。
 
 ## AIHarness 待开发 Backlog
 
-本节是 `aiharness` 基础层的持续任务清单，不是某个具体 Agent 产品的需求。
+本节是 AIHI 基础层的持续任务清单，不是某个具体 Agent 产品的需求。
 产品侧的待办（应用层重建、前端形态）见顶部「范围与方向」。
 
 ### H-01：公共组合边界与兼容性
 
 - 状态：Done；验收：应用只依赖稳定 public API，公共 Schema 有兼容性测试。
-- ✅ 顶层 `aiharness.__all__` 作为唯一组合面；应用层全部改为 `from aiharness import ...`；
-  AST import 边界测试（随应用层删除，重建时补回）+ 公共 API 契约测试（导出可解析/有序、
+- ✅ `aihi.models.__all__` 与 `aihi.agent.__all__` 作为两个叶子的唯一组合面；
+  AST import 边界测试 + 公共 API 契约测试（导出可解析/有序、
   不拉入可选依赖）；
 - ✅ Event 信封版本、迁移钩子（fail closed）、事件类型目录（durable/ephemeral/legacy）和
   冻结 v1 会话语料的兼容性测试；
@@ -345,9 +347,10 @@ PostgreSQL 生产化、Worker Control Plane 与部署安全、生产隔离 profi
   但 ReplayEngine 把任何带 `run_id` 的事件都当作 Run 成员。现已区分
   **推进 Run 的执行事件**与**引用 Run 的记账事件**。
 
-### Harness 基础层：H-01 ~ H-14 全部关闭
+### 旧单包基线：H-01 ~ H-14 全部关闭
 
-基础层当前没有进行中的任务。下一批工作见本节末尾的「下一批：应用层与平台增强」。
+这些任务描述的是拆包前的 `aiharness` 单包基线，保持为历史交付记录。新的基础层工作从 H-15
+开始，边界由 ADR-0030 决定。
 
 ### H-14：组合边界（policy vs plumbing）
 
@@ -359,26 +362,160 @@ PostgreSQL 生产化、Worker Control Plane 与部署安全、生产隔离 profi
 - ✅ 刻意不提供 `default_runtime()` —— 那是已删除的 `aiharness/cli` 犯过的错；
 - ✅ 应用层组合代码 269 → 178 行，剩下的基本只是产品决策。
 
+### H-15：AIHI 多 distribution 迁移
+
+- 状态：**Done**；
+- 决策：[ADR-0030](adr/0030-aihi-multi-package-boundary.md)；
+- 目标：把单一 `aiharness` distribution 一次性迁移为 `aihi-models` 与 `aihi-agent`，保持事件、
+  Session、Trace 和安全语义兼容；本任务不创建 `aihi-code-agent`。
+- 验收记录：302 项测试通过；两个 wheel 的解包、真实安装、PEP 420 共存、叶子卸载、installed-wheel
+  mypy、旧 JSON/SQLite/Trace 回放、Provider 流边界及完整安全门禁全部通过。
+
+#### 目标依赖
+
+```text
+aihi.models
+    ↑
+aihi.agent
+
+future application → aihi.agent + aihi.models
+```
+
+`aihi.models` 不得 import `aihi.agent`。`src/aihi/` 是 PEP 420 namespace 根，不包含
+`__init__.py` 或根级 `py.typed`；叶子包分别维护公共 `__all__` 和 `py.typed`。
+
+#### 模块迁移映射
+
+| 当前模块 | 目标 | 说明 |
+|---|---|---|
+| `core.types` 的 Message/ContentBlock/ModelRequest/Response/Usage/Capabilities | `aihi.models` | 进入版本化模型契约 |
+| 当前 `ToolSpec` | 拆分 | `aihi.models.ModelToolDefinition` 只含模型字段；`aihi.agent.tools.ToolSpec` 持有执行治理元数据 |
+| 模型 `ToolCallBlock`/`ToolResultBlock` | `aihi.models` | 模型消息协议；真实执行返回改称 `aihi.agent.ToolExecutionResult` |
+| `core.tokens` | `aihi.models` | Provider 和上下文预算复用同一模型 token 估算契约 |
+| Provider errors | `aihi.models` | 稳定错误码和 `retryable`；不依赖 AgentError |
+| 其他 `core.errors`、Event、Schema、Agent IDs、await helper | `aihi.agent._core` | 私有内部层，不新增 distribution |
+| `models.base`、`transport`、Provider adapters、Fake Provider | `aihi.models` | Adapter 只实现 Provider Protocol |
+| `models.gateway`、`ModelRouter`、`ModelRoles`、跨 Provider retry/fallback | **不迁入基础包** | 等未来应用层确认后实现；第一阶段无跨 Provider 路由 |
+| `runtime`、`sessions`、`context`、`artifacts`、`builder` | `aihi.agent` | Builder 改为显式 `provider + model + sandbox + tools` |
+| `tools`、`policy`、`hooks`、`sandbox` | `aihi.agent` | 保持统一副作用链；基础 Tool 有实现、无默认工具集 |
+| `memory`、`skills`、`agents`、`plugins`、`mcp` | `aihi.agent` | 可选能力继续经 Protocol/RuntimeExtensions 接入 |
+| `observability`、`evals` | `aihi.agent` | Replay 不执行 Provider/Tool/Sandbox |
+| 单包公共 API | 两个叶子公共 API | 无 `aiharness` re-export shim；跨包只能导入对方顶层 `__all__` |
+| 冻结 Event/Session/Trace fixtures | 根 `tests/fixtures` | 原样迁移并增加旧 SQLite，禁止重生成旧语料适配实现 |
+
+#### 阶段与顺序
+
+##### H-15a：兼容性门禁先行（Done）
+
+- 固定 Message Schema v1 codec，旧 Event 缺少 `message_schema_version` 时按 v1 读取；
+- 增加真实旧 SQLite Session 与旧 TraceBundle fixture；
+- 先写 Message → Event Store → Session reload → Replay 跨包契约测试；
+- 先写 wheel 解包、PEP 420 共存、叶子 `py.typed` 和 import 方向测试。
+
+验收：新增门禁在尚未迁移的实现上能表达当前语义，fixture 未被重写。
+
+##### H-15b：提取 `aihi-models`（Done）
+
+- 创建 `packages/aihi/models/pyproject.toml` 和 `src/aihi/models`；
+- 迁移模型类型、版本化 codec、Provider Protocol、transport、token estimation 和 Adapter；
+- 拆出 `ModelToolDefinition`；所有 Provider 跑同一 contract suite；
+- 不迁移 Router、Gateway、ModelRoles 或跨 Provider fallback。
+
+验收：`aihi-models` wheel 可独立安装、导入和通过类型检查，import graph 不包含 `aihi.agent` 或
+旧 `aiharness`。
+
+##### H-15c：提取 `aihi-agent`（Done）
+
+- 创建 `packages/aihi/agent/pyproject.toml` 和 `src/aihi/agent`，metadata 依赖 `aihi-models`；
+- 迁移 Agent `_core`、Runtime、Session、Context、Tool/Safety 链路及可选能力；
+- `ToolSpec` 持有 `ModelToolDefinition`，模型请求只接收投影；
+- `RuntimeBuilder` 必填 `provider + model + sandbox + tools`；compact/subagent 显式接收自己的
+  `provider + model`；
+- 保持所有取消、审批、事件和副作用不变式。
+
+验收：仅安装两个已构建 wheel 即可完成 Fake Provider 的无工具、工具、Approval、取消恢复、
+Compaction 和 Subagent 集成测试。
+
+##### H-15d：原子切换与删除旧包（Done）
+
+- 根项目变为 workspace/tooling，不再发布 `aiharness` wheel；
+- 所有测试切换到安装后的 `aihi.models`/`aihi.agent` 公共 API；
+- 删除前检查 README、代码、文档、fixture generator 和配置对 `src/aiharness` 的引用；
+- 删除旧实现，不保留 re-export shim，也不长期维护双写/双入口。
+
+验收：仓库不再生成或导入 `aiharness`；卸载任一 wheel 不破坏另一个 namespace 叶子；两个 wheel
+共同安装后 `aihi.models` 与 `aihi.agent` 均可导入。
+
+##### H-15e：最终质量门禁（Done）
+
+至少执行：
+
+```bash
+python3 -m compileall -q packages
+python3 -m pytest
+ruff check .
+mypy
+```
+
+并验证：
+
+- 两个 wheel 的解包路径只能是 `aihi/models/**` 与 `aihi/agent/**`，不存在顶级 `models/`、
+  `agent/` 或 `aihi/__init__.py`；
+- mypy 从已安装 wheel 识别两个叶子为 typed package；
+- 旧 `session_schema_v1.json`、SQLite Session 和 TraceBundle 完整 replay；
+- Provider 首个 Chunk 后不会 retry/switch；
+- 安全、contract、integration、event compatibility 全部门禁通过。
+
+#### H-15 完成定义
+
+H-15a～H-15e 已全部通过。完成不自动启动应用层；必须再次确认后，才允许设计或创建
+`aihi-code-agent`。
+
+### H-16：双包 P0 安全加固
+
+- 状态：**Done**；
+- 决策：[ADR-0031](adr/0031-resume-authority-and-delegated-sandbox-hardening.md)；
+- 范围：只处理审查确认的 P0，不启动应用层，也不包含 P1/P2 优化；
+- ✅ `run.started` 固化 Resume 配置，恢复时禁止模型、Provider、Sandbox、Workspace、权限模式、
+  Capability Lease、Prompt 摘要和输出预算漂移；
+- ✅ 带外拒绝按原 `tool_call_id` 生成唯一 `permission_denied` Tool Result，不重复申请 Approval；
+- ✅ 子代理 `WorkspaceScope` 落实为 scoped Sandbox，强制 root、allowed paths、read-only，不能可靠
+  收窄的进程执行 fail closed；
+- ✅ `OpenAICompatibleProvider.base_url` 改为必填完整 endpoint，避免兼容渠道凭据回落到 OpenAI；
+- ✅ 旧 JSON/SQLite 语料不重写；新增事件字段由 writer-side 契约测试单独冻结。
+
+验收：Resume 权限漂移、拒绝恢复、Scoped Sandbox 单元/安全测试、RuntimeBuilder 子代理端到端测试、
+OpenAI-compatible 构造器契约以及完整 compile/test/lint/type 门禁全部通过。
+
+### H-17：ToolSpec 归属整理
+
+- 状态：**Done**；
+- 决策：[ADR-0032](adr/0032-tool-spec-ownership.md)；
+- `ToolSpec` 与 `IdempotencyPolicy` 实现移动到 `aihi.agent.tools.spec`；
+- `aihi.agent.tools` 和 `aihi.agent` 顶层公共导出保持兼容；
+- 工具契约与 Policy-aware Dispatcher 分层，包根采用延迟 Dispatcher 导入避免循环依赖；
+- 运行时逻辑、事件 Schema 和安全默认值不变。
+
 ### 下一批：应用层与平台增强
 
 按顶部「范围与方向」立项，全部处于 **Planned，无实现代码**：
 
 | 编号 | 项 | 状态 | 说明 |
 |---|---|---|---|
-| P-01 | 应用层重建（TUI 前端） | Planned | 按「不只是 Coding」的定位重建：Prompt、工具选择、配置、审批交互、终端 TUI；必须带回 AST import 边界测试 |
+| P-01 | 应用层重建（TUI 前端） | In Progress | 已完成 Worker RPC、Session/Task 与首版 Ink TUI；后续接入 Coding loop、配置、Skill/MCP |
 | P-02 | Cowork 形态所需的 Harness 缺口 | Planned | 先做现状评估再立项。只有 Provider-neutral、跨产品线可复用的缺口才进 Harness |
 | P-03 | 平台增强（H-03 ~ H-06） | Planned | 控制面、多 Worker、PostgreSQL、远程 OTel。只能是既有协议的新增适配器 |
 | P-04 | Web 前端 | 待办 | TUI 形态跑通前不开工 |
 | P-05 | 桌面前端 | 待办 | 同上 |
 
-顺序判据：**P-01 之前不做 P-03**。没有真实前端消费的平台能力，会重演一次「实现了、测试过、
+顺序判据：**先完成 H-15；P-01 已确认；P-01 阶段内不做 P-03**。没有真实前端消费的平台能力，会重演一次「实现了、测试过、
 然后按判据删掉 4,000 行」——那正是这份文档顶部记录的事。
 
 ### 待开发清单维护规则
 
 1. 开发具体 Agent 产品时，只有当缺口是 Provider-neutral、可复用且不携带具体
-   Agent Prompt/Policy 时，才提升为 `aiharness` 任务；否则留在对应 Agent 目录。
-2. 任何 Harness 改动必须在同一变更中更新本节状态、契约/安全测试，并在破坏公共 Schema 或默认值
+   Agent Prompt/Policy 时，才提升为 `aihi-models` 或 `aihi-agent` 任务；否则留在对应 Agent 目录。
+2. 任何基础包改动必须在同一变更中更新本节状态、契约/安全测试，并在破坏公共 Schema 或默认值
    时新增或更新 ADR/RFC。
 3. Agent 开发过程中发现 Harness 缺口，可以先记录为 `H-*`，完成后回填实现文件、测试、ADR 和
    验收结果；不得创建第二份相互冲突的任务清单。
@@ -402,8 +539,11 @@ PostgreSQL 生产化、Worker Control Plane 与部署安全、生产隔离 profi
 | 取消造成孤儿 Tool Call | 取消修复协议 + 进程重启恢复测试 |
 | 上下文压缩丢失任务状态 | 结构化摘要 Schema + 任务回归集 |
 | 插件绕过策略 | Plugin Host 隔离 + 工具链路统一入口 |
-| Provider 差异泄漏到内核 | Canonical Contract Test + 依赖方向检查 |
-| 应用层耦合 Harness 内部实现 | 顶层 `__all__` 是唯一组合面 + AST import 边界测试 |
+| Provider 差异泄漏到 Agent Runtime | `aihi.models` Contract Test + 单向依赖检查 |
+| 模型 Tool Schema 混入执行权限 | `ModelToolDefinition` 投影 + `aihi.agent.tools.ToolSpec` 安全测试 |
+| Message 演进破坏旧 Session | Message codec 版本 + Event/SQLite/Trace 跨包冻结语料 |
+| PEP 420 wheel 布局错误 | 构建后解包 + 独立/共同安装 + `py.typed` 测试 |
+| 应用层耦合基础包内部实现 | 两个叶子 `__all__` + AST import 边界测试 |
 | 事件 Schema 悄悄漂移 | 信封版本 fail closed + 冻结语料覆盖全部 durable 类型 |
 | 平台能力侵入运行时契约 | 只能是既有协议的新增适配器；改 `RunCoordinator` 契约即先写 ADR |
 | 平台能力先于消费者实现 | P-01 之前不做 P-03；没有前端消费的能力不立项 |

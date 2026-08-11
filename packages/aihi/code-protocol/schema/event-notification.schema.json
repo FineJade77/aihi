@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aihi.dev/schemas/code-protocol/event-notification-0.1.json",
+  "title": "AIHI Code Worker event notification",
+  "type": "object",
+  "required": ["jsonrpc", "method", "params"],
+  "properties": {
+    "jsonrpc": { "const": "2.0" },
+    "method": { "const": "event" },
+    "params": {
+      "type": "object",
+      "required": ["protocol_version", "event"],
+      "properties": {
+        "protocol_version": { "const": "0.1" },
+        "event": {
+          "type": "object",
+          "required": ["session_id", "event_type", "ephemeral", "data"],
+          "properties": {
+            "session_id": { "type": "string", "minLength": 1 },
+            "run_id": { "type": "string", "minLength": 1 },
+            "event_type": { "type": "string", "minLength": 1 },
+            "seq": { "type": "integer", "minimum": 1 },
+            "ephemeral": { "type": "boolean" },
+            "data": { "type": "object" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

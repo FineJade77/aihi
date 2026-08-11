@@ -2,7 +2,7 @@
 
 状态：Accepted
 日期：2026-08-07
-关联：ADR-0022（Runtime 能力注入点）、ARCHITECTURE §11、TASK.md M6a / H-02
+关联：ADR-0022（Runtime 能力注入点）、ADR-0031（执行层 Workspace 收窄）、ARCHITECTURE §11、TASK.md M6a / H-02
 
 ## 背景
 
@@ -64,6 +64,13 @@
 
 `restrict_registry(registry, capabilities)` 按 `ToolSpec.required_capabilities` 过滤工具集，
 子 Run 看不到自己无权使用的工具。
+
+### 6. Workspace 声明必须落实为 Sandbox 约束
+
+ADR-0031 修正了本 ADR 最初只校验 `WorkspaceScope` 声明、却仍可能把父 Sandbox 直接交给子 Run
+的缺口。`ChildRunSubagentRunner` 现在从父 Sandbox 创建 scoped view，Coordinator Factory 必须接收
+该 view。它强制 root、allowed paths 与 read-only；底层 backend 不能可靠表达收窄后的进程范围时
+拒绝进程执行。
 
 ## 后果
 

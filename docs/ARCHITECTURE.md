@@ -1,8 +1,8 @@
 # AIHarness 架构设计
 
 状态：Accepted
-版本：v0.3
-日期：2026-08-08
+版本：v0.4
+日期：2026-08-11
 
 本文件只描述**稳定契约**：不变式、边界和协议。里程碑顺序与完成进度属于
 [TASK.md](TASK.md)，单次决策的取舍属于 `docs/adr/`。任何以「当前 Mx 提供…」开头的段落
@@ -13,12 +13,12 @@
 AIHarness 是面向多种 Agent 的可复用运行时基础设施。模型只负责生成意图，Harness 负责公共
 运行时能力；具体 Agent 产品通过应用层组合 Harness。模型不是系统事实源，事件日志才是。
 
-当前规划分为两层：
+目标发布形态分为三个层次（ADR-0030）：
 
-- `aiharness`：可嵌入 SDK，提供公共协议、实现、安全边界和可恢复运行时；它是库，不带 CLI；
-- 应用层（Coding、Cowork 等产品）：直接复用 Harness 的 Provider、Tool、Policy、Sandbox、Runtime
-  和 Context，负责 Prompt、Agent 角色、工具集合、项目规则、交互和产品默认值。应用层的前端形态
-  当前只做 TUI，Web 与桌面是待办；本仓库目前不含应用层。
+- `aihi-models` / `aihi.models`：最低层模型契约与 Provider Adapter；
+- `aihi-agent` / `aihi.agent`：依赖 `aihi-models` 的完整、Provider-neutral Agent Runtime；
+- 应用层（Coding、Cowork 等产品）：直接复用两个基础包，负责 Prompt、模型与 Provider 组合、
+  工具集合、项目规则、交互和产品默认值。应用包位于 monorepo 的 `apps/`，基础包不得反向依赖它们。
 
 Harness 不复制或内置某个产品 Agent；应用层也不得复制 Harness 实现。
 
@@ -26,7 +26,7 @@ AIHarness 负责：
 
 - 持久化会话、恢复、分支和审计；
 - 上下文预算、自动压缩和大型输出管理；
-- Provider 适配、多模型路由和成本控制；
+- 模型协议、Provider 适配、错误归一化和成本记录；
 - 工具注册、插件、MCP、Skill、Hook 和 Subagent；
 - 策略决策、审批、能力租约和沙箱执行；
 - 记忆、评估、事件回放和可观测性。
@@ -45,32 +45,42 @@ AIHarness 负责：
 
 ```mermaid
 flowchart TB
-    A1["Coding / Cowork / other Agents"] --> H["aiharness public SDK"]
-    U["Generic CLI / HTTP API / Python SDK"] --> H
-    H --> R["runtime: Run Coordinator"]
-    R --> C["context: Context Compiler"]
-    C --> M["models: Model Gateway"]
-    M --> P1["Anthropic Adapter"]
-    M --> P2["OpenAI Adapter"]
-    M --> P3["Compatible Adapter"]
+    APP["Future application layer"]
 
-    R --> D["tools: Tool Dispatcher"]
-    D --> POL["policy: Policy + Approval"]
-    POL --> HOOKS["hooks: Lifecycle Hooks"]
-    HOOKS --> S["sandbox: Execution Backend"]
-    S --> B["Builtin Tools"]
-    S --> PH["Plugin Host"]
-    S --> MCP["MCP Servers"]
+    subgraph MODELS["aihi-models · import aihi.models"]
+        MC["Message / ModelRequest / ModelToolDefinition"]
+        MS["Versioned Message codec"]
+        PP["Provider Protocol"]
+        PA["Fake / OpenAI / Anthropic / Compatible / DeepSeek"]
+        MC --> MS
+        PA -. implements .-> PP
+    end
 
-    R --> A["agents: Subagent Coordinator"]
-    R --> MEM["memory: Memory Service"]
-    R --> SK["skills: Skill Registry"]
+    subgraph AGENT["aihi-agent · import aihi.agent"]
+        RB["RuntimeBuilder: provider + model + sandbox + tools"]
+        R["Run Coordinator"]
+        C["Context Compiler"]
+        D["Tool Dispatcher + Agent ToolSpec"]
+        POL["Policy + Approval"]
+        HOOKS["Governed Hooks"]
+        S["Sandbox + Basic Tools"]
+        SES["Session / Event Store / Replay"]
+        EXT["Memory / Skill / Subagent / Plugin / MCP / Observability"]
 
-    R --> SES["sessions: Event Store"]
-    D --> ART["artifacts: Artifact Store"]
-    R --> OBS["observability: OTel + Cost"]
-    SES --> DB["SQLite"]
-    ART --> OBJ["Local FS / S3 / MinIO"]
+        RB --> R
+        R --> C
+        R --> D
+        D --> POL --> HOOKS --> S
+        R --> SES
+        R --> EXT
+    end
+
+    APP --> PA
+    APP --> RB
+    RB --> PP
+    C --> MC
+    D -- "project model-visible definition" --> MC
+    SES -- "persist schema version" --> MS
 ```
 
 控制面决定执行计划和上下文；执行面承载有副作用的工具、Hook 和插件。所有副作用必须
@@ -80,53 +90,58 @@ flowchart TB
 
 ```text
 应用 config / Prompt / 项目规则 / TUI approval
-  → aiharness Provider + Context + ToolRegistry + Policy + HostBackend
-  → aiharness RunCoordinator + Session/EventStore
+  → aihi.models Provider / future application Gateway
+  → aihi.agent ToolRegistry + Policy + Sandbox + RuntimeBuilder
+  → aihi.agent RunCoordinator + Session/EventStore
 ```
 
-应用通过 `from aiharness import ...` 取得 Provider、Tool、Policy、Sandbox、Runtime 和
-`RuntimeExtensions`；是否注册 Edit/Shell/Test、选择哪个模型、如何展示 Approval 和是否组合
-Skill/Memory，由应用自行决定（见 §3.1 公共 API 边界）。
+应用从 `aihi.models` 取得模型契约和 Provider，从 `aihi.agent` 取得 Tool、Policy、Sandbox、
+Runtime 和 `RuntimeExtensions`；是否注册 Edit/Shell/Test、选择哪个模型、如何展示 Approval 和
+是否组合 Skill/Memory，由应用自行决定（见 §3.1 公共 API 边界）。
 
 ## 3. 工程目录
 
 ```text
-src/aiharness/
-  core/                 # Canonical types, events, IDs, errors
-  runtime/              # Agent state machine, run coordinator
-  sessions/             # Event store, snapshots, branching
-  context/              # Context compiler and compaction strategies
-  models/               # Gateway, router, provider adapters
-  tools/                # Tool contract, registry, dispatcher
-  plugins/              # Manifest, discovery, plugin host
-  policy/               # Rules, decisions, approvals, capability leases
-  hooks/                # Lifecycle event bus
-  sandbox/              # Backend protocols and implementations
-  memory/               # Extraction, retrieval, scopes
-  skills/               # SKILL.md discovery and loading
-  agents/               # Subagent task graph and coordination
-  artifacts/            # Large output and patch storage
-  observability/        # OTel, logging, cost accounting
-  evals/                # Datasets, replay, graders
+packages/aihi/
+  models/
+    pyproject.toml       # distribution: aihi-models
+    src/aihi/models/     # import: aihi.models
+    tests/               # unit + provider contract
+  agent/
+    pyproject.toml       # distribution: aihi-agent; depends on aihi-models
+    src/aihi/agent/
+      _core/             # Private Event, Agent IDs/errors, schema/migrations
+      runtime/           # Agent state machine, run coordinator
+      sessions/          # Event store, snapshots, branching
+      context/           # Context compiler and compaction
+      tools/             # Tool contract, registry, dispatcher, basic tools
+      plugins/ policy/ hooks/ sandbox/
+      memory/ skills/ agents/ artifacts/ observability/ evals/ mcp/
+    tests/               # unit + contract + integration + security
+  code-agent/
+    pyproject.toml       # distribution: aihi-code-agent; Coding runtime/Worker
+    src/aihi/code_agent/
+  code-protocol/
+    src/                  # language-neutral Worker RPC DTOs and schemas
+apps/
+  aihi-code-cli/         # TypeScript Ink TUI; communicates with the Worker over stdio RPC
 tests/
-  unit/
-  contract/
-  integration/
-  security/
-  evals/
+  integration/           # Tests against installed wheels
+  packaging/             # Wheel layout, PEP 420, py.typed
+  fixtures/              # Frozen events, legacy SQLite and traces
 docs/
   rfcs/
   adr/
 ```
 
-应用目录（Coding、Cowork 等产品：Prompt、工具选择、TUI 前端、审批交互）与 Harness 平级，
-当前不在本仓库中。
+`src/aihi/` 是 PEP 420 namespace 根，不包含 `__init__.py` 或根级 `py.typed`；基础包各自
+维护 `__init__.py`、`__all__` 和 `py.typed`。应用目录（Coding、Cowork 等产品：Prompt、Provider
+组合、工具选择、TUI 前端、审批交互）可以复用基础包，但不进入基础包的 import 图。
 
-依赖方向：`core` 不依赖其他业务包；领域包依赖 `core`；`runtime` 组装依赖；
-应用依赖 `aiharness`，反向依赖一律禁止。Runtime 和领域
-包内部通过 Provider、Sandbox、Store、Plugin Host 等 Protocol 访问实现；应用组合层可以实例化
-Harness 已有的具体实现并注入。`aiharness/agents` 表示 Subagent 协调基础设施，不是用户可执行
-Agent 的应用目录。
+依赖方向：`aihi.models ← aihi.agent ← application`；应用也可以直接组合 `aihi.models`。
+`aihi.models` 不得 import `aihi.agent`，两个基础包不得反向 import 应用。`aihi.agent` 内部通过
+Provider、Sandbox、Store、Plugin Host 等 Protocol 访问实现；应用组合层实例化具体实现并注入。
+`aihi.agent.agents` 表示 Subagent 协调基础设施，不是用户可执行 Agent 的应用目录。
 
 Runtime 通过 `RuntimeExtensions` 组合可选能力：`ContextContributor` 贡献只读上下文段落，
 `RunRecorder` 观察已完成的 Run 并追加自己的审计事件。两者都是结构化 Protocol，能力包不 import
@@ -138,8 +153,9 @@ Runtime 通过 `RuntimeExtensions` 组合可选能力：`ContextContributor` 贡
 
 | 层 | 负责 | 不负责 |
 |---|---|---|
-| `aiharness` | Canonical 类型、Runtime、Session、Provider、Tool、Policy、Sandbox、Context、Memory、Skill、Subagent、Eval、Observability | 产品 Prompt、项目规则文件、具体 Agent 角色、终端 UI、产品凭据和应用默认工具集合 |
-| 应用层（Coding、Cowork 等） | Agent 组装、真实 Provider 配置、工具选择、项目上下文、Approval UX、Memory/Subagent 工作流、TUI 前端 | 复制 Runtime、Provider、Policy、Sandbox 或 Event Store 实现 |
+| `aihi.models` | Model Message/Block、ModelRequest/Response、ModelToolDefinition、Provider Protocol、Adapter、模型消息 codec | Event、Agent ToolSpec、Policy、Sandbox、Router/Gateway、模型选择、凭据来源 |
+| `aihi.agent` | Runtime、Event/Session、Context、`tools.ToolSpec`/Tool、Policy、Sandbox、Memory、Skill、Subagent、Eval、Observability | 具体 Provider、产品 Prompt、模型角色、产品默认工具集、终端 UI |
+| 应用层（Coding、Cowork 等） | Agent 组装、Provider/Gateway、模型与工具选择、项目上下文、Approval UX、Memory/Subagent 工作流、TUI | 复制 Runtime、Provider Adapter、Policy、Sandbox 或 Event Store 实现 |
 | 应用之间 | 各自 Agent 的 Prompt、角色、工具组合、交互和产品策略 | 直接修改另一个 Agent，或绕过 Harness 的工具/策略/沙箱链路 |
 
 基础实现可以直接复用，不需要搬移或复制：应用直接实例化已有 Provider，创建
@@ -148,30 +164,35 @@ Runtime 通过 `RuntimeExtensions` 组合可选能力：`ContextContributor` 贡
 
 #### 组合：policy 归应用，plumbing 归 Harness
 
-`RuntimeBuilder` 承担装配，判据是一句可执行的问句：**每个合理的应用是否都会做同样的选择，
+`aihi.agent.RuntimeBuilder` 承担通用装配，判据是一句可执行的问句：**每个合理的应用是否都会做同样的选择，
 且做错了会不会无声？** 是则归 Harness，应用之间会合理地不同则归应用。
 
-- **应用决定（必填，无默认）**：`provider`、`sandbox`、`tools`；Subagent 的 `authority`
+- **应用决定（必填，无默认）**：`provider`、`model`、`sandbox`、`tools`；Subagent 的 `authority`
   与模型；系统提示词与项目规则。空工具集会被拒绝 —— 替调用方挑工具就是把产品决策塞进库里。
-- **Harness 装配（可选开启，有默认）**：把 Provider 包进 Gateway（重试与截止时间）、
-  从路径构造 Artifact Store 与 Telemetry sink、构造 Hook Bus、接线子代理的 runner 与
+- **Harness 装配（可选开启，有默认）**：从路径构造 Artifact Store 与 Telemetry sink、
+  构造 Hook Bus、接线子代理的 runner 与
   session factory、把 Skill/Memory 适配器组装进 `RuntimeExtensions`。
 
+基础包不提供 Router、Gateway 或 ModelRoles。未来应用层 Gateway 只能作为满足同一 `Provider`
+Protocol 的 decorator 注入，不能控制 Run 恢复或工具重放。
+
 **没有 `default_runtime()`**：任何替调用方选择 Provider 或工具集的便利函数，
-都会重蹈已删除的 `aiharness/cli` 的覆辙。安全相关的默认值（`ASK` 挂起、Host 显式 unsafe、
+都会重蹈已删除 CLI 的覆辙。安全相关的默认值（`ASK` 挂起、Host 显式 unsafe、
 mutating hook 需 trust）仍由 Harness 决定 —— 那里的「灵活」等于让应用有机会无声地搞错。
 
 #### 公共 API 边界
 
-应用只能 `from aiharness import ...`：顶层 `aiharness/__init__.py` 的 `__all__` 是**唯一**受支持
-的组合面，只能通过子模块路径访问的一切都是内部实现，可以在没有 ADR 的情况下变更。
-`tests/contract/test_public_api.py` 保证导出集合可解析、有序，且导入公共 API 不会拉进任何可选
-依赖（`fastapi`、`psycopg`、`opentelemetry`）。应用侧的 AST import 边界扫描随删除的应用层一并
-移除，应用层重建时必须一起补回来 —— 这条规则只有在应用侧才可执行。
+`aihi.models.__all__` 与 `aihi.agent.__all__` 是各自唯一受支持的跨 distribution 和应用组合面。
+只能通过内部子模块访问的名字可以在没有公共兼容承诺的情况下变更。公共 API contract test 保证
+导出集合可解析、有序，且导入不会拉入可选依赖。AST 边界测试必须禁止 `aihi.models →
+aihi.agent`、禁止跨 distribution 内部 import，并在应用重建时禁止应用导入基础包内部模块。
 
-`evals`、`api`、`cli` **刻意不导出**：它们尚未可注入
-`RunCoordinator`，因此不存在可承诺的组合契约。提升顺序不可颠倒 —— 先有 Runtime 注入点，
-再写 ADR，最后才进入公共 API（`skills`、`memory` 见 ADR-0022，`agents` 见 ADR-0023）。
+公共能力的提升顺序不可颠倒：先有 Runtime 注入点，再写 ADR，最后才进入叶子公共 API
+（`skills`、`memory` 见 ADR-0022，Subagent 见 ADR-0023）。
+
+工具包内部还要区分契约层与执行层：`aihi.agent.tools.spec` 只依赖 `aihi.models`，供 Policy、
+Context 和 Tool 执行层共同使用；`tools.base`、Registry、Dispatcher 位于其上。`tools` 包根对
+Policy-aware Dispatcher 使用延迟导入，避免低层契约导入执行层形成循环。
 
 ## 4. Runtime 与 Agent Loop
 
@@ -189,7 +210,9 @@ CREATED
 
 `WAITING_APPROVAL` 是唯一的非终态停机点：Run 追加 `run.suspended` 后返回，不写终态事件，
 挂起的 Tool Call 保持未配对，由后续 `resume` 执行。恢复时追加 `run.resumed` 而不是第二个
-`run.started`，因此恢复后的会话仍可 Replay。
+`run.started`，因此恢复后的会话仍可 Replay。首次 `run.started` 同时固化模型、Provider、
+Sandbox descriptor、Workspace Root、权限模式、Capability Lease 开关、System Prompt 摘要和输出
+预算；Resume 从事件恢复这些值并拒绝任何漂移（ADR-0031）。
 
 核心顺序不可交换：
 
@@ -212,21 +235,34 @@ CREATED
 只能通过解决 Approval 或 `abandon()` 离开 `WAITING_APPROVAL`。
 
 主动挂起与崩溃必须区分：等待 Approval 的 Tool Call 没有丢失执行状态，孤儿修复必须跳过
-`run.suspended` 记录的 `pending_tool_call_ids`，由 Resume 真正执行它们。
+`run.suspended` 记录的 `pending_tool_call_ids`，由 Resume 真正执行它们。带外拒绝按
+`run_id + tool_call_id` 关联原 Approval，在恢复时产生该 Tool Call 唯一的 `permission_denied`
+结果，不得再次申请同一审批（ADR-0031）。
 
 ## 5. 核心契约
 
 ### 5.1 Canonical Types
 
-`core` 只定义厂商无关类型：
+模型协议类型由 `aihi.models` 定义：
 
 - `Message`、`TextBlock`、`ThinkingBlock`、`ImageBlock`；
 - `ToolCallBlock`、`ToolResultBlock`；
 - `ModelRequest`、`ModelResponse`、`Usage`、`Capabilities`；
-- `ToolSpec`、`ToolResult`、`Event`。
+- `ModelToolDefinition`、Provider-neutral Stream Chunk。
 
-所有类型必须支持稳定 JSON 序列化和无损往返。Provider 的签名、加密推理载荷等放在
-`ThinkingBlock.opaque`，只由对应 Adapter 解释。
+Agent 运行时类型由 `aihi.agent` 定义，工具契约由 `aihi.agent.tools` 定义：
+
+- `Event`、Run/Session ID 与 Agent Error；
+- `ToolSpec`、`ToolContext`、`ToolExecutionResult`；
+- Policy、Approval、Sandbox、Artifact、Memory 和 Subagent 类型。
+
+`ToolSpec` 持有 `ModelToolDefinition` 以及 mutates、并发、能力、超时和幂等治理字段；编译
+`ModelRequest` 时只投影模型可见定义。所有跨边界类型必须支持稳定 JSON 序列化和无损往返。
+Provider 的签名、加密推理载荷等放在 `ThinkingBlock.opaque`，只由对应 Adapter 解释。
+
+模型消息使用独立 `message_schema_version`。Agent Event 持久化模型消息时必须记录该版本；旧事件
+缺少版本时按 Message Schema v1 读取。Message codec 与 Event Store 的跨 distribution 冻结语料
+共同守住旧 Session 恢复，不能让模型类型演进绕过 Event migration（ADR-0030）。
 
 ### 5.2 Event
 
@@ -239,7 +275,7 @@ event_id, session_id, run_id, seq, type, schema_version, created_at, data
 事件是事实源；Projection、Snapshot、Trace 和 Eval 都从事件产生。
 
 `schema_version` 版本化的是**信封**（每个事件共有的记录结构），不是单个事件类型的 payload。
-兼容性规则（`core/schema.py`）：
+兼容性规则（`aihi.agent._core` 的 schema 模块）：
 
 - 新增事件类型、为 `data` 增加可选字段是加法变更，不需要升版本；读取方必须容忍未知类型；
 - 删除/重命名字段或改变既有字段含义，必须升信封版本并同时注册迁移；
@@ -248,8 +284,10 @@ event_id, session_id, run_id, seq, type, schema_version, created_at, data
 事件类型分三类：`DURABLE_EVENT_TYPES`（写入且持久化，必须被冻结语料覆盖）、
 `EPHEMERAL_EVENT_TYPES`（只经 `Session.emit` 给 observer，无兼容性义务）、
 `LEGACY_EVENT_TYPES`（投影仍能读，但已无写入方）。
-`tests/contract/test_event_compatibility.py` 用一份冻结的 v1 会话语料同时守住三件事：
+Event compatibility contract test 用一份冻结的 v1 会话语料同时守住三件事：
 语料覆盖全部 durable 类型、源码中出现的字面量事件类型都在目录内、旧会话的投影与回放结果不漂移。
+此外必须用真实旧 SQLite fixture 和 TraceBundle 验证安装后的两个新 wheel 能完整 reload/replay；
+不得重新生成旧 fixture 来适配新实现。
 
 推荐事件类型：
 
@@ -303,7 +341,7 @@ usable_input = context_window - reserved_output - tool_schema - safety_margin
 1. 输出外置：大工具结果写入 Artifact，仅保留预览和引用；
 2. 确定性微压缩：清理旧工具结果和重复上下文；
 3. 语义压缩：通过 **async** `SummaryGenerator` 协议生成结构化摘要。默认是无网络的
-   `DeterministicSummaryGenerator`；`ModelSummaryGenerator` 用专用 compact 模型，
+   `DeterministicSummaryGenerator`；`ModelSummaryGenerator` 显式接收 compact `provider + model`，
    输入发送前截断，回复必须落回同一 schema，任何故障都降级而非让 Run 失败
    —— 压缩失败等于 `ContextWindowExceeded`（ADR-0029）。
 
@@ -322,9 +360,9 @@ Artifact Store 使用不可变内容摘要校验 Payload，并在 Manifest 中�
 Runtime 的删除和过期清理入口追加 `artifact.deleted`，原始 `artifact.created` 事件不覆盖；
 Store 的 `delete` 仅是受控物理存储原语，不绕过 Runtime 审计。
 
-## 8. Models：多模型适配与路由
+## 8. Models：模型契约与 Provider Adapter
 
-`ModelGateway` 不直接依赖具体 SDK。Provider Adapter 实现：
+`aihi.models.Provider` 是基础 Runtime 唯一依赖的模型边界。Provider Adapter 实现：
 
 ```text
 capabilities(model)
@@ -335,31 +373,24 @@ count_tokens(ModelRequest)
 Capability 包含 Streaming、Tool Calling、Parallel Tools、Reasoning、Vision、Prompt Cache、
 Token Counting、Context Window、Max Output 和 Effort Levels。
 
-`ModelGateway` 自身满足 `Provider` 协议，因此 Runtime 接受 Provider 的任何位置都可以接受
-Gateway；路由、有界重试、请求截止时间和 Fallback 对每次模型请求生效，而 `RunCoordinator`
-无需知道它们的存在。应用即使只配置一个 Provider 也应该走 Gateway —— 仅重试与截止时间就
-是净收益。
+基础包不提供 `ModelRouter`、`ModelGateway` 或 `ModelRoles`。`RuntimeBuilder` 显式要求主
+`provider + model`；模型压缩与 Subagent 也显式接收各自的 `provider + model`。第一阶段因此
+没有跨 Provider routing/fallback。未来应用层可以实现满足同一 Provider Protocol 的 Gateway
+decorator，但不得控制 Run 恢复或 Tool 重放。
 
-`ModelRoles` 目前只定义**有真实消费者**的角色：
-
-```text
-primary    → RunCoordinator 的模型
-subagent   → ChildRunSubagentRunner 派生子 Run 的模型
-compact    → ModelSummaryGenerator 的 L2 压缩模型（ADR-0029）
-```
-
-`vision`/`memory`/`judge` **刻意不在其中**：定义一个没有任何代码能读取的角色，等于写一句
-Runtime 兑现不了的承诺。等到有消费者时再加。
-
-Fallback 只能在模型请求尚未产生任何 stream chunk 时自动发生：一旦开始流式输出就绝不换
-Provider 重放，避免半个回合被另一个模型重写；不可重试的错误也不触发 Fallback。
+Provider stream 只能产生一个终态；产生首个 Chunk 后不得自动 retry 或切换 Provider；Provider
+自身不得执行工具。错误必须包含稳定错误码和 `retryable` 属性，由应用层在尚无输出时决定是否
+重试或切换。凭据来源、默认模型、路由、截止时间和 fallback 顺序同样属于应用决策。
+通用 `OpenAICompatibleProvider` 必须显式接收完整 Chat Completions endpoint，禁止继承 OpenAI
+默认 endpoint；厂商专用的固定 endpoint 只存在于对应 Adapter 内（ADR-0031）。
 
 ## 9. Tools、Plugins、Skills 与 Hooks
 
 ### 9.1 Tools
 
-每个工具声明名称、描述、JSON Schema、是否修改外部状态、并发安全、能力需求、超时和
-幂等策略。所有输入先校验和规范化，再进入 Policy。
+每个 Agent Tool 通过 `aihi.agent.tools.ToolSpec` 声明模型定义、是否修改外部状态、并发安全、能力
+需求、超时和幂等策略；其中 `aihi.models.ModelToolDefinition` 只包含名称、描述和 JSON Schema。
+所有输入先校验和规范化，再进入 Policy。Provider 不接收或解释 Agent 治理元数据。
 
 内建工具按授权分三类，名字与语义一致（ADR-0028）：只读的 `read_file`/`glob`/`grep`
 （免审批、可并行）、写入的 `write_file`/`edit_file`（`accept_edits` 覆盖）、执行的 `bash`
@@ -416,7 +447,8 @@ Hook 注册必须声明来源、稳定 ID、优先级、超时、失败策略和
 MCP Client/Server 使用 JSON-RPC 2.0 边界，方法集为 `initialize`、`tools/list`、
 `tools/call` 和初始化通知；传输通过 `McpTransport` Protocol 注入，内置内存传输仅用于契约测试，
 不把网络或第三方 MCP SDK 引入 Core。Server Tool Schema 必须是对象 JSON Schema，并将
-`readOnlyHint`、`destructiveHint`、`idempotentHint`、`openWorldHint` 映射到 canonical `ToolSpec`。
+`readOnlyHint`、`destructiveHint`、`idempotentHint`、`openWorldHint` 映射到
+`aihi.agent.tools.ToolSpec` 的执行治理字段；暴露给模型的部分再投影成 `ModelToolDefinition`。
 
 MCP 远程工具通过 `register_mcp_tools()` 注册到 `ToolRegistry`（Plugin 对应
 `register_plugin_tools()`），因此调用统一经过
@@ -521,6 +553,9 @@ in-flight 状态，消费方显式 ack 后才删除。取消会递归收尾活�
 不变式，两侧日志通过子 Session metadata 和父侧 Tool Result metadata 关联；`subagent.started` /
 `subagent.completed` 写入子 Session。预算真实生效：超时用 `wait_for`，Tool Call 上限由子 Session
 的事件 observer 触发取消。未显式指定时，子代理继承父能力集合减去 `agent.spawn`（ADR-0023）。
+子 Run 的 Coordinator 只接收按 `WorkspaceScope` 收窄的 Sandbox View；它强制 canonical root、
+allowed paths 和 read-only。底层 backend 无法可靠表达收窄范围时，进程执行 fail closed，不能仅靠
+`TaskGraph` 的声明校验（ADR-0031）。
 
 ## 12. Eval 与 Observability
 
@@ -603,11 +638,13 @@ Worker 相关的 Trace 结构只用于**可观测性关联**，不承载授权�
 
 ## 13. 技术与形态
 
-Python 3.11+、asyncio、SQLite。运行时依赖只有 `httpx`（Provider 适配需要）；核心不依赖
-LangChain/LangGraph，保持对 Provider 和执行面的控制。
+Python 3.11+、asyncio、SQLite。`aihi-models` 使用 `httpx` 完成 Provider 适配；
+`aihi-agent` 只依赖其公共模型契约，不依赖厂商 SDK。两个基础包都不依赖 LangChain/LangGraph，
+保持对 Provider 和执行面的控制。
 
-`aiharness` 今天的形态是**可嵌入库**：它不提供 CLI、HTTP 控制面或后台服务。命令行、交互方式和
-产品默认值属于应用层（见 §3.1）。
+目标形态是两个可独立安装、可共同组合的**可嵌入库**：`aihi-models` 与 `aihi-agent`。它们不提供
+产品 CLI、HTTP 控制面或后台服务。命令行、交互方式、Gateway 和产品默认值属于未来应用层
+（见 §3.1、ADR-0030）。迁移完成记录与后续任务见 [TASK.md](TASK.md)。
 
 平台类能力（下表）**已重新纳入范围**，但尚无实现代码。它们只能以适配器形式接入既有协议，
 不得改变 Runtime 的契约或安全默认值；范围与优先级见 [TASK.md](TASK.md#范围与方向)。

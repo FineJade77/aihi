@@ -1,26 +1,36 @@
 # RFC-0001：AIHarness Runtime 与执行面
 
-- 状态：Accepted
+- 状态：Accepted；由 ADR-0030 修订发布边界
 - 日期：2026-08-04
-- 关联：`docs/ARCHITECTURE.md`、`docs/TASK.md`
+- 关联：`docs/ARCHITECTURE.md`、`docs/TASK.md`、`docs/adr/0030-aihi-multi-package-boundary.md`
 
 ## 摘要
 
-AIHarness 采用模块化单体控制面和独立执行面。`runtime/` 只负责状态机、上下文请求、
-工具意图和生命周期；`sandbox/`、`plugins/` 和外部 Worker 负责执行有副作用的动作。
+AIHarness 采用模块化控制面和独立执行面。`aihi.models` 提供模型契约与 Provider；
+`aihi.agent.runtime` 只负责状态机、上下文请求、工具意图和生命周期；`sandbox`、`plugins` 和
+外部 Worker 负责执行有副作用的动作。
 
 ## 公共入口
 
 ```python
-async for event in harness.run(
-    session_id=session_id,
-    prompt=prompt,
-    options=RunOptions(...),
-):
-    consume(event)
+from aihi.agent import HostBackend, ReadFileTool, RuntimeBuilder
+from aihi.models import Message
+
+runtime = RuntimeBuilder(
+    provider=provider,
+    model="model-id",
+    sandbox=HostBackend(".", unsafe=True),
+    tools=[ReadFileTool()],
+).build()
+result = await runtime.coordinator.run(
+    session,
+    model=runtime.model,
+    user_message=Message.text("user", prompt),
+)
 ```
 
-运行时只返回 canonical `Event`，CLI、API、TUI、Eval 和远程传输不读取内部 Provider 流。
+运行时返回 `RunResult`，并把 canonical `Event` 写入 Session；CLI、TUI、Eval 和远程传输不读取
+Provider 私有 wire payload。流式 Delta 只经 Session observer 发布，不进入 Event Store。
 
 ## 运行不变式
 
@@ -50,14 +60,19 @@ Subagent 状态和 Run 状态。
 ## 依赖关系
 
 ```text
-core ← sessions / models / tools / policy / sandbox / hooks / memory / skills / agents
-      ← runtime
-runtime ← api / cli / evals / observability
+aihi.models ← aihi.agent ← application
+             ├─ private _core / sessions / context / runtime
+             ├─ tools / policy / hooks / sandbox
+             └─ memory / skills / subagents / plugins / mcp / observability / evals
 ```
 
-具体 Provider、Store、Sandbox 和 Plugin Host 通过 Protocol 注入；Runtime 不做具体类型判断。
+`aihi.models` 不得 import `aihi.agent`；基础包不得 import 应用。具体 Provider、Store、Sandbox 和
+Plugin Host 通过 Protocol 注入；Runtime 不做具体类型判断。基础包不提供 ModelRouter、
+ModelGateway 或 ModelRoles；Runtime 显式接收 `provider + model`。
 
-## 交付顺序
+## 原始交付顺序
+
+以下记录单包基线的原始顺序；ADR-0030 之后的多包迁移顺序以 TASK H-15 为准。
 
 1. L0 Core + SQLite Event Store + Fake Provider + HostBackend；
 2. Runtime/Tool/Policy/CLI 纵向闭环；

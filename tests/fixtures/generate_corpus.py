@@ -14,7 +14,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+REPOSITORY = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPOSITORY / "packages" / "aihi" / "models" / "src"))
+sys.path.insert(0, str(REPOSITORY / "packages" / "aihi" / "agent" / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from corpus_builder import build_corpus  # noqa: E402
