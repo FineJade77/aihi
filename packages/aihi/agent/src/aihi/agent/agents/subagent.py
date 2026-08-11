@@ -14,7 +14,7 @@ child session metadata and by the tool result the parent persists.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
@@ -362,6 +362,7 @@ class SubagentTool:
             "type": "object",
             "properties": {
                 "objective": {"type": "string"},
+                "agent_type": {"type": "string"},
                 "capabilities": {"type": "array"},
                 "max_tokens": {"type": "integer"},
                 "max_tool_calls": {"type": "integer"},
@@ -376,15 +377,49 @@ class SubagentTool:
         timeout_seconds=600.0,
     )
 
-    def __init__(self, runner: SubagentRunner, *, authority: SubagentAuthority) -> None:
-        self.runner = runner
+    def __init__(
+        self,
+        runner: SubagentRunner | Mapping[str, SubagentRunner],
+        *,
+        authority: SubagentAuthority,
+    ) -> None:
+        if isinstance(runner, Mapping):
+            if "general" not in runner:
+                raise ValueError("Named subagent runners must include a 'general' entry")
+            self.runners: dict[str, SubagentRunner] = dict(runner)
+        else:
+            self.runners = {"general": runner}
         self.authority = authority
+        # One graph per (session, run) however many agent types exist: per-type
+        # graphs would count max_children per type and defeat the ceiling.
         self._graphs: dict[tuple[str, str], tuple[TaskGraph, str]] = {}
+
+    @property
+    def runner(self) -> SubagentRunner:
+        """The default runner, for callers that never named one."""
+
+        return self.runners["general"]
+
+    def runner_for(self, agent_type: str) -> SubagentRunner:
+        """Return the runner for `agent_type`, or raise `KeyError`."""
+
+        return self.runners[agent_type]
 
     async def run(self, input: dict[str, Any], context: ToolContext) -> ToolExecutionResult:
         objective = input.get("objective")
         if not isinstance(objective, str) or not objective.strip():
             raise AgentValidationError("Subagent objective must be a non-empty string")
+        raw_type = input.get("agent_type", "general")
+        if not isinstance(raw_type, str) or not raw_type.strip():
+            raise AgentValidationError("Subagent agent_type must be a non-empty string")
+        try:
+            runner = self.runner_for(raw_type.strip())
+        except KeyError:
+            return ToolExecutionResult(
+                content=f"Unknown subagent type: {raw_type}",
+                is_error=True,
+                metadata={"error_code": "subagent_type_unknown"},
+            )
         graph, root_id = self._graph_for(context)
         try:
             node = graph.spawn(
@@ -404,7 +439,7 @@ class SubagentTool:
         task_id = node.spec.task_id
         graph.transition(task_id, AgentState.RUNNING)
         try:
-            result = await self.runner.run(node.spec, context)
+            result = await runner.run(node.spec, context)
         except AgentRuntimeError as error:
             graph.fail(task_id, error=str(error))
             return ToolExecutionResult(

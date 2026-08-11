@@ -26,13 +26,14 @@ library ends up shipping product decisions.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from aihi.agent.agents.subagent import (
     ChildRunSubagentRunner,
     SubagentAuthority,
+    SubagentRunner,
     SubagentTool,
     restrict_registry,
     subagent_session_factory,
@@ -175,6 +176,7 @@ class RuntimeBuilder:
         store: EventStore,
         provider: Provider,
         model: str,
+        runners: Mapping[str, SubagentRunner] | None = None,
     ) -> RuntimeBuilder:
         """Let a run delegate to a child run under `authority`.
 
@@ -185,6 +187,7 @@ class RuntimeBuilder:
         return replace(
             self,
             _subagents=_SubagentPlan(
+                runners=runners,
                 authority=authority,
                 store=store,
                 provider=provider,
@@ -251,7 +254,7 @@ class RuntimeBuilder:
             sandbox=sandbox,
             model=plan.model,
         )
-        return SubagentTool(runner, authority=plan.authority)
+        return SubagentTool(plan.runners or runner, authority=plan.authority)
 
 
 @dataclass(frozen=True, slots=True)
@@ -260,6 +263,7 @@ class _SubagentPlan:
     store: EventStore
     provider: Provider
     model: str
+    runners: Mapping[str, SubagentRunner] | None = None
 
 
 __all__ = ["Runtime", "RuntimeBuilder"]
