@@ -13,6 +13,7 @@ import type {
   SessionEventsResult,
   SkillDescriptor,
   RunResult,
+  RunDescriptor,
   TaskDescriptor,
   TaskState,
 } from "@aihi/code-protocol";
@@ -100,6 +101,12 @@ export interface RunResumeParams {
   model?: string;
   system_prompt?: string;
   max_output_tokens?: number;
+}
+
+export interface RunCancelParams {
+  session_id: string;
+  run_id: string;
+  reason?: string;
 }
 
 export interface ApprovalResolveParams {
@@ -330,6 +337,25 @@ export class RpcClient {
 
   public async resumeRun(params: RunResumeParams): Promise<RunResult> {
     return this.request<RunResult>("run.resume", params as unknown as JsonObject);
+  }
+
+  public async listRuns(sessionId: string): Promise<RunDescriptor[]> {
+    const result = await this.request<{ runs: RunDescriptor[] }>("run.list", {
+      session_id: sessionId,
+    });
+    return result.runs;
+  }
+
+  public async cancelRun(params: RunCancelParams): Promise<RunResult> {
+    return this.request<RunResult>("run.cancel", params as unknown as JsonObject);
+  }
+
+  public async forkSession(sessionId: string, atSeq?: number): Promise<SessionDescriptor> {
+    const result = await this.request<{ session: SessionDescriptor }>("session.fork", {
+      session_id: sessionId,
+      ...(atSeq !== undefined ? { at_seq: atSeq } : {}),
+    });
+    return result.session;
   }
 
   public async listApprovals(

@@ -103,6 +103,17 @@ export interface RunResult {
   };
 }
 
+export interface RunDescriptor {
+  run_id: string;
+  state: RunState | "created";
+  started_at: string;
+  updated_at: string;
+  provider: string | null;
+  model: string | null;
+  error: string | null;
+  pending_approval_id: string | null;
+}
+
 export interface ProviderDescriptor {
   name: string;
   model: string;

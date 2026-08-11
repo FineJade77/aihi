@@ -6,6 +6,7 @@ interface CliOptions {
   cwd: string;
   storePath?: string;
   configPath?: string;
+  sessionId?: string;
   provider: string;
   model: string;
 }
@@ -20,7 +21,7 @@ function parseArgs(argv: string[]): CliOptions {
   };
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
-    if (argument === "--cwd" || argument === "--store" || argument === "--config" || argument === "--provider" || argument === "--model") {
+    if (argument === "--cwd" || argument === "--store" || argument === "--config" || argument === "--provider" || argument === "--model" || argument === "--session") {
       const value = argv[index + 1];
       if (!value) throw new Error(`${argument} requires a value`);
       if (argument === "--cwd") options.cwd = value;
@@ -28,12 +29,13 @@ function parseArgs(argv: string[]): CliOptions {
       if (argument === "--config") options.configPath = value;
       if (argument === "--provider") options.provider = value;
       if (argument === "--model") options.model = value;
+      if (argument === "--session") options.sessionId = value;
       index += 1;
       continue;
     }
     if (argument === "--help" || argument === "-h") {
       process.stdout.write(
-        "Usage: aihi-code [--cwd PATH] [--store PATH] [--config PATH] [--provider NAME] [--model NAME]\n",
+        "Usage: aihi-code [--cwd PATH] [--store PATH] [--config PATH] [--provider NAME] [--model NAME] [--session SESSION_ID]\n",
       );
       process.exit(0);
     }
@@ -55,6 +57,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
       cwd: options.cwd,
       provider: options.provider,
       model: options.model,
+      sessionId: options.sessionId,
     });
   } finally {
     await client.close();

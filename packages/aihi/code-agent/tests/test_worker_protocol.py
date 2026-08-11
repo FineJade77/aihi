@@ -4,6 +4,7 @@ import io
 import json
 
 import pytest
+from aihi.agent import Event
 from aihi.code_agent.framing import FrameError, read_frame, write_frame
 from aihi.code_agent.protocol import (
     INVALID_PARAMS,
@@ -324,3 +325,126 @@ def test_stdio_streams_session_events_after_command_response(tmp_path) -> None:
     assert [message.get("id") for message in messages] == [1, 2, None, 3]
     assert messages[2]["method"] == "event"
     assert messages[2]["params"]["event"]["event_type"] == "session.created"
+
+
+def _write_worker_config(tmp_path):
+    config_path = tmp_path / "aihi-code.toml"
+    config_path.write_text(
+        """[provider]
+name = "fake"
+model = "demo"
+
+[sandbox]
+backend = "host"
+root = "."
+unsafe = true
+""",
+        encoding="utf-8",
+    )
+    return config_path
+
+
+def test_run_list_and_session_fork_are_recoverable(tmp_path) -> None:
+    config_path = _write_worker_config(tmp_path)
+    server = WorkerServer(store_path=tmp_path / "events.sqlite3", config_path=config_path)
+    server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {"protocol_version": PROTOCOL_VERSION},
+        }
+    )
+    created = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "session.create",
+            "params": {"cwd": str(tmp_path)},
+        }
+    )
+    assert created is not None
+    session_id = created["result"]["session"]["session_id"]  # type: ignore[index]
+    completed = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "run.start",
+            "params": {"session_id": session_id, "user_message": "hello"},
+        }
+    )
+    assert completed is not None
+    runs = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 4,
+            "method": "run.list",
+            "params": {"session_id": session_id},
+        }
+    )
+    assert runs is not None
+    assert runs["result"]["runs"][0]["state"] == "completed"  # type: ignore[index]
+
+    forked = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 5,
+            "method": "session.fork",
+            "params": {"session_id": session_id, "at_seq": 1},
+        }
+    )
+    assert forked is not None
+    child = forked["result"]["session"]  # type: ignore[index]
+    assert child["parent_session_id"] == session_id
+    server.close()
+
+
+def test_run_cancel_closes_a_suspended_run(tmp_path) -> None:
+    config_path = _write_worker_config(tmp_path)
+    server = WorkerServer(store_path=tmp_path / "events.sqlite3", config_path=config_path)
+    server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {"protocol_version": PROTOCOL_VERSION},
+        }
+    )
+    created = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "session.create",
+            "params": {"cwd": str(tmp_path)},
+        }
+    )
+    assert created is not None
+    session_id = created["result"]["session"]["session_id"]  # type: ignore[index]
+    session = server._load_session({"session_id": session_id})
+    session.append(
+        Event(
+            type="run.started",
+            session_id=session_id,
+            run_id="run_suspended",
+            data={"provider": "fake", "model": "demo"},
+        )
+    )
+    session.append(
+        Event(
+            type="run.suspended",
+            session_id=session_id,
+            run_id="run_suspended",
+            data={"approval_id": "approval_1", "pending_tool_call_ids": []},
+        )
+    )
+    cancelled = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "run.cancel",
+            "params": {"session_id": session_id, "run_id": "run_suspended"},
+        }
+    )
+    assert cancelled is not None
+    assert cancelled["result"]["state"] == "cancelled"  # type: ignore[index]
+    server.close()

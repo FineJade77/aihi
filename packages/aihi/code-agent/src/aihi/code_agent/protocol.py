@@ -134,6 +134,30 @@ COMMAND_DESCRIPTORS: Final[tuple[JsonObject, ...]] = (
         "requires_approval": False,
     },
     {
+        "name": "run.list",
+        "aliases": [],
+        "scope": "run",
+        "execution": "worker",
+        "mutates": False,
+        "requires_approval": False,
+    },
+    {
+        "name": "run.cancel",
+        "aliases": [],
+        "scope": "run",
+        "execution": "worker",
+        "mutates": True,
+        "requires_approval": False,
+    },
+    {
+        "name": "session.fork",
+        "aliases": [],
+        "scope": "session",
+        "execution": "worker",
+        "mutates": True,
+        "requires_approval": False,
+    },
+    {
         "name": "config.get",
         "aliases": [],
         "scope": "config",
@@ -370,6 +394,12 @@ class WorkerServer:
             return self._run_start(params)
         if method == "run.resume":
             return self._run_resume(params)
+        if method == "run.list":
+            return self._run_list(params)
+        if method == "run.cancel":
+            return self._run_cancel(params)
+        if method == "session.fork":
+            return self._session_fork(params)
         if method == "config.get":
             return self._config_get(params)
         if method == "approval.list":
@@ -444,6 +474,15 @@ class WorkerServer:
                 for info in sessions
             ]
         }
+
+    def _session_fork(self, params: JsonObject) -> JsonObject:
+        session = self._load_session(params)
+        at_seq = self._non_negative_int(params.get("at_seq", session.head_seq), "at_seq")
+        if at_seq < 1:
+            raise RpcValidationError("at_seq must be positive", code=INVALID_PARAMS)
+        child = session.fork(at_seq=at_seq, event_observer=self._observe_event)
+        self._sessions[child.id] = child
+        return {"session": self._session_descriptor(child), "at_seq": at_seq}
 
     def _session_events(self, params: JsonObject) -> JsonObject:
         session = self._load_session(params)
@@ -604,6 +643,71 @@ class WorkerServer:
                 max_output_tokens=max_output_tokens,
             )
         )
+
+    def _run_list(self, params: JsonObject) -> JsonObject:
+        session = self._load_session(params)
+        selected: dict[str, JsonObject] = {}
+        for event in session.events:
+            if event.run_id is None:
+                continue
+            descriptor = selected.setdefault(
+                event.run_id,
+                {
+                    "run_id": event.run_id,
+                    "state": "created",
+                    "started_at": event.created_at,
+                    "updated_at": event.created_at,
+                    "provider": None,
+                    "model": None,
+                    "error": None,
+                    "pending_approval_id": None,
+                },
+            )
+            descriptor["updated_at"] = event.created_at
+            if event.type == "run.started":
+                descriptor["state"] = "running"
+                descriptor["provider"] = event.data.get("provider")
+                descriptor["model"] = event.data.get("model")
+            elif event.type == "run.resumed":
+                descriptor["state"] = "running"
+            elif event.type == "run.suspended":
+                descriptor["state"] = "waiting_approval"
+                descriptor["pending_approval_id"] = event.data.get("approval_id")
+            elif event.type == "run.completed":
+                descriptor["state"] = "completed"
+            elif event.type == "run.failed":
+                descriptor["state"] = "failed"
+                descriptor["error"] = event.data.get("error")
+            elif event.type == "run.interrupted":
+                descriptor["state"] = "interrupted"
+            elif event.type == "run.cancelled":
+                descriptor["state"] = "cancelled"
+        runs = sorted(selected.values(), key=lambda item: str(item["updated_at"]), reverse=True)
+        return {"session_id": session.id, "runs": runs}
+
+    def _run_cancel(self, params: JsonObject) -> JsonObject:
+        session = self._load_session(params)
+        run_id = self._required_text(params, "run_id", max_length=256)
+        reason = self._optional_text_value(params.get("reason"), "reason", max_length=4_096)
+        config = load_config(self._config_path, cwd=session.cwd)
+        return asyncio.run(self._execute_run_cancel(config, session, run_id=run_id, reason=reason))
+
+    @staticmethod
+    async def _execute_run_cancel(
+        config: CodeAgentConfig,
+        session: Session,
+        *,
+        run_id: str,
+        reason: str | None,
+    ) -> JsonObject:
+        runtime = await CodeAgentRuntime.create(config)
+        try:
+            result = runtime.runtime.coordinator.abandon(
+                session, run_id=run_id, reason=reason or "cancelled by user"
+            )
+            return WorkerServer._run_result(result)
+        finally:
+            await runtime.close()
 
     @staticmethod
     async def _execute_run_start(

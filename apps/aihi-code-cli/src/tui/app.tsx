@@ -35,6 +35,7 @@ export interface TuiAppProps {
   cwd: string;
   provider: string;
   model: string;
+  sessionId?: string;
 }
 
 function eventFromRecord(event: EventRecord): UiEvent {
@@ -173,10 +174,10 @@ function TaskPanel({ tasks }: { tasks: TaskDescriptor[] }) {
   );
 }
 
-export function TuiApp({ client, cwd, provider, model }: TuiAppProps) {
+export function TuiApp({ client, cwd, provider, model, sessionId }: TuiAppProps) {
   const { exit } = useApp();
   const [sessions, setSessions] = useState<SessionDescriptor[]>([]);
-  const [selectedSessionId, setSelectedSessionId] = useState<string>();
+  const [selectedSessionId, setSelectedSessionId] = useState<string | undefined>(sessionId);
   const [selectedSession, setSelectedSession] = useState<SessionDescriptor>();
   const [events, setEvents] = useState<UiEvent[]>([]);
   const [tasks, setTasks] = useState<TaskDescriptor[]>([]);
@@ -264,7 +265,7 @@ export function TuiApp({ client, cwd, provider, model }: TuiAppProps) {
         return;
       }
       if (name === "help" || name === "h") {
-        setStatus("message → run · /provider NAME · /model NAME · /config · /approvals · /approve ID [once] · /skills · /skill-trust NAME · /quit");
+        setStatus("message → run · /provider NAME · /model NAME · /config · /runs · /cancel RUN_ID · /history · /fork [SEQ] · /approvals · /approve ID [once] · /skills · /skill-trust NAME · /quit");
         return;
       }
       if (name === "config") {
@@ -294,6 +295,16 @@ export function TuiApp({ client, cwd, provider, model }: TuiAppProps) {
       }
       if (name === "sessions" || name === "ls") {
         await refreshSessions();
+        return;
+      }
+      if (name === "runs" || name === "run-list") {
+        if (!selectedSessionId) throw new Error("Create or open a session first");
+        const runs = await client.listRuns(selectedSessionId);
+        setStatus(
+          runs.length === 0
+            ? "No runs"
+            : runs.slice(0, 5).map((run) => `${shortId(run.run_id)} ${run.state}${run.model ? `/${run.model}` : ""}`).join(" · "),
+        );
         return;
       }
       if (name === "refresh") {
@@ -341,6 +352,38 @@ export function TuiApp({ client, cwd, provider, model }: TuiAppProps) {
         });
         setStatus(runStatus(result));
         await loadSession(selectedSessionId);
+        return;
+      }
+      if (name === "cancel" || name === "interrupt") {
+        if (!selectedSessionId) throw new Error("Create or open a session first");
+        const runId = args[0];
+        if (!runId) throw new Error(`Usage: /${name} RUN_ID`);
+        const result = await client.cancelRun({
+          session_id: selectedSessionId,
+          run_id: runId,
+          reason: name === "interrupt" ? "interrupted by user" : "cancelled by user",
+        });
+        setStatus(runStatus(result));
+        await loadSession(selectedSessionId);
+        return;
+      }
+      if (name === "history") {
+        if (!selectedSessionId) throw new Error("Create or open a session first");
+        const page = await client.getSessionEvents(selectedSessionId, 0, 100);
+        setStatus(`Session history · ${page.events.length} events · head ${page.head_seq}`);
+        setEvents(page.events.map(eventFromRecord));
+        return;
+      }
+      if (name === "fork") {
+        if (!selectedSessionId) throw new Error("Create or open a session first");
+        const atSeq = args[0] === undefined ? undefined : Number(args[0]);
+        if (atSeq !== undefined && (!Number.isInteger(atSeq) || atSeq < 1)) {
+          throw new Error("Usage: /fork [POSITIVE_SEQ]");
+        }
+        const child = await client.forkSession(selectedSessionId, atSeq);
+        await refreshSessions();
+        await loadSession(child.session_id);
+        setStatus(`Forked session ${shortId(child.session_id)}`);
         return;
       }
       if (name === "approvals" || name === "approval") {
@@ -460,7 +503,7 @@ export function TuiApp({ client, cwd, provider, model }: TuiAppProps) {
           placeholder="Type /help for commands"
         />
       </Box>
-      <Text color={COLORS.muted}>message  /provider  /model  /config  /approvals  /approve  /skills  /skill-trust  /resume  /quit · Ctrl-C exits</Text>
+      <Text color={COLORS.muted}>message  /provider  /model  /config  /runs  /cancel  /history  /fork  /approvals  /approve  /skills  /skill-trust  /resume  /quit · Ctrl-C exits</Text>
     </Box>
   );
 }

@@ -69,6 +69,12 @@ command = ["python3", "-m", "example_mcp_server"]
 allowed_tools = ["search"]
 ```
 
+Use `--session SESSION_ID` to reopen a known session on startup. `/sessions`
+selects the newest persisted session when no session is specified; `/open` can
+switch to another one. `/runs` lists run states, `/history` reloads the event
+history, `/fork [SEQ]` creates a branch, and `/cancel RUN_ID` closes a
+suspended or recoverable run.
+
 After `/new`, ordinary input is a user turn and runs the Coding Agent loop.
 Use `/provider NAME [MODEL]` and `/model MODEL` to choose a configured Provider
 profile and model for subsequent new Runs; `/config` shows the effective,
