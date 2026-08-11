@@ -2,6 +2,7 @@ import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type {
   AgentEvent,
   ApprovalDescriptor,
+  ConfigDescriptor,
   EventNotification,
   InitializeResult,
   JsonObject,
@@ -87,6 +88,7 @@ export interface RunStartParams {
   session_id: string;
   user_message: string;
   run_id?: string;
+  provider?: string;
   model?: string;
   system_prompt?: string;
   max_output_tokens?: number;
@@ -317,6 +319,13 @@ export class RpcClient {
 
   public async startRun(params: RunStartParams): Promise<RunResult> {
     return this.request<RunResult>("run.start", params as unknown as JsonObject);
+  }
+
+  public async getConfig(cwd?: string): Promise<ConfigDescriptor> {
+    const result = await this.request<{ config: ConfigDescriptor }>("config.get", {
+      ...(cwd ? { cwd } : {}),
+    });
+    return result.config;
   }
 
   public async resumeRun(params: RunResumeParams): Promise<RunResult> {

@@ -183,6 +183,8 @@ export function TuiApp({ client, cwd, provider, model }: TuiAppProps) {
   const [command, setCommand] = useState("");
   const [status, setStatus] = useState("Connecting to Worker…");
   const [busy, setBusy] = useState(false);
+  const [activeProvider, setActiveProvider] = useState(provider);
+  const [activeModel, setActiveModel] = useState(model);
 
   const loadSession = useCallback(async (sessionId: string) => {
     const [session, page, nextTasks] = await Promise.all([
@@ -212,6 +214,13 @@ export function TuiApp({ client, cwd, provider, model }: TuiAppProps) {
       setStatus("No session yet · use /new to create one");
     }
   }, [client, loadSession, selectedSessionId]);
+
+  useEffect(() => {
+    void client.getConfig(cwd).then((config) => {
+      setActiveProvider(config.provider.name);
+      setActiveModel(config.provider.model);
+    }).catch((error) => setStatus(`Config load failed: ${errorMessage(error)}`));
+  }, [client, cwd]);
 
   useEffect(() => {
     void refreshSessions().catch((error) => setStatus(`Load failed: ${errorMessage(error)}`));
@@ -255,7 +264,32 @@ export function TuiApp({ client, cwd, provider, model }: TuiAppProps) {
         return;
       }
       if (name === "help" || name === "h") {
-        setStatus("message → run · /approvals · /approve ID [once] · /skills · /skill-trust NAME · /quit");
+        setStatus("message → run · /provider NAME · /model NAME · /config · /approvals · /approve ID [once] · /skills · /skill-trust NAME · /quit");
+        return;
+      }
+      if (name === "config") {
+        const config = await client.getConfig(cwd);
+        setStatus(
+          `${config.provider.name}/${config.provider.model} · tools ${config.tools.length} · MCP ${config.mcp_servers.length} · Skill roots ${Array.isArray(config.skills.roots) ? config.skills.roots.length : 0}`,
+        );
+        return;
+      }
+      if (name === "provider") {
+        const selectedName = args[0];
+        if (!selectedName) throw new Error("Usage: /provider NAME [MODEL]");
+        const config = await client.getConfig(cwd);
+        const selected = config.providers.find((item) => item.name === selectedName.replace(/-/g, "_").toLowerCase());
+        if (!selected) throw new Error(`Provider is not configured: ${selectedName}`);
+        setActiveProvider(selected.name);
+        setActiveModel(args[1] ?? selected.model);
+        setStatus(`Selected ${selected.name}/${args[1] ?? selected.model}`);
+        return;
+      }
+      if (name === "model") {
+        const selectedModel = args[0];
+        if (!selectedModel) throw new Error("Usage: /model MODEL");
+        setActiveModel(selectedModel);
+        setStatus(`Selected ${activeProvider}/${selectedModel}`);
         return;
       }
       if (name === "sessions" || name === "ls") {
@@ -276,8 +310,8 @@ export function TuiApp({ client, cwd, provider, model }: TuiAppProps) {
       if (name === "new") {
         const newSession = await client.createSession({
           cwd,
-          provider: args[0] ?? provider,
-          model: args[1] ?? model,
+          provider: args[0] ?? activeProvider,
+          model: args[1] ?? activeModel,
         });
         await refreshSessions();
         await loadSession(newSession.session_id);
@@ -290,6 +324,8 @@ export function TuiApp({ client, cwd, provider, model }: TuiAppProps) {
         const result = await client.startRun({
           session_id: selectedSessionId,
           user_message: userMessage,
+          provider: activeProvider,
+          model: activeModel,
         });
         setStatus(runStatus(result));
         await loadSession(selectedSessionId);
@@ -350,6 +386,8 @@ export function TuiApp({ client, cwd, provider, model }: TuiAppProps) {
         const result = await client.startRun({
           session_id: selectedSessionId,
           user_message: trimmed,
+          provider: activeProvider,
+          model: activeModel,
         });
         setStatus(runStatus(result));
         await loadSession(selectedSessionId);
@@ -383,7 +421,7 @@ export function TuiApp({ client, cwd, provider, model }: TuiAppProps) {
     } finally {
       setBusy(false);
     }
-  }, [cwd, loadSession, model, provider, quit, refreshSessions, selectedSessionId]);
+  }, [activeModel, activeProvider, cwd, loadSession, model, provider, quit, refreshSessions, selectedSessionId]);
 
   useInput((input, key) => {
     if (key.ctrl && input === "c") void quit();
@@ -392,9 +430,9 @@ export function TuiApp({ client, cwd, provider, model }: TuiAppProps) {
 
   const sessionTitle = useMemo(
     () => selectedSession?.metadata.model
-      ? `${selectedSession.metadata.provider ?? provider} / ${selectedSession.metadata.model}`
-      : "No active session",
-    [provider, selectedSession],
+      ? `${selectedSession.metadata.provider ?? activeProvider} / ${selectedSession.metadata.model ?? activeModel}`
+      : `${activeProvider} / ${activeModel}`,
+    [activeModel, activeProvider, selectedSession],
   );
 
   return (
@@ -422,7 +460,7 @@ export function TuiApp({ client, cwd, provider, model }: TuiAppProps) {
           placeholder="Type /help for commands"
         />
       </Box>
-      <Text color={COLORS.muted}>message  /approvals  /approve  /skills  /skill-trust  /resume  /quit · Ctrl-C exits</Text>
+      <Text color={COLORS.muted}>message  /provider  /model  /config  /approvals  /approve  /skills  /skill-trust  /resume  /quit · Ctrl-C exits</Text>
     </Box>
   );
 }

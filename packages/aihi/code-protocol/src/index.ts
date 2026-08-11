@@ -103,6 +103,28 @@ export interface RunResult {
   };
 }
 
+export interface ProviderDescriptor {
+  name: string;
+  model: string;
+  api_key_env?: string | null;
+  base_url?: string | null;
+}
+
+export interface ConfigDescriptor extends JsonObject {
+  source_path: string | null;
+  base_dir: string;
+  provider: ProviderDescriptor;
+  providers: ProviderDescriptor[];
+  tools: string[];
+  sandbox: {
+    backend: string;
+    root: string;
+    unsafe: boolean;
+  };
+  skills: JsonObject;
+  mcp_servers: string[];
+}
+
 export interface ApprovalDescriptor extends JsonObject {
   approval_id: string;
   scope: string;

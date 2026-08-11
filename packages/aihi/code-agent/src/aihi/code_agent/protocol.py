@@ -134,6 +134,14 @@ COMMAND_DESCRIPTORS: Final[tuple[JsonObject, ...]] = (
         "requires_approval": False,
     },
     {
+        "name": "config.get",
+        "aliases": [],
+        "scope": "config",
+        "execution": "worker",
+        "mutates": False,
+        "requires_approval": False,
+    },
+    {
         "name": "approval.list",
         "aliases": [],
         "scope": "approval",
@@ -362,6 +370,8 @@ class WorkerServer:
             return self._run_start(params)
         if method == "run.resume":
             return self._run_resume(params)
+        if method == "config.get":
+            return self._config_get(params)
         if method == "approval.list":
             return self._approval_list(params)
         if method == "approval.resolve":
@@ -396,8 +406,11 @@ class WorkerServer:
 
     def _session_create(self, params: JsonObject) -> JsonObject:
         cwd = self._required_text(params, "cwd", max_length=4_096)
-        provider = self._required_text(params, "provider", max_length=256)
-        model = self._required_text(params, "model", max_length=256)
+        config = load_config(self._config_path, cwd=cwd)
+        provider = self._optional_text_value(params.get("provider"), "provider", max_length=256)
+        model = self._optional_text_value(params.get("model"), "model", max_length=256)
+        resolved_provider = provider or config.provider.name
+        resolved_model = model or config.provider.model
         session_id = params.get("session_id")
         if session_id is not None and (
             not isinstance(session_id, str) or not session_id.strip()
@@ -407,8 +420,8 @@ class WorkerServer:
         session = Session.create(
             self._ensure_store(),
             cwd=cwd,
-            provider=provider,
-            model=model,
+            provider=resolved_provider,
+            model=resolved_model,
             session_id=session_id,
             metadata=metadata,
             event_observer=self._observe_event,
@@ -542,6 +555,7 @@ class WorkerServer:
     def _run_start(self, params: JsonObject) -> JsonObject:
         session = self._load_session(params)
         user_message = self._required_text(params, "user_message", max_length=100_000)
+        provider = self._optional_text_value(params.get("provider"), "provider", max_length=256)
         model = self._optional_text_value(params.get("model"), "model", max_length=256)
         system_prompt = self._optional_text_value(
             params.get("system_prompt"), "system_prompt", max_length=100_000
@@ -551,6 +565,7 @@ class WorkerServer:
         )
         run_id = self._optional_text_value(params.get("run_id"), "run_id", max_length=256)
         config = load_config(self._config_path, cwd=session.cwd)
+        config = config.select_provider(provider, model=model)
         return asyncio.run(
             self._execute_run_start(
                 config,
@@ -562,6 +577,11 @@ class WorkerServer:
                 max_output_tokens=max_output_tokens,
             )
         )
+
+    def _config_get(self, params: JsonObject) -> JsonObject:
+        cwd = self._optional_text_value(params.get("cwd"), "cwd", max_length=4_096)
+        config = load_config(self._config_path, cwd=cwd or str(Path.cwd()))
+        return {"config": config.public_descriptor()}
 
     def _run_resume(self, params: JsonObject) -> JsonObject:
         session = self._load_session(params)

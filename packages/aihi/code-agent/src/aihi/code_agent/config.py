@@ -12,7 +12,7 @@ import os
 import re
 import tomllib
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -75,6 +75,7 @@ class CodeAgentConfig:
 
     base_dir: Path
     provider: ProviderSettings = ProviderSettings()
+    provider_profiles: Mapping[str, ProviderSettings] = field(default_factory=dict)
     system_prompt: str = ""
     max_output_tokens: int = 4_096
     permission_mode: PermissionMode = PermissionMode.DEFAULT
@@ -90,7 +91,13 @@ class CodeAgentConfig:
     @classmethod
     def defaults(cls, cwd: str | Path) -> CodeAgentConfig:
         base_dir = Path(cwd).expanduser().resolve(strict=True)
-        return cls(base_dir=base_dir, sandbox=SandboxSettings(root=base_dir))
+        provider = ProviderSettings()
+        return cls(
+            base_dir=base_dir,
+            provider=provider,
+            provider_profiles={provider.name: provider},
+            sandbox=SandboxSettings(root=base_dir),
+        )
 
     @classmethod
     def from_mapping(
@@ -111,24 +118,13 @@ class CodeAgentConfig:
                 "provider.api_key is not supported; reference credentials with api_key_env"
             )
 
-        provider_name = _text(provider_map.get("name", "fake"), "provider.name")
-        model = _text(provider_map.get("model", agent_map.get("model", "demo")), "provider.model")
-        api_key_env = provider_map.get("api_key_env")
-        if api_key_env is not None:
-            api_key_env = _env_name(api_key_env, "provider.api_key_env")
-        base_url = provider_map.get("base_url")
-        if base_url is not None:
-            base_url = _text(base_url, "provider.base_url")
-        timeout_seconds = _positive_float(
-            provider_map.get("timeout_seconds", 90.0), "provider.timeout_seconds"
+        provider = _parse_provider_settings(
+            provider_map,
+            key="provider",
+            default_name="fake",
+            default_model=agent_map.get("model", "demo"),
         )
-        provider = ProviderSettings(
-            name=provider_name.lower(),
-            model=model,
-            api_key_env=api_key_env,
-            base_url=base_url,
-            timeout_seconds=timeout_seconds,
-        )
+        provider_profiles = _parse_provider_profiles(value.get("providers", {}), provider)
 
         permission_mode = _enum(
             agent_map.get("permission_mode", PermissionMode.DEFAULT.value),
@@ -192,6 +188,7 @@ class CodeAgentConfig:
         return cls(
             base_dir=root,
             provider=provider,
+            provider_profiles=provider_profiles,
             system_prompt=system_prompt,
             max_output_tokens=max_output_tokens,
             permission_mode=permission_mode,
@@ -204,6 +201,59 @@ class CodeAgentConfig:
             mcp_servers=mcp_servers,
             source_path=(Path(source_path).expanduser().resolve() if source_path else None),
         )
+
+    def select_provider(
+        self, provider: str | None = None, *, model: str | None = None
+    ) -> CodeAgentConfig:
+        """Return a run config with an explicitly selected configured provider/model."""
+
+        selected_name = self.provider.name if provider is None else _provider_name(provider)
+        selected = self.provider_profiles.get(selected_name)
+        if selected is None:
+            raise CodeAgentConfigError(
+                f"Provider {selected_name!r} is not configured; add [providers.{selected_name}]"
+            )
+        selected_model = selected.model if model is None else _text(model, "model")
+        return replace(self, provider=replace(selected, model=selected_model))
+
+    def public_descriptor(self) -> dict[str, object]:
+        """Return non-secret config metadata for the CLI and diagnostics."""
+
+        providers = [
+            {
+                "name": profile.name,
+                "model": profile.model,
+                "api_key_env": profile.api_key_env,
+                "base_url": profile.base_url,
+            }
+            for profile in self.provider_profiles.values()
+        ]
+        providers.sort(key=lambda item: str(item["name"]))
+        return {
+            "source_path": str(self.source_path) if self.source_path else None,
+            "base_dir": str(self.base_dir),
+            "provider": {
+                "name": self.provider.name,
+                "model": self.provider.model,
+                "api_key_env": self.provider.api_key_env,
+                "base_url": self.provider.base_url,
+            },
+            "providers": providers,
+            "tools": list(self.tools),
+            "sandbox": {
+                "backend": self.sandbox.backend,
+                "root": str(self.sandbox.root),
+                "unsafe": self.sandbox.unsafe,
+            },
+            "skills": {
+                "roots": [str(root.path) for root in self.skill_roots],
+                "load_tool": self.skill_load_tool,
+                "trust_lockfile": (
+                    str(self.skill_trust_path) if self.skill_trust_path else None
+                ),
+            },
+            "mcp_servers": [server.name for server in self.mcp_servers],
+        }
 
 
 def load_config(
@@ -266,6 +316,59 @@ def _parse_skill_roots(value: Mapping[str, Any], base_dir: Path) -> tuple[SkillR
     return tuple(roots)
 
 
+def _parse_provider_settings(
+    value: Mapping[str, Any],
+    *,
+    key: str,
+    default_name: str,
+    default_model: object,
+) -> ProviderSettings:
+    provider_name = _provider_name(value.get("name", default_name), f"{key}.name")
+    model = _text(value.get("model", default_model), f"{key}.model")
+    api_key_env = value.get("api_key_env")
+    if api_key_env is not None:
+        api_key_env = _env_name(api_key_env, f"{key}.api_key_env")
+    base_url = value.get("base_url")
+    if base_url is not None:
+        base_url = _text(base_url, f"{key}.base_url")
+    timeout_seconds = _positive_float(
+        value.get("timeout_seconds", 90.0), f"{key}.timeout_seconds"
+    )
+    return ProviderSettings(
+        name=provider_name,
+        model=model,
+        api_key_env=api_key_env,
+        base_url=base_url,
+        timeout_seconds=timeout_seconds,
+    )
+
+
+def _parse_provider_profiles(
+    value: object, active: ProviderSettings
+) -> dict[str, ProviderSettings]:
+    if not isinstance(value, dict):
+        raise CodeAgentConfigError("providers must be a TOML table")
+    profiles: dict[str, ProviderSettings] = {active.name: active}
+    for raw_name, raw_settings in value.items():
+        if not isinstance(raw_name, str) or not raw_name.strip():
+            raise CodeAgentConfigError("Provider profile names must be non-empty strings")
+        if not isinstance(raw_settings, dict):
+            raise CodeAgentConfigError(f"providers.{raw_name} must be a TOML table")
+        profile_name = _provider_name(raw_name, f"providers.{raw_name}")
+        profile = _parse_provider_settings(
+            raw_settings,
+            key=f"providers.{raw_name}",
+            default_name=profile_name,
+            default_model=active.model,
+        )
+        if profile.name != profile_name:
+            raise CodeAgentConfigError(
+                f"providers.{raw_name}.name must match the profile name"
+            )
+        profiles[profile_name] = profile
+    return profiles
+
+
 def _parse_mcp_servers(value: Mapping[str, Any], base_dir: Path) -> tuple[McpServerSettings, ...]:
     raw_servers = value.get("servers", {})
     if not isinstance(raw_servers, dict):
@@ -325,6 +428,10 @@ def _text(value: object, key: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise CodeAgentConfigError(f"{key} must be a non-empty string")
     return value.strip()
+
+
+def _provider_name(value: object, key: str = "provider") -> str:
+    return _text(value, key).replace("-", "_").lower()
 
 
 def _env_name(value: object, key: str) -> str:

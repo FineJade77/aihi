@@ -21,6 +21,10 @@ name = "deepseek"
 model = "deepseek-chat"
 api_key_env = "DEEPSEEK_API_KEY"
 
+[providers.openai]
+model = "gpt-4o"
+api_key_env = "OPENAI_API_KEY"
+
 [sandbox]
 backend = "host"
 root = "."
@@ -45,6 +49,10 @@ allowed_tools = ["search"]
 
     assert config.provider.name == "deepseek"
     assert config.provider.model == "deepseek-chat"
+    assert config.provider_profiles["openai"].api_key_env == "OPENAI_API_KEY"
+    selected = config.select_provider("openai", model="gpt-4.1")
+    assert selected.provider.name == "openai"
+    assert selected.provider.model == "gpt-4.1"
     assert config.sandbox.root == tmp_path.resolve()
     assert config.skill_roots[0].path == (tmp_path / ".aihi/skills").resolve()
     assert config.mcp_servers[0].cwd == tmp_path.resolve()

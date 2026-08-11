@@ -149,6 +149,44 @@ def test_session_commands_persist_and_stream_durable_events(tmp_path) -> None:
     server.close()
 
 
+def test_config_get_exposes_profiles_without_credentials(tmp_path) -> None:
+    config_path = tmp_path / "aihi-code.toml"
+    config_path.write_text(
+        """[provider]
+name = "fake"
+model = "demo"
+
+[providers.openai]
+model = "gpt-4o"
+api_key_env = "OPENAI_API_KEY"
+
+[sandbox]
+backend = "host"
+root = "."
+unsafe = true
+""",
+        encoding="utf-8",
+    )
+    server = WorkerServer(config_path=config_path)
+    server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {"protocol_version": PROTOCOL_VERSION},
+        }
+    )
+    response = server.handle(
+        {"jsonrpc": "2.0", "id": 2, "method": "config.get", "params": {"cwd": str(tmp_path)}}
+    )
+    assert response is not None
+    descriptor = response["result"]["config"]  # type: ignore[index]
+    assert descriptor["provider"]["name"] == "fake"
+    assert {item["name"] for item in descriptor["providers"]} == {"fake", "openai"}
+    assert descriptor["providers"][1]["api_key_env"] == "OPENAI_API_KEY"
+    server.close()
+
+
 def test_task_commands_rebuild_graph_from_session_events(tmp_path) -> None:
     store_path = tmp_path / "events.sqlite3"
     server = WorkerServer(store_path=store_path)

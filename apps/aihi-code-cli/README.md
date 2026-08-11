@@ -47,6 +47,10 @@ name = "deepseek"
 model = "deepseek-chat"
 api_key_env = "DEEPSEEK_API_KEY"
 
+[providers.openai]
+model = "gpt-4o"
+api_key_env = "OPENAI_API_KEY"
+
 [sandbox]
 backend = "host"
 root = "."
@@ -66,6 +70,10 @@ allowed_tools = ["search"]
 ```
 
 After `/new`, ordinary input is a user turn and runs the Coding Agent loop.
+Use `/provider NAME [MODEL]` and `/model MODEL` to choose a configured Provider
+profile and model for subsequent new Runs; `/config` shows the effective,
+non-secret configuration. Provider profiles are declared under
+`[providers.<name>]`, while `[provider]` remains the default.
 `/run MESSAGE` is an explicit equivalent; `/resume RUN_ID` continues an
 interrupted or approval-suspended run. Use `/approvals`, `/approve ID [once]`,
 and `/deny ID` to operate the Worker-owned approval projection; resolving an
