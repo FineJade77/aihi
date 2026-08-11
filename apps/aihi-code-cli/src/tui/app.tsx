@@ -60,6 +60,21 @@ function eventFromNotification(event: AgentEvent): UiEvent {
   };
 }
 
+/** Joins the text parts of a Message payload; other content kinds are skipped. */
+function messageText(data: JsonObject): string {
+  const message = data.message;
+  if (typeof message !== "object" || message === null || Array.isArray(message)) return "";
+  const content = (message as { content?: unknown }).content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((part) => {
+      if (typeof part !== "object" || part === null) return "";
+      const { kind, text } = part as { kind?: unknown; text?: unknown };
+      return kind === "text" && typeof text === "string" ? text : "";
+    })
+    .join("");
+}
+
 function stringifyPreview(value: unknown, maxLength = 84): string {
   let text: string;
   try {
@@ -213,6 +228,42 @@ function EventPanel({ events, streamText }: { events: UiEvent[]; streamText: str
   );
 }
 
+/** Pending approvals, with the ids the /approve and /deny commands need. */
+function ApprovalPanel({ approvals }: { approvals: ApprovalDescriptor[] }) {
+  return (
+    <Box borderStyle="round" borderColor={COLORS.warn} flexDirection="column" paddingX={1}>
+      <Text bold color={COLORS.warn}>
+        APPROVAL REQUIRED ({approvals.length})
+      </Text>
+      {approvals.slice(0, 5).map((approval) => (
+        <Text key={approval.approval_id} wrap="truncate">
+          <Text color={COLORS.accent}>{approval.approval_id}</Text>{" "}
+          <Text>{approval.tool_name ?? approval.scope}</Text>
+        </Text>
+      ))}
+      <Text color={COLORS.muted}>/approve ID [once] · /deny ID · then /resume RUN_ID</Text>
+    </Box>
+  );
+}
+
+/** The readable answer. The event log truncates; this is where text is legible. */
+function AnswerPanel({ text, streaming }: { text: string; streaming: boolean }) {
+  const shown = text.length > 1_200 ? `…${text.slice(-1_200)}` : text;
+  return (
+    <Box
+      borderStyle="round"
+      borderColor={streaming ? COLORS.accent : COLORS.panel}
+      flexDirection="column"
+      paddingX={1}
+    >
+      <Text bold color={COLORS.brand}>
+        ANSWER{streaming ? " · streaming" : ""}
+      </Text>
+      {shown ? <Text wrap="wrap">{shown}</Text> : <Text color={COLORS.muted}>No answer yet</Text>}
+    </Box>
+  );
+}
+
 function TaskPanel({ tasks }: { tasks: TaskDescriptor[] }) {
   return (
     <Box borderStyle="round" borderColor={COLORS.panel} flexDirection="column" paddingX={1} width="28%">
@@ -253,19 +304,32 @@ export function TuiApp({
   const [activeModel, setActiveModel] = useState(model);
   const [activeRunId, setActiveRunId] = useState<string>();
   const [streamText, setStreamText] = useState("");
+  const [answerText, setAnswerText] = useState("");
   const [splashVisible, setSplashVisible] = useState(true);
+  const [headSeq, setHeadSeq] = useState<number>();
+  const [approvals, setApprovals] = useState<ApprovalDescriptor[]>([]);
+  // Kept apart from `status`: a notice must survive the event traffic that
+  // follows it, which is exactly what the old status heartbeat destroyed.
+  const [notice, setNotice] = useState<{ text: string; tone: UiColor }>();
 
   const loadSession = useCallback(async (sessionId: string) => {
-    const [session, page, nextTasks] = await Promise.all([
+    const [session, page, nextTasks, nextApprovals] = await Promise.all([
       client.getSession(sessionId),
       client.getSessionEvents(sessionId, 0, 100),
       client.listTasks(sessionId),
+      client.listApprovals(sessionId),
     ]);
+    setApprovals(nextApprovals);
+    setHeadSeq(page.head_seq);
     setSelectedSessionId(session.session_id);
     setSelectedSession(session);
-    setEvents(page.events.map(eventFromRecord));
+    const history = page.events.map(eventFromRecord);
+    setEvents(history);
     setTasks(nextTasks);
     setStreamText("");
+    // Reopening a session should still show its last answer, not an empty pane.
+    const lastAnswer = [...history].reverse().find((item) => item.type === "assistant.message");
+    setAnswerText(lastAnswer ? messageText(lastAnswer.data) : "");
     setStatus(`Session ${shortId(session.session_id)} · seq ${page.head_seq}`);
   }, [client]);
 
@@ -306,10 +370,17 @@ export function TuiApp({
       if (nextEvent.type === "run.started" || nextEvent.type === "run.resumed") {
         setActiveRunId(event.run_id);
         setStreamText("");
+        setAnswerText("");
+        setNotice(undefined);
       }
       if (nextEvent.type === "model.chunk" && nextEvent.data.kind === "text_delta") {
         const delta = nextEvent.data.text;
         if (typeof delta === "string") setStreamText((current) => `${current}${delta}`);
+      }
+      if (nextEvent.type === "assistant.message") {
+        // The persisted message is authoritative; drop the accumulated deltas.
+        setAnswerText(messageText(nextEvent.data));
+        setStreamText("");
       }
       if (["run.completed", "run.failed", "run.interrupted", "run.cancelled"].includes(nextEvent.type)) {
         setActiveRunId(undefined);
@@ -317,9 +388,22 @@ export function TuiApp({
       if (nextEvent.type.startsWith("subagent.")) {
         void client.listTasks(event.session_id).then(setTasks).catch(() => undefined);
       }
-      if (nextEvent.seq !== null) {
-        setStatus(`Session ${shortId(event.session_id)} · seq ${nextEvent.seq}`);
+      if (nextEvent.type === "approval.requested" || nextEvent.type === "approval.resolved") {
+        void client.listApprovals(event.session_id).then(setApprovals).catch(() => undefined);
       }
+      if (nextEvent.type === "approval.requested") {
+        setNotice({ text: "Approval required · /approvals to list", tone: COLORS.warn });
+      }
+      if (nextEvent.type === "run.failed" || nextEvent.type === "run.interrupted") {
+        const detail = nextEvent.data.error;
+        setNotice({
+          text: `Run ${nextEvent.type.slice(4)}: ${typeof detail === "string" ? detail : "no detail"}`,
+          tone: COLORS.bad,
+        });
+      }
+      // The sequence number belongs in the header, not in the message line it
+      // used to overwrite on every single event.
+      if (nextEvent.seq !== null) setHeadSeq(nextEvent.seq);
     });
     return unsubscribe;
   }, [client, selectedSessionId]);
@@ -595,7 +679,7 @@ export function TuiApp({
       }
       setStatus(`Unknown command: ${name} · use /help`);
     } catch (error) {
-      setStatus(`Error: ${errorMessage(error)}`);
+      setNotice({ text: `Error: ${errorMessage(error)}`, tone: COLORS.bad });
     } finally {
       setBusy(false);
     }
@@ -634,16 +718,35 @@ export function TuiApp({
             <Text color={busy ? COLORS.warn : COLORS.good}>{busy ? "● busy" : "● ready"}</Text>
           </Box>
           <Text color={COLORS.muted} wrap="truncate-start">{tildePath(cwd)}</Text>
+          <Box>
+            <Text color={COLORS.muted}>session  </Text>
+            {selectedSessionId ? (
+              <Text>{selectedSessionId}</Text>
+            ) : (
+              <Text color={COLORS.muted}>none · use /new</Text>
+            )}
+            {headSeq !== undefined && <Text color={COLORS.muted}>  seq {headSeq}</Text>}
+            {activeRunId !== undefined && <Text color={COLORS.muted}>  run  {activeRunId}</Text>}
+          </Box>
           <Box flexDirection="row" flexGrow={1} marginTop={1}>
             <SessionPanel sessions={sessions} selectedSessionId={selectedSessionId} />
             <EventPanel events={events} streamText={streamText} />
             <TaskPanel tasks={tasks} />
           </Box>
+          {approvals.length > 0 && <ApprovalPanel approvals={approvals} />}
+          <AnswerPanel text={streamText || answerText} streaming={streamText.length > 0} />
         </>
       )}
       <Box marginTop={1}>
         <Text color={COLORS.muted}>{status}</Text>
       </Box>
+      {notice !== undefined && (
+        <Box>
+          <Text bold color={notice.tone} wrap="wrap">
+            {notice.text}
+          </Text>
+        </Box>
+      )}
       <Box>
         <Text color={COLORS.accent}>› </Text>
         <TextInput
