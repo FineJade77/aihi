@@ -6,6 +6,7 @@ import asyncio
 import os
 from collections.abc import AsyncIterator, Coroutine
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from aihi.agent import (
@@ -46,6 +47,7 @@ from .config import (
     McpServerSettings,
     resolve_env_mapping,
 )
+from .prompts import compose_system_prompt
 from .tools import ToolBuildContext, build_tools
 from .turns import TurnEvent, TurnEventPump, TurnFinished, drive_turn
 
@@ -161,7 +163,9 @@ class CodeAgentRuntime:
                 permission_mode=self.config.permission_mode,
                 require_capability_lease=self.config.require_capability_lease,
                 system_prompt=(
-                    self.config.system_prompt if system_prompt is None else system_prompt
+                    compose_system_prompt(self.config, workspace=Path(session.cwd))
+                    if system_prompt is None
+                    else system_prompt
                 ),
                 max_output_tokens=max_output_tokens or self.config.max_output_tokens,
                 cancel_event=cancel_event,

@@ -120,6 +120,7 @@ class CodeAgentConfig:
     provider: ProviderSettings = ProviderSettings()
     provider_profiles: Mapping[str, ProviderSettings] = field(default_factory=dict)
     system_prompt: str = ""
+    system_prompt_mode: str = "append"
     max_output_tokens: int = 4_096
     permission_mode: PermissionMode = PermissionMode.DEFAULT
     require_capability_lease: bool = False
@@ -190,6 +191,13 @@ class CodeAgentConfig:
         if not isinstance(raw_system_prompt, str):
             raise CodeAgentConfigError("agent.system_prompt must be a string")
         system_prompt = raw_system_prompt
+        system_prompt_mode = _text(
+            agent_map.get("system_prompt_mode", "append"), "agent.system_prompt_mode"
+        ).lower()
+        if system_prompt_mode not in {"append", "replace"}:
+            raise CodeAgentConfigError(
+                "agent.system_prompt_mode must be one of: append, replace"
+            )
         require_capability_lease = _boolean(
             agent_map.get("require_capability_lease", False), "agent.require_capability_lease"
         )
@@ -267,6 +275,7 @@ class CodeAgentConfig:
             provider=provider,
             provider_profiles=provider_profiles,
             system_prompt=system_prompt,
+            system_prompt_mode=system_prompt_mode,
             max_output_tokens=max_output_tokens,
             permission_mode=permission_mode,
             require_capability_lease=require_capability_lease,
