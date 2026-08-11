@@ -48,6 +48,7 @@ from .config import (
     resolve_env_mapping,
 )
 from .prompts import compose_system_prompt
+from .skills import builtin_skill_root
 from .tools import ToolBuildContext, build_tools
 from .turns import TurnEvent, TurnEventPump, TurnFinished, drive_turn
 
@@ -74,27 +75,29 @@ class CodeAgentRuntime:
     ) -> CodeAgentRuntime:
         provider = _build_provider(config)
         sandbox = _build_sandbox(config)
-        skill_loader: SkillLoader | None = None
-        skill_discovery: SkillDiscovery | None = None
-        if config.skill_roots:
-            skill_discovery = SkillDiscovery(
-                [SkillRoot(root.path, root.scope) for root in config.skill_roots]
-            )
-            if config.skill_trust_path is None:
-                raise CodeAgentConfigError("Skill roots require a trust lockfile path")
-            trust_store = FileSkillTrustStore(config.skill_trust_path)
-            skill_loader = SkillLoader(
-                SkillTrustManager(trust_store, discovery=skill_discovery),
-                discovery=skill_discovery,
-            )
+        configured_roots = [SkillRoot(root.path, root.scope) for root in config.skill_roots]
+        # Only configured roots need a lockfile: a BUILTIN Skill's integrity is
+        # the package's integrity, so demanding extra trust adds ceremony, not
+        # safety — and would force every user to configure one.
+        if configured_roots and config.skill_trust_path is None:
+            raise CodeAgentConfigError("Skill roots require a trust lockfile path")
+        skill_discovery = SkillDiscovery([builtin_skill_root(), *configured_roots])
+        trust_store = FileSkillTrustStore(
+            config.skill_trust_path
+            if config.skill_trust_path is not None
+            else config.base_dir / ".aihi" / "skills.lock.json"
+        )
+        skill_loader = SkillLoader(
+            SkillTrustManager(trust_store, discovery=skill_discovery),
+            discovery=skill_discovery,
+        )
         builder = RuntimeBuilder(
             provider=provider,
             model=config.provider.model,
             sandbox=sandbox,
             tools=build_tools(ToolBuildContext(config=config, skill_loader=skill_loader)),
         )
-        if skill_discovery is not None:
-            builder = builder.with_skills(skill_discovery)
+        builder = builder.with_skills(skill_discovery)
         if config.artifact_path is not None:
             builder = builder.with_artifacts(config.artifact_path)
         if config.compact_model is not None:
