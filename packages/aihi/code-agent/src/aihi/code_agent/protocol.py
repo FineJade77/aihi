@@ -143,6 +143,14 @@ COMMAND_DESCRIPTORS: Final[tuple[JsonObject, ...]] = (
         "requires_approval": False,
     },
     {
+        "name": "config.init",
+        "aliases": [],
+        "scope": "config",
+        "execution": "worker",
+        "mutates": True,
+        "requires_approval": False,
+    },
+    {
         "name": "approval.list",
         "aliases": [],
         "scope": "approval",

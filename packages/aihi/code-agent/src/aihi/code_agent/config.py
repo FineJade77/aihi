@@ -22,6 +22,29 @@ from aihi.agent.skills import SkillScope
 _ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _CONFIG_FILENAME = "aihi-code.toml"
 _PROJECT_CONFIG_DIRNAME = ".aihi"
+DEFAULT_USER_CONFIG_TOML = '''\
+# AIHI Coding Agent user configuration.
+# Project config (<cwd>/.aihi/aihi-code.toml) overrides every value here.
+
+[provider]
+name = "fake"
+model = "demo"
+
+[sandbox]
+backend = "host"
+# The Host backend is not an isolation boundary.  With unsafe = true the
+# bash, write_file, and edit_file tools act directly on this machine under
+# your own account.  Set it to false to require a sandboxed backend instead.
+unsafe = true
+# sandbox.root is deliberately unset.  Relative paths resolve against the
+# directory holding this file, so root = "." would confine the agent to
+# ~/.aihi; leaving it unset roots the sandbox at the workspace you launch in.
+
+[artifacts]
+# Also relative to this file, so this is ~/.aihi/artifacts.  Override it in a
+# project config to keep a workspace's artifacts inside that workspace.
+path = "artifacts"
+'''
 _DEFAULT_TOOLS = (
     "read_file",
     "glob",
@@ -370,6 +393,32 @@ def load_config(
         workspace_root=workspace,
         source_path=requested,
     )
+
+
+def user_config_path() -> Path:
+    """Return the user-scope config path, the lowest-precedence candidate."""
+
+    return Path.home() / _PROJECT_CONFIG_DIRNAME / _CONFIG_FILENAME
+
+
+def ensure_user_config() -> tuple[Path, bool]:
+    """Seed ``~/.aihi/aihi-code.toml`` when absent; never overwrite it.
+
+    Returns the path and whether this call created the file.  Callers own the
+    decision to write to the user's home directory; loading config never does.
+    """
+
+    path = user_config_path()
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if path.exists():
+        return path, False
+    # ``x`` keeps a concurrent Worker from clobbering a file we just lost a race for.
+    try:
+        with path.open("x", encoding="utf-8") as stream:
+            stream.write(DEFAULT_USER_CONFIG_TOML)
+    except FileExistsError:
+        return path, False
+    return path, True
 
 
 def _discover_default_config(workspace: Path) -> Path | None:

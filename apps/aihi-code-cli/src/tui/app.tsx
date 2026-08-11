@@ -1,3 +1,4 @@
+import { homedir } from "node:os";
 import { Box, Text, useApp, useInput } from "ink";
 import TextInput from "ink-text-input";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -11,6 +12,7 @@ import type {
   TaskDescriptor,
 } from "@aihi/code-protocol";
 import { RpcClient } from "../rpc/client.js";
+import { Banner, GradientText } from "./banner.js";
 
 const COLORS = {
   brand: "cyan",
@@ -36,6 +38,8 @@ export interface TuiAppProps {
   provider: string;
   model: string;
   sessionId?: string;
+  storePath?: string;
+  configPath?: string;
 }
 
 function eventFromRecord(event: EventRecord): UiEvent {
@@ -81,6 +85,15 @@ function shortId(value: string): string {
   return value.length > 16 ? `…${value.slice(-14)}` : value;
 }
 
+/** Abbreviates the user's home prefix so startup paths stay readable. */
+function tildePath(value: string): string {
+  const home = homedir();
+  if (home && (value === home || value.startsWith(`${home}/`))) {
+    return `~${value.slice(home.length)}`;
+  }
+  return value;
+}
+
 function runStatus(result: RunResult): string {
   if (result.suspended) {
     return `Run ${shortId(result.run_id)} waiting for approval${result.pending_approval_id ? ` · ${shortId(result.pending_approval_id)}` : ""}`;
@@ -105,6 +118,45 @@ function approvalStatus(approvals: ApprovalDescriptor[]): string {
     .slice(0, 3)
     .map((approval) => `${shortId(approval.approval_id)} ${approval.tool_name ?? approval.scope}`)
     .join(" · ");
+}
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <Box>
+      {/* A fixed, non-shrinking label column: a long value would otherwise make
+          Yoga shrink this cell and swallow the padding that aligns the rows. */}
+      <Box width={10} flexShrink={0}>
+        <Text color={COLORS.muted}>{label}</Text>
+      </Box>
+      <Text wrap="truncate-start">{value}</Text>
+    </Box>
+  );
+}
+
+function Splash({
+  cwd,
+  provider,
+  model,
+  storePath,
+  configPath,
+}: {
+  cwd: string;
+  provider: string;
+  model: string;
+  storePath?: string;
+  configPath?: string;
+}) {
+  return (
+    <Box flexDirection="column" marginBottom={1}>
+      <Banner />
+      <Box flexDirection="column" marginTop={1} paddingX={2}>
+        <InfoRow label="cwd" value={tildePath(cwd)} />
+        <InfoRow label="provider" value={`${provider} · ${model}`} />
+        <InfoRow label="store" value={storePath ? tildePath(storePath) : "in-memory (this process only)"} />
+        {configPath !== undefined && <InfoRow label="config" value={tildePath(configPath)} />}
+      </Box>
+    </Box>
+  );
 }
 
 function SessionPanel({
@@ -179,7 +231,15 @@ function TaskPanel({ tasks }: { tasks: TaskDescriptor[] }) {
   );
 }
 
-export function TuiApp({ client, cwd, provider, model, sessionId }: TuiAppProps) {
+export function TuiApp({
+  client,
+  cwd,
+  provider,
+  model,
+  sessionId,
+  storePath,
+  configPath,
+}: TuiAppProps) {
   const { exit } = useApp();
   const [sessions, setSessions] = useState<SessionDescriptor[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string | undefined>(sessionId);
@@ -193,6 +253,7 @@ export function TuiApp({ client, cwd, provider, model, sessionId }: TuiAppProps)
   const [activeModel, setActiveModel] = useState(model);
   const [activeRunId, setActiveRunId] = useState<string>();
   const [streamText, setStreamText] = useState("");
+  const [splashVisible, setSplashVisible] = useState(true);
 
   const loadSession = useCallback(async (sessionId: string) => {
     const [session, page, nextTasks] = await Promise.all([
@@ -274,6 +335,8 @@ export function TuiApp({ client, cwd, provider, model, sessionId }: TuiAppProps)
     const trimmed = rawCommand.trim();
     setCommand("");
     if (!trimmed) return;
+    // The splash yields its rows to the panels as soon as there is real work.
+    setSplashVisible(false);
     const parts = trimmed.split(/\s+/);
     const name = parts[0].toLowerCase().replace(/^\//, "");
     const args = parts.slice(1);
@@ -552,17 +615,32 @@ export function TuiApp({ client, cwd, provider, model, sessionId }: TuiAppProps)
 
   return (
     <Box flexDirection="column" minHeight={18} paddingX={1}>
-      <Box justifyContent="space-between">
-        <Text bold color={COLORS.brand}>✦ AIHI CODE AGENT</Text>
-        <Text color={COLORS.muted}>{sessionTitle}</Text>
-        <Text color={busy ? COLORS.warn : COLORS.good}>{busy ? "● busy" : "● ready"}</Text>
-      </Box>
-      <Text color={COLORS.muted} wrap="truncate">{cwd}</Text>
-      <Box flexDirection="row" flexGrow={1} marginTop={1}>
-        <SessionPanel sessions={sessions} selectedSessionId={selectedSessionId} />
-        <EventPanel events={events} streamText={streamText} />
-        <TaskPanel tasks={tasks} />
-      </Box>
+      {splashVisible ? (
+        <Splash
+          cwd={cwd}
+          provider={activeProvider}
+          model={activeModel}
+          storePath={storePath}
+          configPath={configPath}
+        />
+      ) : (
+        <>
+          <Box justifyContent="space-between">
+            <Box>
+              <Text bold color={COLORS.accent}>✦ </Text>
+              <GradientText bold>AI-HI!</GradientText>
+            </Box>
+            <Text color={COLORS.muted}>{sessionTitle}</Text>
+            <Text color={busy ? COLORS.warn : COLORS.good}>{busy ? "● busy" : "● ready"}</Text>
+          </Box>
+          <Text color={COLORS.muted} wrap="truncate-start">{tildePath(cwd)}</Text>
+          <Box flexDirection="row" flexGrow={1} marginTop={1}>
+            <SessionPanel sessions={sessions} selectedSessionId={selectedSessionId} />
+            <EventPanel events={events} streamText={streamText} />
+            <TaskPanel tasks={tasks} />
+          </Box>
+        </>
+      )}
       <Box marginTop={1}>
         <Text color={COLORS.muted}>{status}</Text>
       </Box>

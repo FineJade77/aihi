@@ -36,7 +36,7 @@ from aihi.agent import (
     Event as AgentEvent,
 )
 from aihi.agent.runtime import RunResult
-from aihi.code_agent.config import CodeAgentConfig, load_config
+from aihi.code_agent.config import CodeAgentConfig, ensure_user_config, load_config
 from aihi.code_agent.runtime import CodeAgentRuntime
 
 from .framing import FrameError, read_frame, write_frame
@@ -265,6 +265,8 @@ class WorkerServer:
             return self._session_fork(params)
         if method == "config.get":
             return self._config_get(params)
+        if method == "config.init":
+            return self._config_init()
         if method == "approval.list":
             return self._approval_list(params)
         if method == "approval.resolve":
@@ -488,6 +490,15 @@ class WorkerServer:
                 cancel_signal=cancel_signal,
             )
         )
+
+    def _config_init(self) -> JsonObject:
+        try:
+            path, created = ensure_user_config()
+        except OSError as error:
+            raise RpcValidationError(
+                f"Cannot create user configuration: {error}", code=INTERNAL_ERROR
+            ) from error
+        return {"path": str(path), "created": created}
 
     def _config_get(self, params: JsonObject) -> JsonObject:
         cwd = self._optional_text_value(params.get("cwd"), "cwd", max_length=4_096)

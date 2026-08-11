@@ -514,3 +514,49 @@ def test_background_run_honors_cancellation_signal(tmp_path) -> None:
     assert response is not None
     assert response["result"]["state"] == "interrupted"  # type: ignore[index]
     server.close()
+
+
+def _initialized_server() -> WorkerServer:
+    server = WorkerServer()
+    server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {"protocol_version": PROTOCOL_VERSION, "client_name": "test"},
+        }
+    )
+    server.handle({"jsonrpc": "2.0", "method": "initialized"})
+    return server
+
+
+def test_config_init_creates_user_directory_and_default_file(tmp_path, monkeypatch) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    server = _initialized_server()
+
+    response = server.handle({"jsonrpc": "2.0", "id": 2, "method": "config.init"})
+
+    assert response is not None
+    result = response["result"]  # type: ignore[index]
+    assert result["created"] is True
+    config_path = home / ".aihi" / "aihi-code.toml"
+    assert config_path.is_file()
+    assert str(config_path) == result["path"]
+    assert (home / ".aihi").stat().st_mode & 0o777 == 0o700
+
+
+def test_config_init_never_overwrites_an_existing_file(tmp_path, monkeypatch) -> None:
+    home = tmp_path / "home"
+    (home / ".aihi").mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(home))
+    existing = home / ".aihi" / "aihi-code.toml"
+    existing.write_text('[provider]\nname = "fake"\nmodel = "kept"\n', encoding="utf-8")
+    server = _initialized_server()
+
+    response = server.handle({"jsonrpc": "2.0", "id": 2, "method": "config.init"})
+
+    assert response is not None
+    assert response["result"]["created"] is False  # type: ignore[index]
+    assert 'model = "kept"' in existing.read_text(encoding="utf-8")

@@ -48,12 +48,18 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
     storePath: options.storePath,
   });
   try {
+    const config = await client.initConfig();
+    if (config.created) {
+      process.stderr.write(`aihi-code: wrote default configuration to ${config.path}\n`);
+    }
     await runTui({
       client,
       cwd: options.cwd,
       provider: options.provider,
       model: options.model,
       sessionId: options.sessionId,
+      storePath: options.storePath,
+      configPath: config.path,
     });
   } finally {
     await client.close();

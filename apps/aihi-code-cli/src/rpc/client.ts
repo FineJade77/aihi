@@ -331,6 +331,11 @@ export class RpcClient {
     return this.request<RunResult>("run.start", params as unknown as JsonObject);
   }
 
+  /** Seeds ~/.aihi/aihi-code.toml when absent; never overwrites an existing file. */
+  public async initConfig(): Promise<{ path: string; created: boolean }> {
+    return this.request<{ path: string; created: boolean }>("config.init");
+  }
+
   public async getConfig(cwd?: string): Promise<ConfigDescriptor> {
     const result = await this.request<{ config: ConfigDescriptor }>("config.get", {
       ...(cwd ? { cwd } : {}),

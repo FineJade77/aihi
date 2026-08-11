@@ -5,6 +5,7 @@ import json
 import pytest
 from aihi.agent import ToolContext, UnsafeHostNotAcknowledged
 from aihi.code_agent.config import (
+    ensure_user_config,
     load_config,
     resolve_env_mapping,
 )
@@ -485,3 +486,26 @@ def test_worker_approval_commands_are_event_backed(tmp_path) -> None:
     assert remaining is not None
     assert remaining["result"]["approvals"] == []  # type: ignore[index]
     server.close()
+
+
+def test_ensure_user_config_seeds_a_loadable_default(tmp_path, monkeypatch) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+
+    path, created = ensure_user_config()
+
+    assert created is True
+    assert path == home / ".aihi" / "aihi-code.toml"
+    assert ensure_user_config() == (path, False)
+
+    config = load_config(cwd=workspace)
+    assert config.source_path == path
+    assert config.sandbox.unsafe is True
+    # sandbox.root is omitted on purpose: relative paths resolve against the
+    # config's own directory, so writing "." would sandbox the agent to ~/.aihi.
+    assert config.sandbox.root == workspace.resolve()
+    # Artifacts are pinned so they never land in a doubled ~/.aihi/.aihi path.
+    assert config.artifact_path == home / ".aihi" / "artifacts"
