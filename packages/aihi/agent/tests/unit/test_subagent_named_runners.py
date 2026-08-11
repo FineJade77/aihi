@@ -67,3 +67,33 @@ def test_one_graph_per_run_regardless_of_agent_type_count() -> None:
     )
     assert tool._graphs == {}
     assert len(tool.runners) == 3
+
+
+def _typed_tool() -> SubagentTool:
+    return SubagentTool(
+        {"explore": RecordingRunner("e"), "general": RecordingRunner("g")},
+        authority=_authority(),
+        type_capabilities={"explore": frozenset({"filesystem.read"})},
+    )
+
+
+def test_a_type_ceiling_narrows_the_requested_capabilities() -> None:
+    # A declared read-only type must stay read-only even when the model asks
+    # for more: the declaration is a ceiling, not a hint.
+    tool = _typed_tool()
+    granted = tool.capabilities_for(
+        "explore", {"capabilities": ["filesystem.read", "filesystem.write"]}
+    )
+    assert granted == frozenset({"filesystem.read"})
+
+
+def test_a_type_ceiling_cannot_widen_the_request() -> None:
+    tool = _typed_tool()
+    granted = tool.capabilities_for("explore", {"capabilities": []})
+    assert granted == frozenset()
+
+
+def test_a_type_without_a_ceiling_keeps_the_authority_default() -> None:
+    tool = _typed_tool()
+    granted = tool.capabilities_for("general", {})
+    assert granted == frozenset(_authority().capabilities) - {"agent.spawn"}

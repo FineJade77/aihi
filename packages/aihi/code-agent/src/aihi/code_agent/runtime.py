@@ -254,6 +254,8 @@ def _build_agent_types(config: CodeAgentConfig) -> dict[str, SubagentTypeSpec]:
         declared[definition.name] = SubagentTypeSpec(
             system_prompt=definition.prompt(),
             model=model,
+            capabilities=definition.capabilities or None,
+            tools=definition.tools,
         )
     return declared
 

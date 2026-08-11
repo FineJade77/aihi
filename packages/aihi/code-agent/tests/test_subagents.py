@@ -58,3 +58,29 @@ def test_an_unknown_subagent_type_in_config_is_rejected(tmp_path) -> None:
 def test_definition_for_rejects_an_unknown_name() -> None:
     with pytest.raises(KeyError):
         definition_for("nope")
+
+
+async def test_explore_child_gets_only_its_declared_tools(tmp_path) -> None:
+    from aihi.agent import InMemoryEventStore
+    from aihi.code_agent.runtime import CodeAgentRuntime
+
+    path = tmp_path / "aihi-code.toml"
+    path.write_text(
+        '[provider]\nname = "fake"\nmodel = "demo"\n\n'
+        '[sandbox]\nbackend = "host"\nunsafe = true\n\n'
+        "[subagents]\nenabled = true\n",
+        encoding="utf-8",
+    )
+    config = load_config(path, cwd=tmp_path)
+    runtime = await CodeAgentRuntime.create(config, store=InMemoryEventStore())
+    try:
+        task = runtime.runtime.registry.get("task")
+        assert task is not None
+        # The declared ceiling must be enforced, not merely advertised.
+        assert task.type_capabilities["explore"] == frozenset({"filesystem.read"})
+        granted = task.capabilities_for(
+            "explore", {"capabilities": ["filesystem.read", "filesystem.write"]}
+        )
+        assert granted == frozenset({"filesystem.read"})
+    finally:
+        await runtime.close()

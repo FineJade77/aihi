@@ -198,7 +198,10 @@ model = "deepseek-chat"
 enabled = false
 ```
 
-> **行为变更**：`subagents.enabled` 默认由 `False` 改为 `True`，但默认授权收敛为只读——
+> **实测更正**：`subagents.enabled` 保持 `False`（默认开启会让所有不传 EventStore 的
+> `CodeAgentRuntime.create()` 失败，波及每个嵌入方）。此外类型声明的 capabilities 与
+> tools 是**强制执行**的，不只是描述。原文如下，保留以便对照：
+> ~~`subagents.enabled` 默认由 `False` 改为 `True`~~，但默认授权收敛为只读——
 > `capabilities = {"filesystem.read"}`、`max_depth = 1`、`max_children = 3`。即开箱可用的
 > 委派只有 `explore` 与 `code_review` 两类只读子 Agent；`test` 等需要副作用的类型必须显式开启。
 
@@ -235,21 +238,12 @@ code_agent/
 
 ## 打包
 
-`pyproject.toml` 现有 `artifacts = ["src/aihi/code_agent/py.typed"]`。必须补充 prompt 与
-Skill 资产，否则二者不会进入 wheel——editable 安装下可用，正式安装后静默缺失：
+**实测更正。** hatchling 的 `packages = ["src/aihi"]` **已经**打包 `.md` 资产，无需声明
+`artifacts`——本 RFC 早期版本称「不加就不会进 wheel」是错的。构建真实 wheel 后 9 个资产
+（1 个 coding 提示词、4 个内置 Skill、4 个 Subagent 提示词）全部存在。
 
-```toml
-[tool.hatch.build.targets.wheel]
-packages = ["src/aihi"]
-artifacts = [
-  "src/aihi/code_agent/py.typed",
-  "src/aihi/code_agent/prompts/*.md",
-  "src/aihi/code_agent/skills/builtin/*.md",
-  "src/aihi/code_agent/subagents/prompts/*.md",
-]
-```
-
-需要一条打包测试断言这四类资产存在于构建产物中，与 `tests/packaging/test_wheels.py` 同级。
+因此不增加 `artifacts` 配置（那只是空转），改以一条打包断言测试作为回归防线：
+`tests/packaging/test_code_agent_assets.py` 构建 wheel 并断言三类资产路径均在产物中。
 
 ## 不变式
 
@@ -271,7 +265,7 @@ artifacts = [
 
 - `agent.system_prompt` 默认语义由「替换」变为「追加」。
 - BUILTIN 作用域 Skill 不再要求 trust lockfile。
-- `subagents.enabled` 默认由 `False` 改为 `True`，同时默认授权收敛为只读。
+- `subagents` 默认授权收敛为只读（`max_depth = 1`、`max_children = 3`）；`enabled` 仍为 `False`。
 
 ## 分期
 

@@ -69,6 +69,8 @@ class SubagentTypeSpec:
 
     system_prompt: str = ""
     model: str | None = None
+    capabilities: frozenset[str] | None = None
+    tools: tuple[str, ...] | None = None
 
 
 @runtime_checkable
@@ -395,6 +397,7 @@ class SubagentTool:
         runner: SubagentRunner | Mapping[str, SubagentRunner],
         *,
         authority: SubagentAuthority,
+        type_capabilities: Mapping[str, frozenset[str]] | None = None,
     ) -> None:
         if isinstance(runner, Mapping):
             if "general" not in runner:
@@ -403,6 +406,9 @@ class SubagentTool:
         else:
             self.runners = {"general": runner}
         self.authority = authority
+        # A declared type ceiling is enforced, not advisory: it intersects
+        # whatever the model asked for so a read-only type stays read-only.
+        self.type_capabilities: dict[str, frozenset[str]] = dict(type_capabilities or {})
         # One graph per (session, run) however many agent types exist: per-type
         # graphs would count max_children per type and defeat the ceiling.
         self._graphs: dict[tuple[str, str], tuple[TaskGraph, str]] = {}
@@ -426,7 +432,8 @@ class SubagentTool:
         if not isinstance(raw_type, str) or not raw_type.strip():
             raise AgentValidationError("Subagent agent_type must be a non-empty string")
         try:
-            runner = self.runner_for(raw_type.strip())
+            agent_type = raw_type.strip()
+            runner = self.runner_for(agent_type)
         except KeyError:
             return ToolExecutionResult(
                 content=f"Unknown subagent type: {raw_type}",
@@ -439,7 +446,8 @@ class SubagentTool:
                 root_id,
                 objective=objective,
                 budget=self._child_budget(input),
-                capabilities=self._child_capabilities(input),
+                capabilities=self.capabilities_for(agent_type, input),
+                metadata={"agent_type": agent_type},
             )
         except AgentError as error:
             # Authority violations are the point of this tool: report them as a
@@ -526,6 +534,13 @@ class SubagentTool:
                 int(input.get("max_tool_calls", parent.max_tool_calls)), parent.max_tool_calls
             ),
         )
+
+    def capabilities_for(self, agent_type: str, input: dict[str, Any]) -> frozenset[str]:
+        """Narrow the requested capabilities by this type's declared ceiling."""
+
+        requested = self._child_capabilities(input)
+        ceiling = self.type_capabilities.get(agent_type)
+        return requested if ceiling is None else requested & ceiling
 
     def _child_capabilities(self, input: dict[str, Any]) -> frozenset[str]:
         requested = input.get("capabilities")

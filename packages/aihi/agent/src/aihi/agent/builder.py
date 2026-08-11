@@ -240,9 +240,25 @@ class RuntimeBuilder:
 
         def coordinator_factory(spec: object, child_sandbox: SandboxBackend) -> RunCoordinator:
             capabilities = frozenset(getattr(spec, "capabilities", frozenset()))
+            registry = restrict_registry(parent, capabilities)
+            # A type may also name the tools it needs. Capabilities alone are
+            # too coarse: two read-only tools share one capability, so without
+            # this an "explore" child would still reach every read-only tool.
+            metadata = getattr(spec, "metadata", {}) or {}
+            declared = (plan.agent_types or {}).get(str(metadata.get("agent_type", "")))
+            if declared is not None and declared.tools is not None:
+                allowed = set(declared.tools)
+                registry = ToolRegistry(
+                    [
+                        tool
+                        for tool_spec in registry.specs
+                        if tool_spec.name in allowed
+                        and (tool := registry.get(tool_spec.name)) is not None
+                    ]
+                )
             return RunCoordinator(
                 plan.provider,
-                registry=restrict_registry(parent, capabilities),
+                registry=registry,
                 sandbox=child_sandbox,
                 policy=self.policy or DefaultPolicyEngine(),
             )
@@ -268,7 +284,14 @@ class RuntimeBuilder:
                 for name, spec in plan.agent_types.items()
             }
             runners.setdefault("general", make_runner("", plan.model))
-            return SubagentTool(runners, authority=plan.authority)
+            ceilings = {
+                name: spec.capabilities
+                for name, spec in plan.agent_types.items()
+                if spec.capabilities is not None
+            }
+            return SubagentTool(
+                runners, authority=plan.authority, type_capabilities=ceilings
+            )
         return SubagentTool(make_runner("", plan.model), authority=plan.authority)
 
 
