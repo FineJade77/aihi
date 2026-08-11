@@ -1,6 +1,7 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import type {
   AgentEvent,
+  ApprovalDescriptor,
   EventNotification,
   InitializeResult,
   JsonObject,
@@ -9,6 +10,7 @@ import type {
   JsonRpcRequest,
   SessionDescriptor,
   SessionEventsResult,
+  SkillDescriptor,
   RunResult,
   TaskDescriptor,
   TaskState,
@@ -96,6 +98,14 @@ export interface RunResumeParams {
   model?: string;
   system_prompt?: string;
   max_output_tokens?: number;
+}
+
+export interface ApprovalResolveParams {
+  session_id: string;
+  approval_id: string;
+  approved: boolean;
+  one_shot?: boolean;
+  resolved_by?: string;
 }
 
 interface PendingRequest {
@@ -311,6 +321,46 @@ export class RpcClient {
 
   public async resumeRun(params: RunResumeParams): Promise<RunResult> {
     return this.request<RunResult>("run.resume", params as unknown as JsonObject);
+  }
+
+  public async listApprovals(
+    sessionId: string,
+    runId?: string,
+  ): Promise<ApprovalDescriptor[]> {
+    const result = await this.request<{ approvals: ApprovalDescriptor[] }>("approval.list", {
+      session_id: sessionId,
+      ...(runId ? { run_id: runId } : {}),
+    });
+    return result.approvals;
+  }
+
+  public async resolveApproval(params: ApprovalResolveParams): Promise<{
+    approval_id: string;
+    approved: boolean;
+    one_shot: boolean;
+  }> {
+    return this.request("approval.resolve", params as unknown as JsonObject);
+  }
+
+  public async listSkills(sessionId: string): Promise<SkillDescriptor[]> {
+    const result = await this.request<{ skills: SkillDescriptor[] }>("skill.list", {
+      session_id: sessionId,
+    });
+    return result.skills;
+  }
+
+  public async trustSkill(
+    sessionId: string,
+    name: string,
+    enable = true,
+  ): Promise<JsonObject> {
+    const result = await this.request<{ skill: JsonObject }>("skill.trust", {
+      session_id: sessionId,
+      name,
+      enable,
+      trusted_by: "tui",
+    });
+    return result.skill;
   }
 
   public async close(): Promise<void> {

@@ -103,6 +103,30 @@ export interface RunResult {
   };
 }
 
+export interface ApprovalDescriptor extends JsonObject {
+  approval_id: string;
+  scope: string;
+  granted_by: string;
+  expires_at: string | null;
+  run_id: string | null;
+  one_shot: boolean;
+  tool_call_id?: string;
+  tool_name?: string;
+  reason?: string;
+  rule_id?: string;
+}
+
+export interface SkillDescriptor {
+  name: string;
+  version: string;
+  scope: string;
+  path: string;
+  content_sha256: string;
+  trusted: boolean;
+  enabled: boolean;
+  loadable: boolean;
+}
+
 export interface TaskDescriptor {
   spec: JsonObject;
   state: TaskState;
@@ -135,7 +159,7 @@ export interface EventNotification<TData = Record<string, unknown>>
 export interface CommandDescriptor {
   name: string;
   aliases: string[];
-  scope: "tui" | "session" | "task" | "run" | "config" | "integration";
+  scope: "tui" | "session" | "task" | "run" | "approval" | "skill" | "config" | "integration";
   execution: "local" | "worker";
   mutates: boolean;
   requires_approval: boolean;

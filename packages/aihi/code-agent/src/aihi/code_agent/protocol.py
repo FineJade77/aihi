@@ -13,10 +13,15 @@ from aihi.agent import (
     AgentBudget,
     AgentRuntimeError,
     AgentState,
+    Approval,
     Event,
     EventStore,
+    FileSkillTrustStore,
     InMemoryEventStore,
     Session,
+    SkillDiscovery,
+    SkillRoot,
+    SkillTrustManager,
     SQLiteEventStore,
     TaskGraph,
     WorkspaceScope,
@@ -124,6 +129,38 @@ COMMAND_DESCRIPTORS: Final[tuple[JsonObject, ...]] = (
         "name": "run.resume",
         "aliases": [],
         "scope": "run",
+        "execution": "worker",
+        "mutates": True,
+        "requires_approval": False,
+    },
+    {
+        "name": "approval.list",
+        "aliases": [],
+        "scope": "approval",
+        "execution": "worker",
+        "mutates": False,
+        "requires_approval": False,
+    },
+    {
+        "name": "approval.resolve",
+        "aliases": [],
+        "scope": "approval",
+        "execution": "worker",
+        "mutates": True,
+        "requires_approval": False,
+    },
+    {
+        "name": "skill.list",
+        "aliases": [],
+        "scope": "skill",
+        "execution": "worker",
+        "mutates": False,
+        "requires_approval": False,
+    },
+    {
+        "name": "skill.trust",
+        "aliases": [],
+        "scope": "skill",
         "execution": "worker",
         "mutates": True,
         "requires_approval": False,
@@ -325,6 +362,14 @@ class WorkerServer:
             return self._run_start(params)
         if method == "run.resume":
             return self._run_resume(params)
+        if method == "approval.list":
+            return self._approval_list(params)
+        if method == "approval.resolve":
+            return self._approval_resolve(params)
+        if method == "skill.list":
+            return self._skill_list(params)
+        if method == "skill.trust":
+            return self._skill_trust(params)
         raise RpcValidationError(f"Method not found: {method}", code=METHOD_NOT_FOUND)
 
     def _ensure_store(self) -> EventStore:
@@ -606,6 +651,119 @@ class WorkerServer:
                 "usage": response.usage.to_dict(),
             }
         return payload
+
+    def _approval_list(self, params: JsonObject) -> JsonObject:
+        session = self._load_session(params)
+        run_id = self._optional_text_value(params.get("run_id"), "run_id", max_length=256)
+        approvals = [
+            approval
+            for approval in session.authorization.pending_approvals.values()
+            if approval.active() and (run_id is None or approval.run_id == run_id)
+        ]
+        approvals.sort(key=lambda item: item.approval_id)
+        return {
+            "session_id": session.id,
+            "approvals": [self._approval_descriptor(session, approval) for approval in approvals],
+        }
+
+    def _approval_resolve(self, params: JsonObject) -> JsonObject:
+        session = self._load_session(params)
+        approval_id = self._required_text(params, "approval_id", max_length=256)
+        approved = params.get("approved")
+        if not isinstance(approved, bool):
+            raise RpcValidationError("approved must be a boolean", code=INVALID_PARAMS)
+        one_shot = params.get("one_shot", False)
+        if not isinstance(one_shot, bool):
+            raise RpcValidationError("one_shot must be a boolean", code=INVALID_PARAMS)
+        resolved_by = self._optional_text_value(
+            params.get("resolved_by"), "resolved_by", max_length=256
+        ) or "cli"
+        approval = session.authorization.pending_approval(approval_id)
+        if approval is None or approval.run_id is None:
+            raise RpcValidationError(
+                f"No active pending approval: {approval_id}", code=INVALID_PARAMS
+            )
+        session.resolve_approval(
+            approval_id,
+            approved=approved,
+            resolved_by=resolved_by,
+            run_id=approval.run_id,
+            one_shot=one_shot if approved else False,
+        )
+        return {
+            "session_id": session.id,
+            "approval_id": approval_id,
+            "approved": approved,
+            "one_shot": one_shot if approved else False,
+        }
+
+    def _skill_list(self, params: JsonObject) -> JsonObject:
+        session = self._load_session(params)
+        config = load_config(self._config_path, cwd=session.cwd)
+        discovery, trust = self._skill_components(config)
+        candidates = discovery.discover()
+        return {
+            "session_id": session.id,
+            "skills": [
+                {
+                    "name": candidate.frontmatter.name,
+                    "version": candidate.frontmatter.version,
+                    "scope": candidate.scope.value,
+                    "path": str(candidate.document_path),
+                    "content_sha256": candidate.content_sha256,
+                    "trusted": trust.status(candidate).trusted,
+                    "enabled": trust.status(candidate).enabled,
+                    "loadable": trust.status(candidate).loadable,
+                }
+                for candidate in candidates
+            ],
+        }
+
+    def _skill_trust(self, params: JsonObject) -> JsonObject:
+        session = self._load_session(params)
+        name = self._required_text(params, "name", max_length=256)
+        trusted_by = self._optional_text_value(
+            params.get("trusted_by"), "trusted_by", max_length=256
+        ) or "cli"
+        enable = params.get("enable", True)
+        if not isinstance(enable, bool):
+            raise RpcValidationError("enable must be a boolean", code=INVALID_PARAMS)
+        config = load_config(self._config_path, cwd=session.cwd)
+        discovery, trust = self._skill_components(config)
+        candidate = next((item for item in discovery.discover() if item.key == name), None)
+        if candidate is None:
+            raise RpcValidationError(f"Skill was not discovered: {name}", code=INVALID_PARAMS)
+        record = trust.trust(candidate, trusted_by=trusted_by, enable=enable)
+        return {"session_id": session.id, "skill": record.to_dict()}
+
+    @staticmethod
+    def _skill_components(config: CodeAgentConfig) -> tuple[SkillDiscovery, SkillTrustManager]:
+        if not config.skill_roots or config.skill_trust_path is None:
+            raise RpcValidationError(
+                "No Skill roots are configured; add [[skills.roots]] first",
+                code=INVALID_PARAMS,
+            )
+        discovery = SkillDiscovery(
+            [SkillRoot(root.path, root.scope) for root in config.skill_roots]
+        )
+        trust_store = FileSkillTrustStore(config.skill_trust_path)
+        return discovery, SkillTrustManager(trust_store, discovery=discovery)
+
+    @staticmethod
+    def _approval_descriptor(session: Session, approval: Approval) -> JsonObject:
+        approval_id = approval.approval_id
+        descriptor = dict(approval.to_dict())
+        for event in reversed(session.events):
+            if event.type != "approval.requested":
+                continue
+            raw = event.data.get("approval")
+            if not isinstance(raw, dict) or raw.get("approval_id") != approval_id:
+                continue
+            for key in ("requested_by", "tool_call_id", "tool_name", "rule_id", "reason"):
+                if key in event.data:
+                    descriptor[key] = event.data[key]
+            break
+        return descriptor
 
     def _task_graph(self, session: Session) -> TaskGraph:
         cached = self._task_graphs.get(session.id)

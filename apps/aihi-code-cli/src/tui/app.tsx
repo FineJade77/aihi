@@ -3,6 +3,7 @@ import TextInput from "ink-text-input";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
   AgentEvent,
+  ApprovalDescriptor,
   EventRecord,
   JsonObject,
   RunResult,
@@ -95,6 +96,14 @@ function runStatus(result: RunResult): string {
     }
   }
   return `Run ${shortId(result.run_id)} ${result.state}`;
+}
+
+function approvalStatus(approvals: ApprovalDescriptor[]): string {
+  if (approvals.length === 0) return "No pending approvals";
+  return approvals
+    .slice(0, 3)
+    .map((approval) => `${shortId(approval.approval_id)} ${approval.tool_name ?? approval.scope}`)
+    .join(" · ");
 }
 
 function SessionPanel({
@@ -246,7 +255,7 @@ export function TuiApp({ client, cwd, provider, model }: TuiAppProps) {
         return;
       }
       if (name === "help" || name === "h") {
-        setStatus("message → run · /new [provider model] · /open ID · /resume RUN_ID · /task TEXT · /quit");
+        setStatus("message → run · /approvals · /approve ID [once] · /skills · /skill-trust NAME · /quit");
         return;
       }
       if (name === "sessions" || name === "ls") {
@@ -296,6 +305,44 @@ export function TuiApp({ client, cwd, provider, model }: TuiAppProps) {
         });
         setStatus(runStatus(result));
         await loadSession(selectedSessionId);
+        return;
+      }
+      if (name === "approvals" || name === "approval") {
+        if (!selectedSessionId) throw new Error("Create or open a session first");
+        setStatus(approvalStatus(await client.listApprovals(selectedSessionId)));
+        return;
+      }
+      if (name === "approve" || name === "deny") {
+        if (!selectedSessionId) throw new Error("Create or open a session first");
+        const approvalId = args[0];
+        if (!approvalId) throw new Error(`Usage: /${name} APPROVAL_ID${name === "approve" ? " [once]" : ""}`);
+        const result = await client.resolveApproval({
+          session_id: selectedSessionId,
+          approval_id: approvalId,
+          approved: name === "approve",
+          one_shot: name === "approve" && args[1]?.toLowerCase() === "once",
+          resolved_by: "tui",
+        });
+        setStatus(`${result.approved ? "Approved" : "Denied"} ${shortId(result.approval_id)} · use /resume RUN_ID`);
+        await loadSession(selectedSessionId);
+        return;
+      }
+      if (name === "skills") {
+        if (!selectedSessionId) throw new Error("Create or open a session first");
+        const skills = await client.listSkills(selectedSessionId);
+        setStatus(
+          skills.length === 0
+            ? "No Skills discovered"
+            : skills.map((skill) => `${skill.name}${skill.loadable ? " ✓" : " · untrusted"}`).join(" · "),
+        );
+        return;
+      }
+      if (name === "skill-trust") {
+        if (!selectedSessionId) throw new Error("Create or open a session first");
+        const skillName = args[0];
+        if (!skillName) throw new Error("Usage: /skill-trust SKILL_NAME");
+        await client.trustSkill(selectedSessionId, skillName);
+        setStatus(`Trusted and enabled Skill ${skillName}`);
         return;
       }
       if (!trimmed.startsWith("/")) {
@@ -375,7 +422,7 @@ export function TuiApp({ client, cwd, provider, model }: TuiAppProps) {
           placeholder="Type /help for commands"
         />
       </Box>
-      <Text color={COLORS.muted}>message  /new  /open  /resume  /task  /refresh  /quit · Ctrl-C exits</Text>
+      <Text color={COLORS.muted}>message  /approvals  /approve  /skills  /skill-trust  /resume  /quit · Ctrl-C exits</Text>
     </Box>
   );
 }

@@ -150,7 +150,15 @@ from aihi.agent.sandbox import (
     SandboxDescriptor,
 )
 from aihi.agent.sessions import EventStore, InMemoryEventStore, Session, SQLiteEventStore
-from aihi.agent.skills import SkillDiscovery, SkillIndexContributor, SkillRoot, SkillScope
+from aihi.agent.skills import (
+    FileSkillTrustStore,
+    SkillDiscovery,
+    SkillIndexContributor,
+    SkillLoader,
+    SkillRoot,
+    SkillScope,
+    SkillTrustManager,
+)
 from aihi.agent.tools import Tool, ToolContext, ToolExecutionResult, ToolRegistry, ToolSpec
 from aihi.agent.tools.builtin import (
     BashTool,
@@ -196,6 +204,7 @@ __all__ = [
     "EventInvariantViolation",
     "EventStore",
     "FileArtifactStore",
+    "FileSkillTrustStore",
     "FileTrustStore",
     "GlobTool",
     "GoldenTask",
@@ -264,8 +273,10 @@ __all__ = [
     "SessionNotFound",
     "SkillDiscovery",
     "SkillIndexContributor",
+    "SkillLoader",
     "SkillRoot",
     "SkillScope",
+    "SkillTrustManager",
     "StaticApprovalResolver",
     "StdioMcpTransport",
     "StructuredSummary",

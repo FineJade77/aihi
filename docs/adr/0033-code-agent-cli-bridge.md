@@ -15,7 +15,8 @@ TUI 运行。两者通过版本化 JSON-RPC 2.0 通讯，第一阶段使用子�
 
 Worker 在 `initialize` 结果中发布第一批应用命令：
 `session.create/list/get/events`、`task.create/spawn/get/list/transition` 和
-`run.start/run.resume`。
+`run.start/run.resume`、`approval.list/approval.resolve`、
+`skill.list/skill.trust`。
 变更命令统一写入 Worker 所有的 Event Store，已提交事件通过 notification 推送，
 CLI 断线后使用 `session.events(after_seq)` 补读。
 
@@ -24,6 +25,9 @@ Event Store 的权威执行端。TypeScript CLI 只负责命令解析、TUI 展�
 项目配置使用 `aihi-code.toml`：Provider 凭据仅允许通过环境变量名引用；Skill
 根目录和 MCP stdio server 在 Worker 内解析，并通过 `RuntimeBuilder`、
 `ToolRegistry` 接入既有 Policy/Hook/Sandbox 链路。
+Skill 正文只通过显式的 `load_skill` Tool 加载；CLI 的 trust 操作只写入
+Worker 管理的原子 lockfile。Approval resolve 只追加解析事件，必须再由
+调用方显式执行 `run.resume`。
 
 Durable 事件携带 Session sequence，ephemeral stream 事件只用于 UI；CLI 断线
 后通过事件序号补读，不以 TUI 内存状态作为事实源。

@@ -82,6 +82,8 @@ class CodeAgentConfig:
     tools: tuple[str, ...] = _DEFAULT_TOOLS
     sandbox: SandboxSettings = SandboxSettings()
     skill_roots: tuple[SkillRootSettings, ...] = ()
+    skill_trust_path: Path | None = None
+    skill_load_tool: bool = False
     mcp_servers: tuple[McpServerSettings, ...] = ()
     source_path: Path | None = None
 
@@ -174,6 +176,18 @@ class CodeAgentConfig:
             )
 
         skill_roots = _parse_skill_roots(skills_map, root)
+        skill_load_tool = _boolean(
+            skills_map.get("load_tool", bool(skill_roots)), "skills.load_tool"
+        )
+        skill_trust_path = (
+            _resolve_path(
+                skills_map.get("trust_lockfile", ".aiharness/skills.lock.json"),
+                root,
+                "skills.trust_lockfile",
+            )
+            if skill_roots
+            else None
+        )
         mcp_servers = _parse_mcp_servers(mcp_map, root)
         return cls(
             base_dir=root,
@@ -185,6 +199,8 @@ class CodeAgentConfig:
             tools=tools,
             sandbox=sandbox,
             skill_roots=skill_roots,
+            skill_trust_path=skill_trust_path,
+            skill_load_tool=skill_load_tool,
             mcp_servers=mcp_servers,
             source_path=(Path(source_path).expanduser().resolve() if source_path else None),
         )

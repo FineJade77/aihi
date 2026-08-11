@@ -22,6 +22,8 @@ The current Worker command surface is deliberately small:
 - `session.create`, `session.list`, `session.get`, `session.events`
 - `task.create`, `task.spawn`, `task.get`, `task.list`, `task.transition`
 - `run.start`, `run.resume`
+- `approval.list`, `approval.resolve`
+- `skill.list`, `skill.trust`
 
 Mutating commands append canonical events in the Worker and the same events are
 sent to the CLI as `event` notifications. `session.events` is the replay path
@@ -54,6 +56,10 @@ unsafe = true
 path = ".aihi/skills"
 scope = "project"
 
+[skills]
+load_tool = true
+trust_lockfile = ".aiharness/skills.lock.json"
+
 [mcp.servers.example]
 command = ["python3", "-m", "example_mcp_server"]
 allowed_tools = ["search"]
@@ -61,5 +67,8 @@ allowed_tools = ["search"]
 
 After `/new`, ordinary input is a user turn and runs the Coding Agent loop.
 `/run MESSAGE` is an explicit equivalent; `/resume RUN_ID` continues an
-interrupted or approval-suspended run. Skill bodies remain explicit/trusted,
+interrupted or approval-suspended run. Use `/approvals`, `/approve ID [once]`,
+and `/deny ID` to operate the Worker-owned approval projection; resolving an
+approval never auto-resumes a run. Use `/skills` and `/skill-trust NAME` to
+inspect and explicitly trust Skill hashes. Skill bodies remain explicit/trusted,
 and MCP tools enter the same registry/policy chain as built-in tools.

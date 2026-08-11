@@ -1,6 +1,7 @@
 export { RpcClient, RpcError } from "./rpc/client.js";
 export type {
   RpcClientOptions,
+  ApprovalResolveParams,
   RunResumeParams,
   RunStartParams,
   SessionCreateParams,

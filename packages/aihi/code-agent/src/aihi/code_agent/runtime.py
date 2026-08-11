@@ -10,6 +10,7 @@ from aihi.agent import (
     BashTool,
     DockerBackend,
     EditFileTool,
+    FileSkillTrustStore,
     GlobTool,
     GrepTool,
     HostBackend,
@@ -20,7 +21,9 @@ from aihi.agent import (
     SandboxBackend,
     Session,
     SkillDiscovery,
+    SkillLoader,
     SkillRoot,
+    SkillTrustManager,
     StdioMcpTransport,
     Tool,
     WriteFileTool,
@@ -43,6 +46,7 @@ from .config import (
     McpServerSettings,
     resolve_env_mapping,
 )
+from .skills import LoadSkillTool
 
 _DEFAULT_KEY_ENV = {
     "openai": "OPENAI_API_KEY",
@@ -64,17 +68,27 @@ class CodeAgentRuntime:
     async def create(cls, config: CodeAgentConfig) -> CodeAgentRuntime:
         provider = _build_provider(config)
         sandbox = _build_sandbox(config)
+        skill_loader: SkillLoader | None = None
+        skill_discovery: SkillDiscovery | None = None
+        if config.skill_roots:
+            skill_discovery = SkillDiscovery(
+                [SkillRoot(root.path, root.scope) for root in config.skill_roots]
+            )
+            if config.skill_trust_path is None:
+                raise CodeAgentConfigError("Skill roots require a trust lockfile path")
+            trust_store = FileSkillTrustStore(config.skill_trust_path)
+            skill_loader = SkillLoader(
+                SkillTrustManager(trust_store, discovery=skill_discovery),
+                discovery=skill_discovery,
+            )
         builder = RuntimeBuilder(
             provider=provider,
             model=config.provider.model,
             sandbox=sandbox,
-            tools=_build_tools(config),
+            tools=_build_tools(config, skill_loader=skill_loader),
         )
-        if config.skill_roots:
-            discovery = SkillDiscovery(
-                [SkillRoot(root.path, root.scope) for root in config.skill_roots]
-            )
-            builder = builder.with_skills(discovery)
+        if skill_discovery is not None:
+            builder = builder.with_skills(skill_discovery)
         runtime = builder.build()
         clients: list[McpClient] = []
         try:
@@ -234,7 +248,9 @@ def _build_sandbox(config: CodeAgentConfig) -> SandboxBackend:
     raise CodeAgentConfigError(f"Unsupported sandbox backend: {settings.backend}")
 
 
-def _build_tools(config: CodeAgentConfig) -> tuple[Tool, ...]:
+def _build_tools(
+    config: CodeAgentConfig, *, skill_loader: SkillLoader | None = None
+) -> tuple[Tool, ...]:
     factories: dict[str, type[object]] = {
         "read_file": ReadFileTool,
         "glob": GlobTool,
@@ -243,8 +259,18 @@ def _build_tools(config: CodeAgentConfig) -> tuple[Tool, ...]:
         "write_file": WriteFileTool,
         "bash": BashTool,
     }
+    tool_names = list(config.tools)
+    if config.skill_load_tool and skill_loader is not None and "load_skill" not in tool_names:
+        tool_names.append("load_skill")
     tools: list[Tool] = []
-    for name in config.tools:
+    for name in tool_names:
+        if name == "load_skill":
+            if skill_loader is None:
+                raise CodeAgentConfigError(
+                    "load_skill requires at least one configured Skill root"
+                )
+            tools.append(LoadSkillTool(skill_loader))
+            continue
         factory = factories.get(name)
         if factory is None:
             raise CodeAgentConfigError(f"Unsupported Coding Agent tool: {name}")
