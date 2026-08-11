@@ -14,9 +14,9 @@ TUI 运行。两者通过版本化 JSON-RPC 2.0 通讯，第一阶段使用子�
 边界执行同等 Schema 校验。
 
 Worker 在 `initialize` 结果中发布第一批应用命令：
-`session.create/list/get/events`、`task.create/spawn/get/list/transition` 和
-`run.start/run.resume`、`approval.list/approval.resolve`、
-`skill.list/skill.trust`、`config.get`。
+`session.create/list/get/events/fork`、`task.create/spawn/get/list/transition` 和
+`run.start/run.resume/list/cancel`、`approval.list/approval.resolve`、
+`skill.list/skill.trust/untrust`、`config.get`、`mcp.list`、`tool.list`。
 Skill trust removal and integration inspection use `skill.untrust`、`mcp.list`、
 `tool.list`；这些命令只读取或更新应用层配置/lockfile，不改变 Harness 公共契约。
 变更命令统一写入 Worker 所有的 Event Store，已提交事件通过 notification 推送，

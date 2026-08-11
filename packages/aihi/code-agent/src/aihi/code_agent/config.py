@@ -75,6 +75,16 @@ class McpServerSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class SubagentSettings:
+    enabled: bool = False
+    model: str | None = None
+    max_tokens: int = 8_192
+    timeout_seconds: float = 600.0
+    max_tool_calls: int = 100
+    capabilities: frozenset[str] = frozenset({"filesystem.read"})
+
+
+@dataclass(frozen=True, slots=True)
 class CodeAgentConfig:
     """Resolved Coding Agent settings.
 
@@ -95,6 +105,10 @@ class CodeAgentConfig:
     skill_trust_path: Path | None = None
     skill_load_tool: bool = False
     mcp_servers: tuple[McpServerSettings, ...] = ()
+    artifact_path: Path | None = None
+    compact_model: str | None = None
+    context_window: int | None = None
+    subagents: SubagentSettings = SubagentSettings()
     source_path: Path | None = None
 
     @classmethod
@@ -106,6 +120,7 @@ class CodeAgentConfig:
             provider=provider,
             provider_profiles={provider.name: provider},
             sandbox=SandboxSettings(root=base_dir),
+            artifact_path=base_dir / ".aiharness" / "artifacts",
         )
 
     @classmethod
@@ -122,6 +137,8 @@ class CodeAgentConfig:
         sandbox_map = _section(value, "sandbox")
         skills_map = _section(value, "skills")
         mcp_map = _section(value, "mcp")
+        artifacts_map = _section(value, "artifacts")
+        subagents_map = _section(value, "subagents")
         if "api_key" in provider_map:
             raise CodeAgentConfigError(
                 "provider.api_key is not supported; reference credentials with api_key_env"
@@ -180,6 +197,19 @@ class CodeAgentConfig:
                 "sandbox.backend must be one of: host, docker"
             )
 
+        raw_compact_model = agent_map.get("compact_model")
+        compact_model = (
+            _text(raw_compact_model, "agent.compact_model")
+            if raw_compact_model is not None
+            else None
+        )
+        raw_context_window = agent_map.get("context_window")
+        context_window = (
+            _positive_int(raw_context_window, "agent.context_window")
+            if raw_context_window is not None
+            else None
+        )
+
         skill_roots = _parse_skill_roots(skills_map, root)
         skill_load_tool = _boolean(
             skills_map.get("load_tool", bool(skill_roots)), "skills.load_tool"
@@ -194,6 +224,16 @@ class CodeAgentConfig:
             else None
         )
         mcp_servers = _parse_mcp_servers(mcp_map, root)
+        artifact_path = (
+            _resolve_path(
+                artifacts_map.get("path", ".aiharness/artifacts"),
+                root,
+                "artifacts.path",
+            )
+            if _boolean(artifacts_map.get("enabled", True), "artifacts.enabled")
+            else None
+        )
+        subagents = _parse_subagents(subagents_map)
         return cls(
             base_dir=root,
             provider=provider,
@@ -208,6 +248,10 @@ class CodeAgentConfig:
             skill_trust_path=skill_trust_path,
             skill_load_tool=skill_load_tool,
             mcp_servers=mcp_servers,
+            artifact_path=artifact_path,
+            compact_model=compact_model,
+            context_window=context_window,
+            subagents=subagents,
             source_path=(Path(source_path).expanduser().resolve() if source_path else None),
         )
 
@@ -262,6 +306,20 @@ class CodeAgentConfig:
                 ),
             },
             "mcp_servers": [server.name for server in self.mcp_servers],
+            "artifacts": {
+                "enabled": self.artifact_path is not None,
+                "path": str(self.artifact_path) if self.artifact_path else None,
+            },
+            "compact_model": self.compact_model,
+            "context_window": self.context_window,
+            "subagents": {
+                "enabled": self.subagents.enabled,
+                "model": self.subagents.model,
+                "max_tokens": self.subagents.max_tokens,
+                "timeout_seconds": self.subagents.timeout_seconds,
+                "max_tool_calls": self.subagents.max_tool_calls,
+                "capabilities": sorted(self.subagents.capabilities),
+            },
         }
 
 
@@ -426,6 +484,24 @@ def _parse_mcp_servers(value: Mapping[str, Any], base_dir: Path) -> tuple[McpSer
     return tuple(servers)
 
 
+def _parse_subagents(value: Mapping[str, Any]) -> SubagentSettings:
+    raw_capabilities = value.get("capabilities", ["filesystem.read"])
+    capabilities = frozenset(_string_tuple(raw_capabilities, "subagents.capabilities"))
+    raw_model = value.get("model")
+    return SubagentSettings(
+        enabled=_boolean(value.get("enabled", False), "subagents.enabled"),
+        model=_text(raw_model, "subagents.model") if raw_model is not None else None,
+        max_tokens=_positive_int(value.get("max_tokens", 8_192), "subagents.max_tokens"),
+        timeout_seconds=_positive_float(
+            value.get("timeout_seconds", 600.0), "subagents.timeout_seconds"
+        ),
+        max_tool_calls=_positive_int(
+            value.get("max_tool_calls", 100), "subagents.max_tool_calls"
+        ),
+        capabilities=capabilities,
+    )
+
+
 def _section(value: Mapping[str, Any], key: str) -> Mapping[str, Any]:
     section = value.get(key, {})
     if not isinstance(section, dict):
@@ -505,6 +581,7 @@ __all__ = [
     "ProviderSettings",
     "SandboxSettings",
     "SkillRootSettings",
+    "SubagentSettings",
     "load_config",
     "resolve_env_mapping",
 ]

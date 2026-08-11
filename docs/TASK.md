@@ -1,11 +1,11 @@
 # AIHarness 实施任务
 
-状态：M0–M7 与 H-01 ~ H-17 全部完成；Coding 应用层已确认并分阶段实现
+状态：M0–M7、H-01 ~ H-17 与 P-01 已完成；Coding 应用层首个可用纵向链路已交付
 架构基线：[ARCHITECTURE.md](ARCHITECTURE.md)
 定位：**支撑多条 Agent 产品线的 Harness**。Coding 只是其中一条，Cowork（多人/多角色协作）
 等形态同样建立在它之上。
 
-当前基础包规模：源码约 17.2k 行，测试约 8.2k 行 / 346 用例；运行时第三方依赖仅 `httpx`；
+当前基础包规模：源码约 17.2k 行，测试约 8.2k 行 / 354 用例；运行时第三方依赖仅 `httpx`；
 `aihi.models` / `aihi.agent` 公共 API 分别为 51 / 134 个名字；33 篇 ADR。
 
 ## 范围与方向
@@ -46,7 +46,8 @@ Provider Golden/`EvalGate`（CI 工具而非 Harness 能力）、`cli/`（把 Pr
 `aihi-code-cli` 已按阶段建立，已完成 Worker RPC、Session/Task、TUI 与首个真实 Coding
 loop/config/Skill/MCP 配置纵向链路，以及 Worker-owned Approval 查询/解析、Skill trust
 和显式 `load_skill` 加载。TUI 已支持配置选择、Session 分支/历史、Run 列表与取消请求，
-并接收模型流式 chunk；后续继续补更多 Coding 工具。
+并接收模型流式 chunk；P-01 交付还包括 Git 只读工具、MCP/Tool/Skill 管理、Artifact、
+Compaction 与可治理 Subagent 配置。
 
 ## 交付原则
 
@@ -504,13 +505,13 @@ OpenAI-compatible 构造器契约以及完整 compile/test/lint/type 门禁全�
 
 | 编号 | 项 | 状态 | 说明 |
 |---|---|---|---|
-| P-01 | 应用层重建（TUI 前端） | In Progress | 已完成 Worker RPC、Session/Task、Ink TUI、`run.start/run.resume`、Approval/Skill RPC、TOML 配置及 Skill/MCP 声明式接入；继续补产品能力 |
+| P-01 | 应用层重建（TUI 前端） | Done | Worker RPC、Session/Task、Ink TUI、Provider profiles、Run 流式执行/取消/恢复、Approval/Skill/MCP/Tool 管理、Git 只读工具及 Artifact/Compaction/Subagent 配置均已接入 |
 | P-02 | Cowork 形态所需的 Harness 缺口 | Planned | 先做现状评估再立项。只有 Provider-neutral、跨产品线可复用的缺口才进 Harness |
 | P-03 | 平台增强（H-03 ~ H-06） | Planned | 控制面、多 Worker、PostgreSQL、远程 OTel。只能是既有协议的新增适配器 |
 | P-04 | Web 前端 | 待办 | TUI 形态跑通前不开工 |
 | P-05 | 桌面前端 | 待办 | 同上 |
 
-顺序判据：**先完成 H-15；P-01 已确认；P-01 阶段内不做 P-03**。没有真实前端消费的平台能力，会重演一次「实现了、测试过、
+顺序判据：**先完成 H-15；P-01 已完成；P-01 阶段内不做 P-03**。没有真实前端消费的平台能力，会重演一次「实现了、测试过、
 然后按判据删掉 4,000 行」——那正是这份文档顶部记录的事。
 
 ### 待开发清单维护规则

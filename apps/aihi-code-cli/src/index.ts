@@ -4,6 +4,7 @@ export type {
   ApprovalResolveParams,
   RunStartParams,
   RunResumeParams,
+  RunCancelParams,
   SessionCreateParams,
   TaskCreateParams,
   TaskSpawnParams,

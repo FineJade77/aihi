@@ -20,10 +20,12 @@ uses an in-memory store for the process lifetime.
 The current Worker command surface is deliberately small:
 
 - `session.create`, `session.list`, `session.get`, `session.events`
+- `session.fork`
 - `task.create`, `task.spawn`, `task.get`, `task.list`, `task.transition`
-- `run.start`, `run.resume`
+- `run.start`, `run.resume`, `run.list`, `run.cancel`
 - `approval.list`, `approval.resolve`
-- `skill.list`, `skill.trust`
+- `skill.list`, `skill.trust`, `skill.untrust`
+- `config.get`, `mcp.list`, `tool.list`
 
 Mutating commands append canonical events in the Worker and the same events are
 sent to the CLI as `event` notifications. `session.events` is the replay path
@@ -55,6 +57,19 @@ api_key_env = "OPENAI_API_KEY"
 backend = "host"
 root = "."
 unsafe = true
+
+[artifacts]
+enabled = true
+path = ".aiharness/artifacts"
+
+[agent]
+compact_model = "deepseek-chat"
+context_window = 128000
+
+[subagents]
+enabled = false
+model = "deepseek-chat"
+capabilities = ["filesystem.read"]
 
 [[skills.roots]]
 path = ".aihi/skills"

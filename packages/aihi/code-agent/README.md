@@ -17,3 +17,7 @@ only non-secret metadata, and `run.start` accepts a configured provider/model
 selection. Resume continues to enforce the persisted run configuration.
 The application adds read-only `git_status`/`git_diff` tools and exposes
 `skill.untrust`, `mcp.list`, and `tool.list` through the Worker.
+Configuration can opt into the Harness artifact store, model-driven context
+compaction, and governed subagents; subagents require a Worker Session store
+and inherit a read-only capability ceiling unless explicitly narrowed or
+expanded by application configuration.

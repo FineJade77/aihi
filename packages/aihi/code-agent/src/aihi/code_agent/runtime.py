@@ -8,9 +8,11 @@ from dataclasses import dataclass
 from typing import cast
 
 from aihi.agent import (
+    AgentBudget,
     BashTool,
     DockerBackend,
     EditFileTool,
+    EventStore,
     FileSkillTrustStore,
     GlobTool,
     GrepTool,
@@ -26,7 +28,9 @@ from aihi.agent import (
     SkillRoot,
     SkillTrustManager,
     StdioMcpTransport,
+    SubagentAuthority,
     Tool,
+    WorkspaceScope,
     WriteFileTool,
     register_mcp_tools,
 )
@@ -67,7 +71,9 @@ class CodeAgentRuntime:
     mcp_clients: tuple[McpClient, ...] = ()
 
     @classmethod
-    async def create(cls, config: CodeAgentConfig) -> CodeAgentRuntime:
+    async def create(
+        cls, config: CodeAgentConfig, *, store: EventStore | None = None
+    ) -> CodeAgentRuntime:
         provider = _build_provider(config)
         sandbox = _build_sandbox(config)
         skill_loader: SkillLoader | None = None
@@ -91,6 +97,35 @@ class CodeAgentRuntime:
         )
         if skill_discovery is not None:
             builder = builder.with_skills(skill_discovery)
+        if config.artifact_path is not None:
+            builder = builder.with_artifacts(config.artifact_path)
+        if config.compact_model is not None:
+            builder = builder.with_compaction(provider=provider, model=config.compact_model)
+        if config.context_window is not None:
+            builder = builder.with_context_window(config.context_window)
+        if config.subagents.enabled:
+            if store is None:
+                raise CodeAgentConfigError(
+                    "Enabled subagents require a Session EventStore"
+                )
+            authority = SubagentAuthority(
+                budget=AgentBudget(
+                    max_tokens=config.subagents.max_tokens,
+                    timeout_seconds=config.subagents.timeout_seconds,
+                    max_tool_calls=config.subagents.max_tool_calls,
+                ),
+                workspace=WorkspaceScope(
+                    root=str(config.sandbox.root),
+                    read_only=config.sandbox.workspace_read_only,
+                ),
+                capabilities=config.subagents.capabilities,
+            )
+            builder = builder.with_subagents(
+                authority=authority,
+                store=store,
+                provider=provider,
+                model=config.subagents.model or config.provider.model,
+            )
         runtime = builder.build()
         clients: list[McpClient] = []
         try:

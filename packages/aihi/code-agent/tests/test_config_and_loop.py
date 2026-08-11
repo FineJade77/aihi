@@ -30,6 +30,19 @@ backend = "host"
 root = "."
 unsafe = true
 
+[agent]
+compact_model = "compact-demo"
+context_window = 4096
+
+[artifacts]
+enabled = true
+path = ".aiharness/artifacts"
+
+[subagents]
+enabled = true
+model = "subagent-demo"
+capabilities = ["filesystem.read"]
+
 [[skills.roots]]
 path = ".aihi/skills"
 scope = "project"
@@ -57,6 +70,11 @@ allowed_tools = ["search"]
     assert config.skill_roots[0].path == (tmp_path / ".aihi/skills").resolve()
     assert config.mcp_servers[0].cwd == tmp_path.resolve()
     assert resolve_env_mapping(config.mcp_servers[0].env) == {"TOKEN": "secret-from-env"}
+    assert config.compact_model == "compact-demo"
+    assert config.context_window == 4096
+    assert config.artifact_path == (tmp_path / ".aiharness/artifacts").resolve()
+    assert config.subagents.enabled is True
+    assert config.subagents.model == "subagent-demo"
 
 
 @pytest.mark.asyncio
@@ -66,6 +84,63 @@ async def test_config_defaults_keep_host_execution_disabled(tmp_path) -> None:
     assert config.sandbox.unsafe is False
     with pytest.raises(UnsafeHostNotAcknowledged, match="unsafe=True"):
         await CodeAgentRuntime.create(config)
+
+
+@pytest.mark.asyncio
+async def test_runtime_composes_configured_artifacts_compaction_and_subagents(tmp_path) -> None:
+    config_path = tmp_path / "aihi-code.toml"
+    config_path.write_text(
+        """[provider]
+name = "fake"
+model = "demo"
+
+[agent]
+compact_model = "compact-demo"
+context_window = 4096
+
+[sandbox]
+backend = "host"
+root = "."
+unsafe = true
+
+[artifacts]
+enabled = true
+
+[subagents]
+enabled = true
+capabilities = ["filesystem.read"]
+""",
+        encoding="utf-8",
+    )
+    config = load_config(config_path, cwd=tmp_path)
+    server = WorkerServer(store_path=tmp_path / "events.sqlite3", config_path=config_path)
+    server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {"protocol_version": PROTOCOL_VERSION},
+        }
+    )
+    created = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "session.create",
+            "params": {"cwd": str(tmp_path)},
+        }
+    )
+    assert created is not None
+    session_id = created["result"]["session"]["session_id"]  # type: ignore[index]
+    session = server._load_session({"session_id": session_id})
+    runtime = await CodeAgentRuntime.create(config, store=session.store)
+    try:
+        assert runtime.runtime.artifact_store is not None
+        assert runtime.runtime.coordinator.summary_generator is not None
+        assert runtime.runtime.registry.get("task") is not None
+    finally:
+        await runtime.close()
+        server.close()
 
 
 def test_worker_run_start_executes_the_configured_agent_loop(tmp_path) -> None:

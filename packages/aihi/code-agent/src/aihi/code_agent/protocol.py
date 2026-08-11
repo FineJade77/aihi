@@ -774,7 +774,7 @@ class WorkerServer:
         run_id: str,
         reason: str | None,
     ) -> JsonObject:
-        runtime = await CodeAgentRuntime.create(config)
+        runtime = await CodeAgentRuntime.create(config, store=session.store)
         try:
             result = runtime.runtime.coordinator.abandon(
                 session, run_id=run_id, reason=reason or "cancelled by user"
@@ -795,7 +795,7 @@ class WorkerServer:
         max_output_tokens: int | None,
         cancel_signal: threading.Event | None = None,
     ) -> JsonObject:
-        runtime = await CodeAgentRuntime.create(config)
+        runtime = await CodeAgentRuntime.create(config, store=session.store)
         cancel_event, watcher = await WorkerServer._cancel_bridge(cancel_signal)
         try:
             result = await runtime.run(
@@ -824,7 +824,7 @@ class WorkerServer:
         max_output_tokens: int | None,
         cancel_signal: threading.Event | None = None,
     ) -> JsonObject:
-        runtime = await CodeAgentRuntime.create(config)
+        runtime = await CodeAgentRuntime.create(config, store=session.store)
         cancel_event, watcher = await WorkerServer._cancel_bridge(cancel_signal)
         try:
             result = await runtime.resume(
