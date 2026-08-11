@@ -24,7 +24,10 @@ def serve_stdio(
 ) -> int:
     """Serve framed requests until EOF, shutdown, or an unrecoverable frame error."""
 
-    runtime = server or WorkerServer(store_path=os.environ.get("AIHI_CODE_AGENT_STORE"))
+    runtime = server or WorkerServer(
+        store_path=os.environ.get("AIHI_CODE_AGENT_STORE"),
+        config_path=os.environ.get("AIHI_CODE_AGENT_CONFIG"),
+    )
     error_stream = sys.stderr if stderr is None else stderr
     try:
         while not runtime.shutdown_requested:

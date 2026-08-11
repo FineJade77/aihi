@@ -79,6 +79,30 @@ export type TaskState =
   | "cancelled"
   | "interrupted";
 
+export type RunState =
+  | "created"
+  | "running"
+  | "waiting_tool"
+  | "waiting_approval"
+  | "completed"
+  | "failed"
+  | "interrupted"
+  | "cancelled";
+
+export interface RunResult {
+  run_id: string;
+  state: RunState;
+  suspended: boolean;
+  error: string | null;
+  pending_approval_id: string | null;
+  pending_tool_call_ids: string[];
+  response?: {
+    message: JsonObject;
+    stop_reason: string;
+    usage: JsonObject;
+  };
+}
+
 export interface TaskDescriptor {
   spec: JsonObject;
   state: TaskState;
@@ -111,7 +135,7 @@ export interface EventNotification<TData = Record<string, unknown>>
 export interface CommandDescriptor {
   name: string;
   aliases: string[];
-  scope: "tui" | "session" | "task" | "config" | "integration";
+  scope: "tui" | "session" | "task" | "run" | "config" | "integration";
   execution: "local" | "worker";
   mutates: boolean;
   requires_approval: boolean;

@@ -1,0 +1,261 @@
+"""Coding Agent application assembly and the first executable agent loop."""
+
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+from typing import cast
+
+from aihi.agent import (
+    BashTool,
+    DockerBackend,
+    EditFileTool,
+    GlobTool,
+    GrepTool,
+    HostBackend,
+    McpClient,
+    ReadFileTool,
+    Runtime,
+    RuntimeBuilder,
+    SandboxBackend,
+    Session,
+    SkillDiscovery,
+    SkillRoot,
+    StdioMcpTransport,
+    Tool,
+    WriteFileTool,
+    register_mcp_tools,
+)
+from aihi.agent.runtime import RunResult
+from aihi.models import (
+    AnthropicProvider,
+    DeepSeekProvider,
+    FakeProvider,
+    Message,
+    OpenAICompatibleProvider,
+    OpenAIProvider,
+    Provider,
+)
+
+from .config import (
+    CodeAgentConfig,
+    CodeAgentConfigError,
+    McpServerSettings,
+    resolve_env_mapping,
+)
+
+_DEFAULT_KEY_ENV = {
+    "openai": "OPENAI_API_KEY",
+    "anthropic": "ANTHROPIC_API_KEY",
+    "deepseek": "DEEPSEEK_API_KEY",
+    "openai_compatible": "AIHI_CODE_AGENT_API_KEY",
+}
+
+
+@dataclass(slots=True)
+class CodeAgentRuntime:
+    """A configured runtime plus the lifetime of its MCP child processes."""
+
+    config: CodeAgentConfig
+    runtime: Runtime
+    mcp_clients: tuple[McpClient, ...] = ()
+
+    @classmethod
+    async def create(cls, config: CodeAgentConfig) -> CodeAgentRuntime:
+        provider = _build_provider(config)
+        sandbox = _build_sandbox(config)
+        builder = RuntimeBuilder(
+            provider=provider,
+            model=config.provider.model,
+            sandbox=sandbox,
+            tools=_build_tools(config),
+        )
+        if config.skill_roots:
+            discovery = SkillDiscovery(
+                [SkillRoot(root.path, root.scope) for root in config.skill_roots]
+            )
+            builder = builder.with_skills(discovery)
+        runtime = builder.build()
+        clients: list[McpClient] = []
+        try:
+            for server in config.mcp_servers:
+                client = await _register_mcp_server(runtime, server)
+                clients.append(client)
+        except BaseException:
+            for client in reversed(clients):
+                await client.disconnect()
+            await _close_provider(provider)
+            raise
+        return cls(config=config, runtime=runtime, mcp_clients=tuple(clients))
+
+    async def run(
+        self,
+        session: Session,
+        *,
+        user_message: str,
+        run_id: str | None = None,
+        model: str | None = None,
+        system_prompt: str | None = None,
+        max_output_tokens: int | None = None,
+    ) -> RunResult:
+        """Run one user turn through the Harness coordinator loop."""
+
+        text = user_message.strip()
+        if not text:
+            raise CodeAgentConfigError("user_message must not be empty")
+        return await self.runtime.coordinator.run(
+            session,
+            model=model or self.config.provider.model,
+            user_message=Message.text("user", text),
+            run_id=run_id,
+            permission_mode=self.config.permission_mode,
+            require_capability_lease=self.config.require_capability_lease,
+            system_prompt=(
+                self.config.system_prompt if system_prompt is None else system_prompt
+            ),
+            max_output_tokens=max_output_tokens or self.config.max_output_tokens,
+        )
+
+    async def resume(
+        self,
+        session: Session,
+        *,
+        run_id: str,
+        model: str | None = None,
+        system_prompt: str | None = None,
+        max_output_tokens: int | None = None,
+    ) -> RunResult:
+        return await self.runtime.coordinator.resume(
+            session,
+            run_id=run_id,
+            model=model,
+            permission_mode=self.config.permission_mode,
+            require_capability_lease=self.config.require_capability_lease,
+            system_prompt=(
+                self.config.system_prompt if system_prompt is None else system_prompt
+            ),
+            max_output_tokens=max_output_tokens,
+        )
+
+    async def close(self) -> None:
+        for client in reversed(self.mcp_clients):
+            await client.disconnect()
+        await _close_provider(self.runtime.provider)
+
+
+async def _register_mcp_server(runtime: Runtime, settings: McpServerSettings) -> McpClient:
+    resolved_env = resolve_env_mapping(settings.env)
+    transport = StdioMcpTransport(
+        settings.command,
+        cwd=settings.cwd,
+        env=resolved_env or None,
+        request_timeout_seconds=settings.request_timeout_seconds,
+    )
+    client = McpClient(
+        transport,
+        client_name="aihi-code-agent",
+        reconnect_attempts=settings.reconnect_attempts,
+        request_timeout_seconds=settings.request_timeout_seconds,
+    )
+    try:
+        await register_mcp_tools(
+            runtime.registry,
+            client,
+            server_name=settings.name,
+            allowed_tools=settings.allowed_tools,
+        )
+    except BaseException:
+        await client.disconnect()
+        raise
+    return client
+
+
+def _build_provider(config: CodeAgentConfig) -> Provider:
+    settings = config.provider
+    name = settings.name.replace("-", "_").lower()
+    if name == "fake":
+        return FakeProvider()
+    key_env = settings.api_key_env or _DEFAULT_KEY_ENV.get(name)
+    if key_env is None:
+        raise CodeAgentConfigError(f"Provider {settings.name!r} requires provider.api_key_env")
+    api_key = os.environ.get(key_env)
+    if not api_key:
+        raise CodeAgentConfigError(
+            "Provider credential environment variable is missing: " + key_env
+        )
+    if name == "openai":
+        if settings.base_url is None:
+            return OpenAIProvider(api_key, timeout_seconds=settings.timeout_seconds)
+        return OpenAIProvider(
+            api_key, base_url=settings.base_url, timeout_seconds=settings.timeout_seconds
+        )
+    if name == "anthropic":
+        if settings.base_url is None:
+            return AnthropicProvider(api_key, timeout_seconds=settings.timeout_seconds)
+        return AnthropicProvider(
+            api_key, base_url=settings.base_url, timeout_seconds=settings.timeout_seconds
+        )
+    if name == "deepseek":
+        if settings.base_url is None:
+            return DeepSeekProvider(api_key, timeout_seconds=settings.timeout_seconds)
+        return DeepSeekProvider(
+            api_key, base_url=settings.base_url, timeout_seconds=settings.timeout_seconds
+        )
+    if name == "openai_compatible":
+        if settings.base_url is None:
+            raise CodeAgentConfigError(
+                "OpenAI-compatible provider requires provider.base_url"
+            )
+        return OpenAICompatibleProvider(
+            api_key,
+            base_url=settings.base_url,
+            timeout_seconds=settings.timeout_seconds,
+        )
+    raise CodeAgentConfigError(
+        "Unsupported provider: " + settings.name + "; choose fake, openai, anthropic, "
+        "deepseek, or openai-compatible"
+    )
+
+
+def _build_sandbox(config: CodeAgentConfig) -> SandboxBackend:
+    settings = config.sandbox
+    if settings.backend == "host":
+        return HostBackend(settings.root, unsafe=settings.unsafe)
+    if settings.backend == "docker":
+        if settings.image is None:
+            raise CodeAgentConfigError("Docker sandbox requires sandbox.image")
+        return DockerBackend(
+            settings.root,
+            image=settings.image,
+            network=settings.network,
+            allow_network=settings.allow_network,
+            workspace_read_only=settings.workspace_read_only,
+        )
+    raise CodeAgentConfigError(f"Unsupported sandbox backend: {settings.backend}")
+
+
+def _build_tools(config: CodeAgentConfig) -> tuple[Tool, ...]:
+    factories: dict[str, type[object]] = {
+        "read_file": ReadFileTool,
+        "glob": GlobTool,
+        "grep": GrepTool,
+        "edit_file": EditFileTool,
+        "write_file": WriteFileTool,
+        "bash": BashTool,
+    }
+    tools: list[Tool] = []
+    for name in config.tools:
+        factory = factories.get(name)
+        if factory is None:
+            raise CodeAgentConfigError(f"Unsupported Coding Agent tool: {name}")
+        tools.append(cast(Tool, factory()))
+    return tuple(tools)
+
+
+async def _close_provider(provider: Provider) -> None:
+    close = getattr(provider, "aclose", None)
+    if close is not None:
+        await close()
+
+
+__all__ = ["CodeAgentRuntime"]

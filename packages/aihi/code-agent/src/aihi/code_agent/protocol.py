@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Mapping
 from copy import deepcopy
@@ -20,6 +21,9 @@ from aihi.agent import (
     TaskGraph,
     WorkspaceScope,
 )
+from aihi.agent.runtime import RunResult
+from aihi.code_agent.config import CodeAgentConfig, load_config
+from aihi.code_agent.runtime import CodeAgentRuntime
 
 JsonObject: TypeAlias = dict[str, Any]
 JsonRpcId: TypeAlias = str | int
@@ -108,6 +112,22 @@ COMMAND_DESCRIPTORS: Final[tuple[JsonObject, ...]] = (
         "mutates": True,
         "requires_approval": False,
     },
+    {
+        "name": "run.start",
+        "aliases": [],
+        "scope": "run",
+        "execution": "worker",
+        "mutates": True,
+        "requires_approval": False,
+    },
+    {
+        "name": "run.resume",
+        "aliases": [],
+        "scope": "run",
+        "execution": "worker",
+        "mutates": True,
+        "requires_approval": False,
+    },
 )
 _COMMAND_NAMES: Final[frozenset[str]] = frozenset(
     str(command["name"]) for command in COMMAND_DESCRIPTORS
@@ -158,6 +178,7 @@ class WorkerServer:
         *,
         store: EventStore | None = None,
         store_path: str | Path | None = None,
+        config_path: str | Path | None = None,
     ) -> None:
         if store is not None and store_path is not None:
             raise ValueError("store and store_path are mutually exclusive")
@@ -166,6 +187,9 @@ class WorkerServer:
         self.shutdown_requested = False
         self._store: EventStore | None = store
         self._store_path = str(store_path) if store_path is not None else None
+        self._config_path = (
+            str(Path(config_path).expanduser().resolve()) if config_path is not None else None
+        )
         self._owns_store = False
         self._sessions: dict[str, Session] = {}
         self._task_graphs: dict[str, TaskGraph] = {}
@@ -297,6 +321,10 @@ class WorkerServer:
             return {"session_id": session.id, "tasks": [node.to_dict() for node in nodes]}
         if method == "task.transition":
             return self._task_transition(params)
+        if method == "run.start":
+            return self._run_start(params)
+        if method == "run.resume":
+            return self._run_resume(params)
         raise RpcValidationError(f"Method not found: {method}", code=METHOD_NOT_FOUND)
 
     def _ensure_store(self) -> EventStore:
@@ -465,6 +493,119 @@ class WorkerServer:
                 code=INVALID_PARAMS,
             )
         return {"session_id": session.id, "task": node.to_dict()}
+
+    def _run_start(self, params: JsonObject) -> JsonObject:
+        session = self._load_session(params)
+        user_message = self._required_text(params, "user_message", max_length=100_000)
+        model = self._optional_text_value(params.get("model"), "model", max_length=256)
+        system_prompt = self._optional_text_value(
+            params.get("system_prompt"), "system_prompt", max_length=100_000
+        )
+        max_output_tokens = self._optional_positive_int(
+            params.get("max_output_tokens"), "max_output_tokens"
+        )
+        run_id = self._optional_text_value(params.get("run_id"), "run_id", max_length=256)
+        config = load_config(self._config_path, cwd=session.cwd)
+        return asyncio.run(
+            self._execute_run_start(
+                config,
+                session,
+                user_message=user_message,
+                run_id=run_id,
+                model=model,
+                system_prompt=system_prompt,
+                max_output_tokens=max_output_tokens,
+            )
+        )
+
+    def _run_resume(self, params: JsonObject) -> JsonObject:
+        session = self._load_session(params)
+        run_id = self._required_text(params, "run_id", max_length=256)
+        model = self._optional_text_value(params.get("model"), "model", max_length=256)
+        system_prompt = self._optional_text_value(
+            params.get("system_prompt"), "system_prompt", max_length=100_000
+        )
+        max_output_tokens = self._optional_positive_int(
+            params.get("max_output_tokens"), "max_output_tokens"
+        )
+        config = load_config(self._config_path, cwd=session.cwd)
+        return asyncio.run(
+            self._execute_run_resume(
+                config,
+                session,
+                run_id=run_id,
+                model=model,
+                system_prompt=system_prompt,
+                max_output_tokens=max_output_tokens,
+            )
+        )
+
+    @staticmethod
+    async def _execute_run_start(
+        config: CodeAgentConfig,
+        session: Session,
+        *,
+        user_message: str,
+        run_id: str | None,
+        model: str | None,
+        system_prompt: str | None,
+        max_output_tokens: int | None,
+    ) -> JsonObject:
+        runtime = await CodeAgentRuntime.create(config)
+        try:
+            result = await runtime.run(
+                session,
+                user_message=user_message,
+                run_id=run_id,
+                model=model,
+                system_prompt=system_prompt,
+                max_output_tokens=max_output_tokens,
+            )
+            return WorkerServer._run_result(result)
+        finally:
+            await runtime.close()
+
+    @staticmethod
+    async def _execute_run_resume(
+        config: CodeAgentConfig,
+        session: Session,
+        *,
+        run_id: str,
+        model: str | None,
+        system_prompt: str | None,
+        max_output_tokens: int | None,
+    ) -> JsonObject:
+        runtime = await CodeAgentRuntime.create(config)
+        try:
+            result = await runtime.resume(
+                session,
+                run_id=run_id,
+                model=model,
+                system_prompt=system_prompt,
+                max_output_tokens=max_output_tokens,
+            )
+            return WorkerServer._run_result(result)
+        finally:
+            await runtime.close()
+
+    @staticmethod
+    def _run_result(run_result: RunResult) -> JsonObject:
+        response = run_result.response
+        payload: JsonObject = {
+            "run_id": run_result.run_id,
+            "state": run_result.state.value,
+            "suspended": run_result.suspended,
+            "error": run_result.error,
+            "pending_approval_id": run_result.pending_approval_id,
+            "pending_tool_call_ids": list(run_result.pending_tool_call_ids),
+        }
+        if response is not None:
+            payload["response"] = {
+                "message": response.message.to_dict(),
+                "stop_reason": response.stop_reason,
+                "usage": response.usage.to_dict(),
+            }
+        return payload
 
     def _task_graph(self, session: Session) -> TaskGraph:
         cached = self._task_graphs.get(session.id)
@@ -681,6 +822,19 @@ class WorkerServer:
                         code=INVALID_PARAMS,
                     )
             self._store_path = requested_path
+        raw_config_path = params.get("config_path")
+        if raw_config_path is not None:
+            if not isinstance(raw_config_path, str) or not raw_config_path.strip():
+                raise RpcValidationError(
+                    "config_path must be a non-empty string", code=INVALID_PARAMS
+                )
+            requested_config = str(Path(raw_config_path).expanduser().resolve())
+            if self._config_path is not None and self._config_path != requested_config:
+                raise RpcValidationError(
+                    "initialize config_path does not match the Worker configuration",
+                    code=INVALID_PARAMS,
+                )
+            self._config_path = requested_config
         self._ensure_store()
         self.initialized = True
         if is_notification:
@@ -704,6 +858,22 @@ class WorkerServer:
         if isinstance(self._store, SQLiteEventStore):
             return {"kind": "sqlite", "path": self._store_path}
         return {"kind": "memory"}
+
+    @staticmethod
+    def _optional_text_value(
+        value: object, key: str, *, max_length: int = 4_096
+    ) -> str | None:
+        if value is None:
+            return None
+        return WorkerServer._optional_text(value, key, max_length=max_length)
+
+    @staticmethod
+    def _optional_positive_int(value: object, key: str) -> int | None:
+        if value is None:
+            return None
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            raise RpcValidationError(f"{key} must be a positive integer", code=INVALID_PARAMS)
+        return value
 
     @staticmethod
     def _maybe_error(

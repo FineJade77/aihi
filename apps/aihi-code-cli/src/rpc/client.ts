@@ -9,6 +9,7 @@ import type {
   JsonRpcRequest,
   SessionDescriptor,
   SessionEventsResult,
+  RunResult,
   TaskDescriptor,
   TaskState,
 } from "@aihi/code-protocol";
@@ -19,6 +20,7 @@ import { launchWorker, type WorkerLaunchOptions } from "../worker/launcher.js";
 export interface RpcClientOptions extends WorkerLaunchOptions {
   requestTimeoutMs?: number;
   storePath?: string;
+  configPath?: string;
   onEvent?: (event: AgentEvent) => void;
   onLog?: (chunk: string) => void;
   onExit?: (code: number | null, signal: NodeJS.Signals | null) => void;
@@ -79,6 +81,23 @@ export interface TaskTransitionParams {
   metrics?: JsonObject;
 }
 
+export interface RunStartParams {
+  session_id: string;
+  user_message: string;
+  run_id?: string;
+  model?: string;
+  system_prompt?: string;
+  max_output_tokens?: number;
+}
+
+export interface RunResumeParams {
+  session_id: string;
+  run_id: string;
+  model?: string;
+  system_prompt?: string;
+  max_output_tokens?: number;
+}
+
 interface PendingRequest {
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
@@ -91,6 +110,7 @@ export class RpcClient {
   private readonly pending = new Map<string, PendingRequest>();
   private readonly requestTimeoutMs: number;
   private readonly storePath?: string;
+  private readonly configPath?: string;
   private readonly onEventCallback?: (event: AgentEvent) => void;
   private readonly onLogCallback?: (chunk: string) => void;
   private readonly onExitCallback?: (code: number | null, signal: NodeJS.Signals | null) => void;
@@ -112,6 +132,7 @@ export class RpcClient {
       throw new TypeError("requestTimeoutMs must be a positive safe integer");
     }
     this.storePath = options.storePath;
+    this.configPath = options.configPath;
     this.onEventCallback = options.onEvent;
     this.onLogCallback = options.onLog;
     this.onExitCallback = options.onExit;
@@ -163,6 +184,9 @@ export class RpcClient {
     };
     if (this.storePath !== undefined) {
       initializeParams.store_path = this.storePath;
+    }
+    if (this.configPath !== undefined) {
+      initializeParams.config_path = this.configPath;
     }
     const result = await this.request<InitializeResult>("initialize", initializeParams);
     this.notify("initialized", { protocol_version: PROTOCOL_VERSION });
@@ -279,6 +303,14 @@ export class RpcClient {
       params as unknown as JsonObject,
     );
     return result.task;
+  }
+
+  public async startRun(params: RunStartParams): Promise<RunResult> {
+    return this.request<RunResult>("run.start", params as unknown as JsonObject);
+  }
+
+  public async resumeRun(params: RunResumeParams): Promise<RunResult> {
+    return this.request<RunResult>("run.resume", params as unknown as JsonObject);
   }
 
   public async close(): Promise<void> {

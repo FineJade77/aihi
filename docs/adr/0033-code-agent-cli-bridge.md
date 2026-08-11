@@ -14,12 +14,16 @@ TUI 运行。两者通过版本化 JSON-RPC 2.0 通讯，第一阶段使用子�
 边界执行同等 Schema 校验。
 
 Worker 在 `initialize` 结果中发布第一批应用命令：
-`session.create/list/get/events` 和 `task.create/spawn/get/list/transition`。
+`session.create/list/get/events`、`task.create/spawn/get/list/transition` 和
+`run.start/run.resume`。
 变更命令统一写入 Worker 所有的 Event Store，已提交事件通过 notification 推送，
 CLI 断线后使用 `session.events(after_seq)` 补读。
 
 Python Worker 是配置、模型、工具、Policy、Approval、Sandbox、Session 和
 Event Store 的权威执行端。TypeScript CLI 只负责命令解析、TUI 展示和用户交互。
+项目配置使用 `aihi-code.toml`：Provider 凭据仅允许通过环境变量名引用；Skill
+根目录和 MCP stdio server 在 Worker 内解析，并通过 `RuntimeBuilder`、
+`ToolRegistry` 接入既有 Policy/Hook/Sandbox 链路。
 
 Durable 事件携带 Session sequence，ephemeral stream 事件只用于 UI；CLI 断线
 后通过事件序号补读，不以 TUI 内存状态作为事实源。

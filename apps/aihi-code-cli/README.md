@@ -1,9 +1,8 @@
 # @aihi/code-cli
 
-TypeScript-side transport for the local AIHI Code Worker. The package currently
-provides the lifecycle bridge only: it launches the Python worker, performs the
-versioned `initialize` handshake, receives `event` notifications, and performs a
-graceful `shutdown`.
+TypeScript-side transport and Ink TUI for the local AIHI Code Worker. It
+launches the Python worker, performs the versioned `initialize` handshake,
+receives `event` notifications, and exposes the Coding Agent run loop.
 
 The worker uses JSON-RPC 2.0 envelopes framed as:
 
@@ -22,6 +21,7 @@ The current Worker command surface is deliberately small:
 
 - `session.create`, `session.list`, `session.get`, `session.events`
 - `task.create`, `task.spawn`, `task.get`, `task.list`, `task.transition`
+- `run.start`, `run.resume`
 
 Mutating commands append canonical events in the Worker and the same events are
 sent to the CLI as `event` notifications. `session.events` is the replay path
@@ -35,6 +35,31 @@ npm run build
 npm start -- --store ~/.aihi/code-agent/events.sqlite3
 ```
 
-The first TUI provides session discovery, session creation/opening, event
-replay, and basic task lifecycle commands. It intentionally does not execute
-tools or model runs yet.
+Use `--config PATH` (or a project `aihi-code.toml`) to configure a provider,
+sandbox, Skill roots, and MCP servers. Credentials are referenced by environment
+variable name and are never stored in TOML:
+
+```toml
+[provider]
+name = "deepseek"
+model = "deepseek-chat"
+api_key_env = "DEEPSEEK_API_KEY"
+
+[sandbox]
+backend = "host"
+root = "."
+unsafe = true
+
+[[skills.roots]]
+path = ".aihi/skills"
+scope = "project"
+
+[mcp.servers.example]
+command = ["python3", "-m", "example_mcp_server"]
+allowed_tools = ["search"]
+```
+
+After `/new`, ordinary input is a user turn and runs the Coding Agent loop.
+`/run MESSAGE` is an explicit equivalent; `/resume RUN_ID` continues an
+interrupted or approval-suspended run. Skill bodies remain explicit/trusted,
+and MCP tools enter the same registry/policy chain as built-in tools.

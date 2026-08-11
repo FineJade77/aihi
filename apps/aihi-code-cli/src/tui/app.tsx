@@ -5,6 +5,7 @@ import type {
   AgentEvent,
   EventRecord,
   JsonObject,
+  RunResult,
   SessionDescriptor,
   TaskDescriptor,
 } from "@aihi/code-protocol";
@@ -76,6 +77,24 @@ function taskColor(state: string): UiColor {
 
 function shortId(value: string): string {
   return value.length > 16 ? `…${value.slice(-14)}` : value;
+}
+
+function runStatus(result: RunResult): string {
+  if (result.suspended) {
+    return `Run ${shortId(result.run_id)} waiting for approval${result.pending_approval_id ? ` · ${shortId(result.pending_approval_id)}` : ""}`;
+  }
+  if (result.error) return `Run ${shortId(result.run_id)} ${result.state}: ${result.error}`;
+  const text = result.response?.message?.content;
+  if (Array.isArray(text)) {
+    const firstText = text.find(
+      (block): block is { kind?: unknown; text?: unknown } =>
+        Boolean(block) && typeof block === "object" && "text" in block,
+    );
+    if (typeof firstText?.text === "string" && firstText.text.trim()) {
+      return firstText.text.trim().replace(/\s+/g, " ").slice(0, 120);
+    }
+  }
+  return `Run ${shortId(result.run_id)} ${result.state}`;
 }
 
 function SessionPanel({
@@ -227,7 +246,7 @@ export function TuiApp({ client, cwd, provider, model }: TuiAppProps) {
         return;
       }
       if (name === "help" || name === "h") {
-        setStatus("/new [provider model] · /open ID · /sessions · /refresh · /task TEXT · /quit");
+        setStatus("message → run · /new [provider model] · /open ID · /resume RUN_ID · /task TEXT · /quit");
         return;
       }
       if (name === "sessions" || name === "ls") {
@@ -253,6 +272,40 @@ export function TuiApp({ client, cwd, provider, model }: TuiAppProps) {
         });
         await refreshSessions();
         await loadSession(newSession.session_id);
+        return;
+      }
+      if (name === "run") {
+        if (!selectedSessionId) throw new Error("Create or open a session first");
+        const userMessage = args.join(" ").trim();
+        if (!userMessage) throw new Error("Usage: /run MESSAGE");
+        const result = await client.startRun({
+          session_id: selectedSessionId,
+          user_message: userMessage,
+        });
+        setStatus(runStatus(result));
+        await loadSession(selectedSessionId);
+        return;
+      }
+      if (name === "resume") {
+        if (!selectedSessionId) throw new Error("Create or open a session first");
+        const runId = args[0];
+        if (!runId) throw new Error("Usage: /resume RUN_ID");
+        const result = await client.resumeRun({
+          session_id: selectedSessionId,
+          run_id: runId,
+        });
+        setStatus(runStatus(result));
+        await loadSession(selectedSessionId);
+        return;
+      }
+      if (!trimmed.startsWith("/")) {
+        if (!selectedSessionId) throw new Error("Create or open a session first");
+        const result = await client.startRun({
+          session_id: selectedSessionId,
+          user_message: trimmed,
+        });
+        setStatus(runStatus(result));
+        await loadSession(selectedSessionId);
         return;
       }
       if (name === "task") {
@@ -322,7 +375,7 @@ export function TuiApp({ client, cwd, provider, model }: TuiAppProps) {
           placeholder="Type /help for commands"
         />
       </Box>
-      <Text color={COLORS.muted}>/new  /open  /sessions  /task  /refresh  /quit · Ctrl-C exits</Text>
+      <Text color={COLORS.muted}>message  /new  /open  /resume  /task  /refresh  /quit · Ctrl-C exits</Text>
     </Box>
   );
 }

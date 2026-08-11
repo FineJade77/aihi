@@ -5,6 +5,7 @@ import { runTui } from "./tui/index.js";
 interface CliOptions {
   cwd: string;
   storePath?: string;
+  configPath?: string;
   provider: string;
   model: string;
 }
@@ -13,16 +14,18 @@ function parseArgs(argv: string[]): CliOptions {
   const options: CliOptions = {
     cwd: process.cwd(),
     storePath: process.env.AIHI_CODE_AGENT_STORE,
+    configPath: process.env.AIHI_CODE_AGENT_CONFIG,
     provider: process.env.AIHI_CODE_AGENT_PROVIDER ?? "fake",
     model: process.env.AIHI_CODE_AGENT_MODEL ?? "demo",
   };
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
-    if (argument === "--cwd" || argument === "--store" || argument === "--provider" || argument === "--model") {
+    if (argument === "--cwd" || argument === "--store" || argument === "--config" || argument === "--provider" || argument === "--model") {
       const value = argv[index + 1];
       if (!value) throw new Error(`${argument} requires a value`);
       if (argument === "--cwd") options.cwd = value;
       if (argument === "--store") options.storePath = value;
+      if (argument === "--config") options.configPath = value;
       if (argument === "--provider") options.provider = value;
       if (argument === "--model") options.model = value;
       index += 1;
@@ -30,7 +33,7 @@ function parseArgs(argv: string[]): CliOptions {
     }
     if (argument === "--help" || argument === "-h") {
       process.stdout.write(
-        "Usage: aihi-code [--cwd PATH] [--store PATH] [--provider NAME] [--model NAME]\n",
+        "Usage: aihi-code [--cwd PATH] [--store PATH] [--config PATH] [--provider NAME] [--model NAME]\n",
       );
       process.exit(0);
     }
@@ -44,6 +47,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
   const client = await RpcClient.connect({
     cwd: options.cwd,
     storePath: options.storePath,
+    configPath: options.configPath,
   });
   try {
     await runTui({

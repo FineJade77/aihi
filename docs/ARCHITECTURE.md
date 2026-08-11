@@ -147,7 +147,8 @@ Runtime 通过 `RuntimeExtensions` 组合可选能力：`ContextContributor` 贡
 `RunRecorder` 观察已完成的 Run 并追加自己的审计事件。两者都是结构化 Protocol，能力包不 import
 `runtime`，`runtime` 也不 import 能力包。当前已接线：Skill 索引、Memory 读取与候选抽取（ADR-0022）。Subagent 走另一条路径：
 它是普通工具 `task`，因此派生子 Run 同样经过 `tools → policy → hooks → sandbox`；
-子 Run 拥有独立 Session，权限模式取父子中更严格者（ADR-0023）。未接线：Plugin、MCP。
+子 Run 拥有独立 Session，权限模式取父子中更严格者（ADR-0023）。应用层 Coding runtime
+已通过配置接线 MCP；Plugin 仍保持显式应用层接入边界。
 
 ### 3.1 Harness 与应用层边界
 

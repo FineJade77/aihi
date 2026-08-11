@@ -5,7 +5,7 @@
 定位：**支撑多条 Agent 产品线的 Harness**。Coding 只是其中一条，Cowork（多人/多角色协作）
 等形态同样建立在它之上。
 
-当前基础包规模：源码约 17.2k 行，测试约 8.2k 行 / 343 用例；运行时第三方依赖仅 `httpx`；
+当前基础包规模：源码约 17.2k 行，测试约 8.2k 行 / 346 用例；运行时第三方依赖仅 `httpx`；
 `aihi.models` / `aihi.agent` 公共 API 分别为 51 / 134 个名字；33 篇 ADR。
 
 ## 范围与方向
@@ -43,8 +43,8 @@ Provider Golden/`EvalGate`（CI 工具而非 Harness 能力）、`cli/`（把 Pr
 ### 3. 前端只做 TUI
 
 应用层首个前端形态是终端 TUI。Web 与桌面是**待办**，不是不做。`aihi-code-agent` 与
-`aihi-code-cli` 已按阶段建立，当前先完成 Worker RPC、Session/Task 与 TUI 纵向链路，
-再进入真实 Coding loop、配置、Skill/MCP。
+`aihi-code-cli` 已按阶段建立，已完成 Worker RPC、Session/Task、TUI 与首个真实 Coding
+loop/config/Skill/MCP 配置纵向链路；后续继续补审批交互、Skill 显式加载和更多 Coding 工具。
 
 ## 交付原则
 
@@ -502,7 +502,7 @@ OpenAI-compatible 构造器契约以及完整 compile/test/lint/type 门禁全�
 
 | 编号 | 项 | 状态 | 说明 |
 |---|---|---|---|
-| P-01 | 应用层重建（TUI 前端） | In Progress | 已完成 Worker RPC、Session/Task 与首版 Ink TUI；后续接入 Coding loop、配置、Skill/MCP |
+| P-01 | 应用层重建（TUI 前端） | In Progress | 已完成 Worker RPC、Session/Task、Ink TUI、`run.start/run.resume`、TOML 配置及 Skill/MCP 声明式接入；继续补审批交互与产品能力 |
 | P-02 | Cowork 形态所需的 Harness 缺口 | Planned | 先做现状评估再立项。只有 Provider-neutral、跨产品线可复用的缺口才进 Harness |
 | P-03 | 平台增强（H-03 ~ H-06） | Planned | 控制面、多 Worker、PostgreSQL、远程 OTel。只能是既有协议的新增适配器 |
 | P-04 | Web 前端 | 待办 | TUI 形态跑通前不开工 |
