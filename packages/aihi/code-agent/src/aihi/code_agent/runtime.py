@@ -6,21 +6,16 @@ import asyncio
 import os
 from collections.abc import AsyncIterator, Coroutine
 from dataclasses import dataclass, field
-from typing import Any, cast
+from typing import Any
 
 from aihi.agent import (
     AgentBudget,
     AgentRuntimeError,
-    BashTool,
     DockerBackend,
-    EditFileTool,
     EventStore,
     FileSkillTrustStore,
-    GlobTool,
-    GrepTool,
     HostBackend,
     McpClient,
-    ReadFileTool,
     Runtime,
     RuntimeBuilder,
     SandboxBackend,
@@ -31,9 +26,7 @@ from aihi.agent import (
     SkillTrustManager,
     StdioMcpTransport,
     SubagentAuthority,
-    Tool,
     WorkspaceScope,
-    WriteFileTool,
     register_mcp_tools,
 )
 from aihi.agent.runtime import RunResult
@@ -47,14 +40,13 @@ from aihi.models import (
     Provider,
 )
 
-from .coding_tools import GitDiffTool, GitStatusTool
 from .config import (
     CodeAgentConfig,
     CodeAgentConfigError,
     McpServerSettings,
     resolve_env_mapping,
 )
-from .skills import LoadSkillTool
+from .tools import ToolBuildContext, build_tools
 from .turns import TurnEvent, TurnEventPump, TurnFinished, drive_turn
 
 _DEFAULT_KEY_ENV = {
@@ -97,7 +89,7 @@ class CodeAgentRuntime:
             provider=provider,
             model=config.provider.model,
             sandbox=sandbox,
-            tools=_build_tools(config, skill_loader=skill_loader),
+            tools=build_tools(ToolBuildContext(config=config, skill_loader=skill_loader)),
         )
         if skill_discovery is not None:
             builder = builder.with_skills(skill_discovery)
@@ -327,38 +319,6 @@ def _build_sandbox(config: CodeAgentConfig) -> SandboxBackend:
             workspace_read_only=settings.workspace_read_only,
         )
     raise CodeAgentConfigError(f"Unsupported sandbox backend: {settings.backend}")
-
-
-def _build_tools(
-    config: CodeAgentConfig, *, skill_loader: SkillLoader | None = None
-) -> tuple[Tool, ...]:
-    factories: dict[str, type[object]] = {
-        "read_file": ReadFileTool,
-        "glob": GlobTool,
-        "grep": GrepTool,
-        "edit_file": EditFileTool,
-        "write_file": WriteFileTool,
-        "bash": BashTool,
-        "git_diff": GitDiffTool,
-        "git_status": GitStatusTool,
-    }
-    tool_names = list(config.tools)
-    if config.skill_load_tool and skill_loader is not None and "load_skill" not in tool_names:
-        tool_names.append("load_skill")
-    tools: list[Tool] = []
-    for name in tool_names:
-        if name == "load_skill":
-            if skill_loader is None:
-                raise CodeAgentConfigError(
-                    "load_skill requires at least one configured Skill root"
-                )
-            tools.append(LoadSkillTool(skill_loader))
-            continue
-        factory = factories.get(name)
-        if factory is None:
-            raise CodeAgentConfigError(f"Unsupported Coding Agent tool: {name}")
-        tools.append(cast(Tool, factory()))
-    return tuple(tools)
 
 
 async def _close_provider(provider: Provider) -> None:

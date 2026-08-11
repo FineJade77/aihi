@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 from aihi.agent import HostBackend, ToolContext
-from aihi.code_agent.coding_tools import GitDiffTool, GitStatusTool
+from aihi.code_agent.tools import GitDiffTool, GitStatusTool
 
 
 @pytest.mark.asyncio
