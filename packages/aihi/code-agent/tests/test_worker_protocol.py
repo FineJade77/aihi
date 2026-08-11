@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+from threading import Event as ThreadEvent
 
 import pytest
 from aihi.agent import Event
@@ -447,4 +448,45 @@ def test_run_cancel_closes_a_suspended_run(tmp_path) -> None:
     )
     assert cancelled is not None
     assert cancelled["result"]["state"] == "cancelled"  # type: ignore[index]
+    server.close()
+
+
+def test_background_run_honors_cancellation_signal(tmp_path) -> None:
+    config_path = _write_worker_config(tmp_path)
+    server = WorkerServer(config_path=config_path)
+    server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {"protocol_version": PROTOCOL_VERSION},
+        }
+    )
+    created = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "session.create",
+            "params": {"cwd": str(tmp_path)},
+        }
+    )
+    assert created is not None
+    session_id = created["result"]["session"]["session_id"]  # type: ignore[index]
+    signal = ThreadEvent()
+    signal.set()
+    response = server.handle_background(
+        {
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "run.start",
+            "params": {
+                "session_id": session_id,
+                "run_id": "run_background_cancel",
+                "user_message": "cancel me",
+            },
+        },
+        cancel_signal=signal,
+    )
+    assert response is not None
+    assert response["result"]["state"] == "interrupted"  # type: ignore[index]
     server.close()

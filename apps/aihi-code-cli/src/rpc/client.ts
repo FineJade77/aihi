@@ -14,6 +14,7 @@ import type {
   SkillDescriptor,
   RunResult,
   RunDescriptor,
+  RunCancelResult,
   TaskDescriptor,
   TaskState,
 } from "@aihi/code-protocol";
@@ -346,8 +347,8 @@ export class RpcClient {
     return result.runs;
   }
 
-  public async cancelRun(params: RunCancelParams): Promise<RunResult> {
-    return this.request<RunResult>("run.cancel", params as unknown as JsonObject);
+  public async cancelRun(params: RunCancelParams): Promise<RunCancelResult> {
+    return this.request<RunCancelResult>("run.cancel", params as unknown as JsonObject);
   }
 
   public async forkSession(sessionId: string, atSeq?: number): Promise<SessionDescriptor> {

@@ -114,6 +114,14 @@ export interface RunDescriptor {
   pending_approval_id: string | null;
 }
 
+export interface RunCancelResult {
+  run_id: string;
+  requested?: boolean;
+  state?: RunState;
+  suspended?: boolean;
+  error?: string | null;
+}
+
 export interface ProviderDescriptor {
   name: string;
   model: string;

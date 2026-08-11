@@ -5,6 +5,10 @@ from __future__ import annotations
 import json
 import os
 import sys
+from concurrent.futures import Future, ThreadPoolExecutor
+from dataclasses import dataclass
+from queue import Empty, Queue
+from threading import Event, Thread
 from typing import Any, BinaryIO
 
 from .framing import FrameError, read_frame, write_frame
@@ -13,6 +17,34 @@ from .protocol import (
     PARSE_ERROR,
     WorkerServer,
 )
+
+
+@dataclass(slots=True)
+class _PendingRun:
+    request_id: str | int
+    run_id: str
+    cancel_signal: Event
+    future: Future[dict[str, Any] | None]
+
+
+def _request_id(message: object) -> str | int | None:
+    if not isinstance(message, dict):
+        return None
+    value = message.get("id")
+    return value if isinstance(value, (str, int)) and not isinstance(value, bool) else None
+
+
+def _method(message: object) -> str | None:
+    if not isinstance(message, dict):
+        return None
+    value = message.get("method")
+    return value if isinstance(value, str) else None
+
+
+def _params(message: object) -> dict[str, Any]:
+    if not isinstance(message, dict) or not isinstance(message.get("params", {}), dict):
+        return {}
+    return dict(message.get("params", {}))
 
 
 def serve_stdio(
@@ -29,17 +61,72 @@ def serve_stdio(
         config_path=os.environ.get("AIHI_CODE_AGENT_CONFIG"),
     )
     error_stream = sys.stderr if stderr is None else stderr
-    try:
-        while not runtime.shutdown_requested:
-            try:
+    incoming: Queue[tuple[str, object]] = Queue()
+    eof = Event()
+
+    def read_loop() -> None:
+        try:
+            while True:
                 raw = read_frame(stdin)
-            except FrameError as error:
-                print(f"aihi-code-agent worker framing error: {error}", file=error_stream)
-                return 2
-            if raw is None:
+                if raw is None:
+                    incoming.put(("eof", None))
+                    return
+                incoming.put(("frame", raw))
+        except FrameError as error:
+            incoming.put(("frame_error", error))
+
+    reader = Thread(target=read_loop, name="aihi-code-agent-reader", daemon=True)
+    reader.start()
+    executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="aihi-code-agent-run")
+    pending: dict[str, _PendingRun] = {}
+
+    def emit_notifications() -> None:
+        for notification in runtime.drain_notifications():
+            write_frame(stdout, notification)
+
+    def finish_runs() -> None:
+        for run_id, item in list(pending.items()):
+            if not item.future.done():
+                continue
+            try:
+                response = item.future.result()
+            except Exception as error:  # noqa: BLE001 - protocol boundary must stay alive.
+                print(f"aihi-code-agent worker internal error: {error}", file=error_stream)
+                response = {
+                    "jsonrpc": "2.0",
+                    "id": item.request_id,
+                    "error": {"code": INTERNAL_ERROR, "message": "Internal worker error"},
+                }
+            if response is not None:
+                write_frame(stdout, response)
+            pending.pop(run_id, None)
+            emit_notifications()
+
+    try:
+        while True:
+            finish_runs()
+            emit_notifications()
+            if eof.is_set() and not pending:
+                return 0
+            if runtime.shutdown_requested and not pending:
                 return 0
             try:
-                decoded = json.loads(raw.decode("utf-8"))
+                kind, payload = incoming.get(timeout=0.02)
+            except Empty:
+                continue
+            if kind == "eof":
+                eof.set()
+                for item in pending.values():
+                    item.cancel_signal.set()
+                continue
+            if kind == "frame_error":
+                error = payload
+                print(f"aihi-code-agent worker framing error: {error}", file=error_stream)
+                return 2
+            try:
+                if not isinstance(payload, bytes):
+                    raise TypeError("Worker frame payload must be bytes")
+                decoded = json.loads(payload.decode("utf-8"))
             except (UnicodeDecodeError, json.JSONDecodeError) as error:
                 write_frame(stdout, {"jsonrpc": "2.0", "id": None, "error": {
                     "code": PARSE_ERROR,
@@ -47,16 +134,52 @@ def serve_stdio(
                 }})
                 print(f"aihi-code-agent worker parse error: {error}", file=error_stream)
                 continue
+
+            method = _method(decoded)
+            params = _params(decoded)
+            request_id = _request_id(decoded)
+            if method in {"run.start", "run.resume"} and request_id is not None:
+                run_id = params.get("run_id")
+                if not isinstance(run_id, str) or not run_id.strip():
+                    if method == "run.start":
+                        run_id = f"run_worker_{request_id}"
+                        if isinstance(decoded, dict):
+                            decoded = dict(decoded)
+                            decoded["params"] = {**params, "run_id": run_id}
+                    else:
+                        run_id = ""
+                if run_id and run_id in pending:
+                    write_frame(stdout, {
+                        "jsonrpc": "2.0",
+                        "id": request_id,
+                        "error": {"code": -32602, "message": f"Run is already active: {run_id}"},
+                    })
+                    continue
+                signal = Event()
+                future = executor.submit(
+                    runtime.handle_background, decoded, cancel_signal=signal
+                )
+                if run_id:
+                    pending[run_id] = _PendingRun(request_id, run_id, signal, future)
+                else:
+                    pending[f"request:{request_id}"] = _PendingRun(
+                        request_id, f"request:{request_id}", signal, future
+                    )
+                continue
+            if method == "run.cancel" and request_id is not None:
+                run_id = params.get("run_id")
+                if isinstance(run_id, str) and run_id in pending:
+                    pending[run_id].cancel_signal.set()
+                    write_frame(stdout, {
+                        "jsonrpc": "2.0",
+                        "id": request_id,
+                        "result": {"run_id": run_id, "requested": True},
+                    })
+                    continue
             try:
                 response = runtime.handle(decoded)
             except Exception as error:  # noqa: BLE001 - protocol boundary must stay alive.
                 print(f"aihi-code-agent worker internal error: {error}", file=error_stream)
-                request_id = (
-                    decoded.get("id")
-                    if isinstance(decoded, dict) and isinstance(decoded.get("id"), (str, int))
-                    and not isinstance(decoded.get("id"), bool)
-                    else None
-                )
                 response = {
                     "jsonrpc": "2.0",
                     "id": request_id,
@@ -64,10 +187,15 @@ def serve_stdio(
                 }
             if response is not None:
                 write_frame(stdout, response)
-            for notification in runtime.drain_notifications():
-                write_frame(stdout, notification)
-        return 0
+            emit_notifications()
+            if runtime.shutdown_requested:
+                for item in pending.values():
+                    item.cancel_signal.set()
     finally:
+        for item in pending.values():
+            item.cancel_signal.set()
+        executor.shutdown(wait=True, cancel_futures=False)
+        reader.join(timeout=0.2)
         runtime.close()
 
 

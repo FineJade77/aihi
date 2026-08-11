@@ -135,7 +135,7 @@ function SessionPanel({
   );
 }
 
-function EventPanel({ events }: { events: UiEvent[] }) {
+function EventPanel({ events, streamText }: { events: UiEvent[]; streamText: string }) {
   return (
     <Box borderStyle="round" borderColor={COLORS.panel} flexDirection="column" paddingX={1} width="44%">
       <Text bold color={COLORS.brand}>EVENT STREAM</Text>
@@ -151,6 +151,11 @@ function EventPanel({ events }: { events: UiEvent[] }) {
             <Text color={COLORS.muted}>{stringifyPreview(event.data)}</Text>
           </Text>
         ))
+      )}
+      {streamText && (
+        <Text color={COLORS.accent} wrap="truncate">
+          assistant: {streamText.slice(-400)}
+        </Text>
       )}
     </Box>
   );
@@ -186,6 +191,8 @@ export function TuiApp({ client, cwd, provider, model, sessionId }: TuiAppProps)
   const [busy, setBusy] = useState(false);
   const [activeProvider, setActiveProvider] = useState(provider);
   const [activeModel, setActiveModel] = useState(model);
+  const [activeRunId, setActiveRunId] = useState<string>();
+  const [streamText, setStreamText] = useState("");
 
   const loadSession = useCallback(async (sessionId: string) => {
     const [session, page, nextTasks] = await Promise.all([
@@ -197,6 +204,7 @@ export function TuiApp({ client, cwd, provider, model, sessionId }: TuiAppProps)
     setSelectedSession(session);
     setEvents(page.events.map(eventFromRecord));
     setTasks(nextTasks);
+    setStreamText("");
     setStatus(`Session ${shortId(session.session_id)} · seq ${page.head_seq}`);
   }, [client]);
 
@@ -234,6 +242,17 @@ export function TuiApp({ client, cwd, provider, model, sessionId }: TuiAppProps)
       if (event.session_id !== selectedSessionId) return;
       const nextEvent = eventFromNotification(event);
       setEvents((current) => [...current, nextEvent].slice(-100));
+      if (nextEvent.type === "run.started" || nextEvent.type === "run.resumed") {
+        setActiveRunId(event.run_id);
+        setStreamText("");
+      }
+      if (nextEvent.type === "model.chunk" && nextEvent.data.kind === "text_delta") {
+        const delta = nextEvent.data.text;
+        if (typeof delta === "string") setStreamText((current) => `${current}${delta}`);
+      }
+      if (["run.completed", "run.failed", "run.interrupted", "run.cancelled"].includes(nextEvent.type)) {
+        setActiveRunId(undefined);
+      }
       if (nextEvent.type.startsWith("subagent.")) {
         void client.listTasks(event.session_id).then(setTasks).catch(() => undefined);
       }
@@ -332,19 +351,27 @@ export function TuiApp({ client, cwd, provider, model, sessionId }: TuiAppProps)
         if (!selectedSessionId) throw new Error("Create or open a session first");
         const userMessage = args.join(" ").trim();
         if (!userMessage) throw new Error("Usage: /run MESSAGE");
+        const runId = `run_tui_${Date.now()}`;
+        setActiveRunId(runId);
+        setStreamText("");
+        setStatus(`Running ${shortId(runId)}…`);
         const result = await client.startRun({
           session_id: selectedSessionId,
           user_message: userMessage,
+          run_id: runId,
           provider: activeProvider,
           model: activeModel,
         });
         setStatus(runStatus(result));
+        if (result.state !== "running" && result.state !== "waiting_tool" && !result.suspended) {
+          setActiveRunId(undefined);
+        }
         await loadSession(selectedSessionId);
         return;
       }
       if (name === "resume") {
         if (!selectedSessionId) throw new Error("Create or open a session first");
-        const runId = args[0];
+        const runId = args[0] ?? activeRunId;
         if (!runId) throw new Error("Usage: /resume RUN_ID");
         const result = await client.resumeRun({
           session_id: selectedSessionId,
@@ -363,7 +390,12 @@ export function TuiApp({ client, cwd, provider, model, sessionId }: TuiAppProps)
           run_id: runId,
           reason: name === "interrupt" ? "interrupted by user" : "cancelled by user",
         });
-        setStatus(runStatus(result));
+        setStatus(
+          result.requested
+            ? `Cancellation requested for ${shortId(result.run_id)}`
+            : runStatus(result as RunResult),
+        );
+        if (!result.requested) setActiveRunId(undefined);
         await loadSession(selectedSessionId);
         return;
       }
@@ -426,13 +458,21 @@ export function TuiApp({ client, cwd, provider, model, sessionId }: TuiAppProps)
       }
       if (!trimmed.startsWith("/")) {
         if (!selectedSessionId) throw new Error("Create or open a session first");
+        const runId = `run_tui_${Date.now()}`;
+        setActiveRunId(runId);
+        setStreamText("");
+        setStatus(`Running ${shortId(runId)}…`);
         const result = await client.startRun({
           session_id: selectedSessionId,
           user_message: trimmed,
+          run_id: runId,
           provider: activeProvider,
           model: activeModel,
         });
         setStatus(runStatus(result));
+        if (result.state !== "running" && result.state !== "waiting_tool" && !result.suspended) {
+          setActiveRunId(undefined);
+        }
         await loadSession(selectedSessionId);
         return;
       }
@@ -464,7 +504,7 @@ export function TuiApp({ client, cwd, provider, model, sessionId }: TuiAppProps)
     } finally {
       setBusy(false);
     }
-  }, [activeModel, activeProvider, cwd, loadSession, model, provider, quit, refreshSessions, selectedSessionId]);
+  }, [activeModel, activeProvider, activeRunId, cwd, loadSession, model, provider, quit, refreshSessions, selectedSessionId]);
 
   useInput((input, key) => {
     if (key.ctrl && input === "c") void quit();
@@ -488,7 +528,7 @@ export function TuiApp({ client, cwd, provider, model, sessionId }: TuiAppProps)
       <Text color={COLORS.muted} wrap="truncate">{cwd}</Text>
       <Box flexDirection="row" flexGrow={1} marginTop={1}>
         <SessionPanel sessions={sessions} selectedSessionId={selectedSessionId} />
-        <EventPanel events={events} />
+        <EventPanel events={events} streamText={streamText} />
         <TaskPanel tasks={tasks} />
       </Box>
       <Box marginTop={1}>

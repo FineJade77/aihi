@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 from dataclasses import dataclass
 from typing import cast
@@ -111,6 +112,7 @@ class CodeAgentRuntime:
         model: str | None = None,
         system_prompt: str | None = None,
         max_output_tokens: int | None = None,
+        cancel_event: asyncio.Event | None = None,
     ) -> RunResult:
         """Run one user turn through the Harness coordinator loop."""
 
@@ -128,6 +130,7 @@ class CodeAgentRuntime:
                 self.config.system_prompt if system_prompt is None else system_prompt
             ),
             max_output_tokens=max_output_tokens or self.config.max_output_tokens,
+            cancel_event=cancel_event,
         )
 
     async def resume(
@@ -138,6 +141,7 @@ class CodeAgentRuntime:
         model: str | None = None,
         system_prompt: str | None = None,
         max_output_tokens: int | None = None,
+        cancel_event: asyncio.Event | None = None,
     ) -> RunResult:
         return await self.runtime.coordinator.resume(
             session,
@@ -149,6 +153,7 @@ class CodeAgentRuntime:
                 self.config.system_prompt if system_prompt is None else system_prompt
             ),
             max_output_tokens=max_output_tokens,
+            cancel_event=cancel_event,
         )
 
     async def close(self) -> None:

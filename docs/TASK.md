@@ -45,7 +45,8 @@ Provider Golden/`EvalGate`（CI 工具而非 Harness 能力）、`cli/`（把 Pr
 应用层首个前端形态是终端 TUI。Web 与桌面是**待办**，不是不做。`aihi-code-agent` 与
 `aihi-code-cli` 已按阶段建立，已完成 Worker RPC、Session/Task、TUI 与首个真实 Coding
 loop/config/Skill/MCP 配置纵向链路，以及 Worker-owned Approval 查询/解析、Skill trust
-和显式 `load_skill` 加载；后续继续补更多 Coding 工具。
+和显式 `load_skill` 加载。TUI 已支持配置选择、Session 分支/历史、Run 列表与取消请求，
+并接收模型流式 chunk；后续继续补更多 Coding 工具。
 
 ## 交付原则
 

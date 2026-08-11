@@ -29,6 +29,9 @@ Skill 正文只通过显式的 `load_skill` Tool 加载；CLI 的 trust 操作�
 Worker 管理的原子 lockfile。Approval resolve 只追加解析事件，必须再由
 调用方显式执行 `run.resume`。Provider profiles 由应用配置声明，`run.start`
 可以选择已配置的 Provider/模型；`run.resume` 必须继续匹配持久化的运行配置。
+运行中的 `run.start`/`run.resume` 在 Worker 线程执行，模型 chunk 通过
+ephemeral notification 流向 TUI；`run.cancel` 先返回请求确认，最终状态仍以
+`run.interrupted`/`run.cancelled` 事件为准。
 
 Durable 事件携带 Session sequence，ephemeral stream 事件只用于 UI；CLI 断线
 后通过事件序号补读，不以 TUI 内存状态作为事实源。

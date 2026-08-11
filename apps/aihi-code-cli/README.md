@@ -72,8 +72,10 @@ allowed_tools = ["search"]
 Use `--session SESSION_ID` to reopen a known session on startup. `/sessions`
 selects the newest persisted session when no session is specified; `/open` can
 switch to another one. `/runs` lists run states, `/history` reloads the event
-history, `/fork [SEQ]` creates a branch, and `/cancel RUN_ID` closes a
-suspended or recoverable run.
+history, `/fork [SEQ]` creates a branch, and `/cancel RUN_ID` requests
+cancellation of an active run or closes a suspended/recoverable run. Model
+chunks are delivered as ephemeral Worker notifications and rendered while the
+run is in progress.
 
 After `/new`, ordinary input is a user turn and runs the Coding Agent loop.
 Use `/provider NAME [MODEL]` and `/model MODEL` to choose a configured Provider

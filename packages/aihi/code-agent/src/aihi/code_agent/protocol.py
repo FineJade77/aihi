@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import threading
 from collections.abc import Mapping
 from copy import deepcopy
 from pathlib import Path
@@ -337,6 +338,43 @@ class WorkerServer:
             return self._maybe_error(is_notification, request_id, INVALID_PARAMS, str(error))
         return None if is_notification else _result_response(request_id, result)  # type: ignore[arg-type]
 
+    def handle_background(
+        self, message: object, *, cancel_signal: threading.Event
+    ) -> JsonObject | None:
+        """Handle a long-running Run in a Worker thread while preserving RPC semantics."""
+
+        if not isinstance(message, Mapping):
+            return _error_response(None, INVALID_REQUEST, "Request must be a JSON object")
+        raw_id = message.get("id")
+        request_id = _request_id(raw_id) if "id" in message else None
+        if "id" not in message:
+            return None
+        if request_id is None:
+            return _error_response(None, INVALID_REQUEST, "Request id must be a string or integer")
+        if message.get("jsonrpc") != "2.0":
+            return _error_response(request_id, INVALID_REQUEST, "jsonrpc must be '2.0'")
+        method = message.get("method")
+        params = message.get("params", {})
+        if not isinstance(method, str) or not method:
+            return _error_response(request_id, INVALID_REQUEST, "method must be a non-empty string")
+        if not isinstance(params, Mapping):
+            return _error_response(request_id, INVALID_PARAMS, "params must be a JSON object")
+        if method not in {"run.start", "run.resume"}:
+            return self.handle(message)
+        if not self.initialized:
+            return _error_response(request_id, NOT_INITIALIZED, "initialize is required first")
+        try:
+            result = (
+                self._run_start(dict(params), cancel_signal=cancel_signal)
+                if method == "run.start"
+                else self._run_resume(dict(params), cancel_signal=cancel_signal)
+            )
+        except RpcValidationError as error:
+            return _error_response(request_id, error.code, str(error))
+        except (AgentRuntimeError, TypeError, ValueError) as error:
+            return _error_response(request_id, INVALID_PARAMS, str(error))
+        return _result_response(request_id, result)
+
     def close(self) -> None:
         """Close an owned persistent store after the stdio loop stops."""
 
@@ -591,7 +629,9 @@ class WorkerServer:
             )
         return {"session_id": session.id, "task": node.to_dict()}
 
-    def _run_start(self, params: JsonObject) -> JsonObject:
+    def _run_start(
+        self, params: JsonObject, *, cancel_signal: threading.Event | None = None
+    ) -> JsonObject:
         session = self._load_session(params)
         user_message = self._required_text(params, "user_message", max_length=100_000)
         provider = self._optional_text_value(params.get("provider"), "provider", max_length=256)
@@ -614,6 +654,7 @@ class WorkerServer:
                 model=model,
                 system_prompt=system_prompt,
                 max_output_tokens=max_output_tokens,
+                cancel_signal=cancel_signal,
             )
         )
 
@@ -622,7 +663,9 @@ class WorkerServer:
         config = load_config(self._config_path, cwd=cwd or str(Path.cwd()))
         return {"config": config.public_descriptor()}
 
-    def _run_resume(self, params: JsonObject) -> JsonObject:
+    def _run_resume(
+        self, params: JsonObject, *, cancel_signal: threading.Event | None = None
+    ) -> JsonObject:
         session = self._load_session(params)
         run_id = self._required_text(params, "run_id", max_length=256)
         model = self._optional_text_value(params.get("model"), "model", max_length=256)
@@ -641,6 +684,7 @@ class WorkerServer:
                 model=model,
                 system_prompt=system_prompt,
                 max_output_tokens=max_output_tokens,
+                cancel_signal=cancel_signal,
             )
         )
 
@@ -719,8 +763,10 @@ class WorkerServer:
         model: str | None,
         system_prompt: str | None,
         max_output_tokens: int | None,
+        cancel_signal: threading.Event | None = None,
     ) -> JsonObject:
         runtime = await CodeAgentRuntime.create(config)
+        cancel_event, watcher = await WorkerServer._cancel_bridge(cancel_signal)
         try:
             result = await runtime.run(
                 session,
@@ -729,9 +775,12 @@ class WorkerServer:
                 model=model,
                 system_prompt=system_prompt,
                 max_output_tokens=max_output_tokens,
+                cancel_event=cancel_event,
             )
             return WorkerServer._run_result(result)
         finally:
+            if watcher is not None:
+                watcher.cancel()
             await runtime.close()
 
     @staticmethod
@@ -743,8 +792,10 @@ class WorkerServer:
         model: str | None,
         system_prompt: str | None,
         max_output_tokens: int | None,
+        cancel_signal: threading.Event | None = None,
     ) -> JsonObject:
         runtime = await CodeAgentRuntime.create(config)
+        cancel_event, watcher = await WorkerServer._cancel_bridge(cancel_signal)
         try:
             result = await runtime.resume(
                 session,
@@ -752,10 +803,28 @@ class WorkerServer:
                 model=model,
                 system_prompt=system_prompt,
                 max_output_tokens=max_output_tokens,
+                cancel_event=cancel_event,
             )
             return WorkerServer._run_result(result)
         finally:
+            if watcher is not None:
+                watcher.cancel()
             await runtime.close()
+
+    @staticmethod
+    async def _cancel_bridge(
+        signal: threading.Event | None,
+    ) -> tuple[asyncio.Event | None, asyncio.Task[None] | None]:
+        if signal is None:
+            return None, None
+        event = asyncio.Event()
+
+        async def watch() -> None:
+            while not signal.is_set():
+                await asyncio.sleep(0.05)
+            event.set()
+
+        return event, asyncio.create_task(watch())
 
     @staticmethod
     def _run_result(run_result: RunResult) -> JsonObject:
