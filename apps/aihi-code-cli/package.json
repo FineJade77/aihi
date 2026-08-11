@@ -1,0 +1,25 @@
+{
+  "name": "@aihi/code-cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "aihi-code": "dist/main.js"
+  },
+  "dependencies": {
+    "@aihi/code-protocol": "workspace:*",
+    "ink": "^5.1.0",
+    "ink-text-input": "^6.0.0",
+    "react": "^18.3.1"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/main.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": ">=20",
+    "@types/react": "^18.3.0",
+    "typescript": ">=5.5"
+  }
+}

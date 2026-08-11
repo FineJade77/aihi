@@ -1,0 +1,9 @@
+{
+  "name": "aiharness",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "build:code-cli": "pnpm --filter @aihi/code-cli build",
+    "typecheck:code-cli": "pnpm --filter @aihi/code-cli typecheck"
+  }
+}

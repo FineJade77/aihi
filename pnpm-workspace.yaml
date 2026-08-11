@@ -1,0 +1,3 @@
+packages:
+  - "packages/aihi/code-protocol"
+  - "apps/aihi-code-cli"
