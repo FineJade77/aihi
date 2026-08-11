@@ -54,6 +54,23 @@ def clean_environment() -> dict[str, str]:
     return environment
 
 
+def isolated_environment(site_packages: Path) -> dict[str, str]:
+    """Expose only the target venv and host tooling, never editable source paths."""
+
+    environment = clean_environment()
+    host_site_packages = tuple(
+        dict.fromkeys(
+            entry
+            for entry in sys.path
+            if entry
+            and Path(entry).name in {"site-packages", "dist-packages"}
+            and Path(entry).is_dir()
+        )
+    )
+    environment["PYTHONPATH"] = os.pathsep.join((str(site_packages), *host_site_packages))
+    return environment
+
+
 def install_pure_wheel(wheel: Path, site_packages: Path) -> None:
     """Install a pure-Python wheel by applying its archive to site-packages."""
 
@@ -97,7 +114,7 @@ def test_installed_wheels_coexist_run_and_remain_typed(
 ) -> None:
     environment = clean_environment()
     virtualenv = tmp_path / "venv"
-    venv.EnvBuilder(with_pip=False, system_site_packages=True).create(virtualenv)
+    venv.EnvBuilder(with_pip=True, system_site_packages=False).create(virtualenv)
     python = virtualenv / "bin" / "python"
     site_packages = Path(
         subprocess.run(
@@ -108,6 +125,7 @@ def test_installed_wheels_coexist_run_and_remain_typed(
             env=environment,
         ).stdout.strip()
     )
+    isolated = isolated_environment(site_packages)
     subprocess.run(
         [
             str(python),
@@ -127,11 +145,11 @@ def test_installed_wheels_coexist_run_and_remain_typed(
     )
 
     subprocess.run(
-        [str(python), str(SMOKE), str(tmp_path / "workspace")],
+        [str(python), "-S", str(SMOKE), str(tmp_path / "workspace")],
         check=True,
         capture_output=True,
         text=True,
-        env=environment,
+        env=isolated,
     )
 
     probe = tmp_path / "typing_probe.py"
@@ -143,20 +161,21 @@ def test_installed_wheels_coexist_run_and_remain_typed(
         encoding="utf-8",
     )
     subprocess.run(
-        [str(python), "-m", "mypy", "--strict", str(probe)],
+        [str(python), "-S", "-m", "mypy", "--strict", "--config-file", os.devnull, str(probe)],
         check=True,
         capture_output=True,
         text=True,
-        env=environment,
+        cwd=tmp_path,
+        env=isolated,
     )
 
     uninstall_leaf(site_packages, distribution="aihi_agent", leaf="agent")
     subprocess.run(
-        [str(python), "-c", "from aihi.models import Message; print(Message.__name__)"],
+        [str(python), "-S", "-c", "from aihi.models import Message; print(Message.__name__)"],
         check=True,
         capture_output=True,
         text=True,
-        env=environment,
+        env=isolated,
     )
 
     install_pure_wheel(wheels["agent"], site_packages)
@@ -164,6 +183,7 @@ def test_installed_wheels_coexist_run_and_remain_typed(
     subprocess.run(
         [
             str(python),
+            "-S",
             "-c",
             "import importlib.util as u; assert u.find_spec('aihi.agent') is not None; "
             "assert u.find_spec('aihi.models') is None",
@@ -171,5 +191,5 @@ def test_installed_wheels_coexist_run_and_remain_typed(
         check=True,
         capture_output=True,
         text=True,
-        env=environment,
+        env=isolated,
     )
