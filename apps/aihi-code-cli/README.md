@@ -43,9 +43,13 @@ npm start -- --store ~/.aihi/code-agent/events.sqlite3
 When `sandbox.root` is omitted, the Worker uses this workspace as the sandbox root;
 an explicit `sandbox.root` can still restrict execution to another directory.
 
-Use `--config PATH` (or a project `aihi-code.toml`) to configure a provider,
-sandbox, Skill roots, and MCP servers. Credentials are referenced by environment
-variable name and are never stored in TOML:
+Configuration directories are fixed: the Worker checks
+`<workspace>/.aihi/aihi-code.toml`, the legacy project-root `aihi-code.toml`,
+and then `~/.aihi/aihi-code.toml` in that order. The CLI does not accept a
+configuration-path argument. Relative paths in a discovered file are resolved
+from the file's directory. Configure the provider, sandbox, Skill roots, and
+MCP servers there; credentials are referenced by environment variable name and
+are never stored in TOML:
 
 ```toml
 [provider]
@@ -63,7 +67,7 @@ unsafe = true
 
 [artifacts]
 enabled = true
-path = ".aihi/artifacts"
+path = "artifacts"
 
 [agent]
 compact_model = "deepseek-chat"
@@ -75,12 +79,12 @@ model = "deepseek-chat"
 capabilities = ["filesystem.read"]
 
 [[skills.roots]]
-path = ".aihi/skills"
+path = "skills"
 scope = "project"
 
 [skills]
 load_tool = true
-trust_lockfile = ".aihi/skills.lock.json"
+trust_lockfile = "skills.lock.json"
 
 [mcp.servers.example]
 command = ["python3", "-m", "example_mcp_server"]

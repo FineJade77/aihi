@@ -24,8 +24,10 @@ CLI 断线后使用 `session.events(after_seq)` 补读。
 
 Python Worker 是配置、模型、工具、Policy、Approval、Sandbox、Session 和
 Event Store 的权威执行端。TypeScript CLI 只负责命令解析、TUI 展示和用户交互。
-项目配置使用 `aihi-code.toml`：Provider 凭据仅允许通过环境变量名引用；Skill
-根目录和 MCP stdio server 在 Worker 内解析，并通过 `RuntimeBuilder`、
+配置使用 `aihi-code.toml`：默认按 `<workspace>/.aihi/aihi-code.toml`、兼容旧的
+项目根 `aihi-code.toml`、`~/.aihi/aihi-code.toml` 的顺序发现，配置目录不由 CLI
+参数覆盖；Provider 凭据仅允许通过环境变量名引用。Skill 根目录和 MCP stdio
+server 在 Worker 内解析，并通过 `RuntimeBuilder`、
 `ToolRegistry` 接入既有 Policy/Hook/Sandbox 链路。
 Skill 正文只通过显式的 `load_skill` Tool 加载；CLI 的 trust 操作只写入
 Worker 管理的原子 lockfile。Approval resolve 只追加解析事件，必须再由

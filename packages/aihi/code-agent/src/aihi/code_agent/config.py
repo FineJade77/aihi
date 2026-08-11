@@ -21,6 +21,7 @@ from aihi.agent.skills import SkillScope
 
 _ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _CONFIG_FILENAME = "aihi-code.toml"
+_PROJECT_CONFIG_DIRNAME = ".aihi"
 _DEFAULT_TOOLS = (
     "read_file",
     "glob",
@@ -332,10 +333,21 @@ def load_config(
     *,
     cwd: str | Path,
 ) -> CodeAgentConfig:
-    """Load ``aihi-code.toml`` or return safe defaults when it is absent."""
+    """Load explicit, project, or user config, then return safe defaults.
+
+    With no explicit path, project configuration in ``<cwd>/.aihi`` takes
+    precedence over the legacy project-root location and the user config in
+    ``~/.aihi``. Relative paths in a discovered config remain relative to the
+    directory containing that config file.
+    """
 
     workspace = Path(cwd).expanduser().resolve(strict=True)
-    requested = Path(path).expanduser() if path is not None else workspace / _CONFIG_FILENAME
+    if path is None:
+        requested = _discover_default_config(workspace)
+        if requested is None:
+            return CodeAgentConfig.defaults(workspace)
+    else:
+        requested = Path(path).expanduser()
     if not requested.is_absolute():
         requested = workspace / requested
     requested = requested.resolve()
@@ -358,6 +370,18 @@ def load_config(
         workspace_root=workspace,
         source_path=requested,
     )
+
+
+def _discover_default_config(workspace: Path) -> Path | None:
+    """Return the highest-precedence implicit config file, if one exists."""
+
+    candidates = (
+        workspace / _PROJECT_CONFIG_DIRNAME / _CONFIG_FILENAME,
+        # Keep the old project-root location readable during migration.
+        workspace / _CONFIG_FILENAME,
+        Path.home() / _PROJECT_CONFIG_DIRNAME / _CONFIG_FILENAME,
+    )
+    return next((candidate for candidate in candidates if candidate.is_file()), None)
 
 
 def resolve_env_mapping(value: Mapping[str, str]) -> dict[str, str]:

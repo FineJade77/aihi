@@ -102,6 +102,49 @@ unsafe = true
     assert config.sandbox.root == workspace.resolve()
 
 
+def test_config_discovers_project_aihi_config_before_user_config(tmp_path, monkeypatch) -> None:
+    home = tmp_path / "home"
+    workspace = tmp_path / "project"
+    (home / ".aihi").mkdir(parents=True)
+    (workspace / ".aihi").mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(home))
+
+    (home / ".aihi" / "aihi-code.toml").write_text(
+        '[provider]\nname = "user"\nmodel = "user-model"\n', encoding="utf-8"
+    )
+    project_config = workspace / ".aihi" / "aihi-code.toml"
+    project_config.write_text(
+        '[provider]\nname = "project"\nmodel = "project-model"\n', encoding="utf-8"
+    )
+
+    config = load_config(cwd=workspace)
+
+    assert config.provider.name == "project"
+    assert config.provider.model == "project-model"
+    assert config.source_path == project_config.resolve()
+
+
+def test_config_discovers_user_aihi_config_when_project_config_is_absent(
+    tmp_path, monkeypatch
+) -> None:
+    home = tmp_path / "home"
+    workspace = tmp_path / "project"
+    (home / ".aihi").mkdir(parents=True)
+    workspace.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+
+    user_config = home / ".aihi" / "aihi-code.toml"
+    user_config.write_text(
+        '[provider]\nname = "user"\nmodel = "user-model"\n', encoding="utf-8"
+    )
+
+    config = load_config(cwd=workspace)
+
+    assert config.provider.name == "user"
+    assert config.provider.model == "user-model"
+    assert config.source_path == user_config.resolve()
+
+
 @pytest.mark.asyncio
 async def test_config_defaults_keep_host_execution_disabled(tmp_path) -> None:
     config = load_config(cwd=tmp_path)
