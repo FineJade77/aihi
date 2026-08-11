@@ -3,8 +3,7 @@
 状态：M0–M7、H-01 ~ H-17 与 P-01 已完成；Coding 应用层首个可用纵向链路已交付
 架构基线：[ARCHITECTURE.md](ARCHITECTURE.md)
 
-项目更名说明：当前项目名称为 **AIHI**；本文中的 `aiharness` 仅指拆包前的历史 distribution
-或为兼容性保留的协议标识，不代表当前项目名称。
+项目名称已统一为 **AIHI**；历史章节中的旧 distribution、模块路径和协议标识均已按当前名称记录。
 
 定位：**支撑多条 Agent 产品线的 Harness**。Coding 只是其中一条，Cowork（多人/多角色协作）
 等形态同样建立在它之上。
@@ -66,7 +65,7 @@ Compaction 与可治理 Subagent 配置。
 
 ### 任务
 
-- 建立 `pyproject.toml`、`src/aiharness`、`tests`、`docs/rfcs`、`docs/adr`、`plugins`、`examples`。
+- 建立 `pyproject.toml`、`src/aihi`、`tests`、`docs/rfcs`、`docs/adr`、`plugins`、`examples`。
 - 固定 Python 3.11+、代码格式、静态检查、测试命令。
 - 建立公共错误码、事件 Schema Version 和兼容性策略。
 - 建立依赖方向检查：`core` 不得反向依赖业务包，Provider 具体实现不得泄漏到 Runtime。
@@ -356,7 +355,7 @@ PostgreSQL 生产化、Worker Control Plane 与部署安全、生产隔离 profi
 
 ### 旧单包基线：H-01 ~ H-14 全部关闭
 
-这些任务描述的是拆包前的 `aiharness` 单包基线，保持为历史交付记录。新的基础层工作从 H-15
+这些任务描述的是拆包前的单包基线，保持为历史交付记录。新的基础层工作从 H-15
 开始，边界由 ADR-0030 决定。
 
 ### H-14：组合边界（policy vs plumbing）
@@ -366,14 +365,14 @@ PostgreSQL 生产化、Worker Control Plane 与部署安全、生产隔离 profi
   `with_artifacts`/`with_telemetry`/`with_hooks`/`with_skills`/`with_memory`/
   `with_compaction`/`with_subagents` 各自显式开启；每个 `with_*` 返回新 builder；
 - ✅ 判据写进 ARCHITECTURE：「每个合理应用是否都会做同样选择，且做错了是否无声」；
-- ✅ 刻意不提供 `default_runtime()` —— 那是已删除的 `aiharness/cli` 犯过的错；
+- ✅ 刻意不提供 `default_runtime()` —— 那是已删除的旧 CLI 犯过的错；
 - ✅ 应用层组合代码 269 → 178 行，剩下的基本只是产品决策。
 
 ### H-15：AIHI 多 distribution 迁移
 
 - 状态：**Done**；
 - 决策：[ADR-0030](adr/0030-aihi-multi-package-boundary.md)；
-- 目标：把单一 `aiharness` distribution 一次性迁移为 `aihi-models` 与 `aihi-agent`，保持事件、
+- 目标：把单一旧 distribution 一次性迁移为 `aihi-models` 与 `aihi-agent`，保持事件、
   Session、Trace 和安全语义兼容；本任务不创建 `aihi-code-agent`。
 - 验收记录：302 项测试通过；两个 wheel 的解包、真实安装、PEP 420 共存、叶子卸载、installed-wheel
   mypy、旧 JSON/SQLite/Trace 回放、Provider 流边界及完整安全门禁全部通过。
@@ -407,7 +406,7 @@ future application → aihi.agent + aihi.models
 | `tools`、`policy`、`hooks`、`sandbox` | `aihi.agent` | 保持统一副作用链；基础 Tool 有实现、无默认工具集 |
 | `memory`、`skills`、`agents`、`plugins`、`mcp` | `aihi.agent` | 可选能力继续经 Protocol/RuntimeExtensions 接入 |
 | `observability`、`evals` | `aihi.agent` | Replay 不执行 Provider/Tool/Sandbox |
-| 单包公共 API | 两个叶子公共 API | 无 `aiharness` re-export shim；跨包只能导入对方顶层 `__all__` |
+| 单包公共 API | 两个叶子公共 API | 无旧包 re-export shim；跨包只能导入对方顶层 `__all__` |
 | 冻结 Event/Session/Trace fixtures | 根 `tests/fixtures` | 原样迁移并增加旧 SQLite，禁止重生成旧语料适配实现 |
 
 #### 阶段与顺序
@@ -429,7 +428,7 @@ future application → aihi.agent + aihi.models
 - 不迁移 Router、Gateway、ModelRoles 或跨 Provider fallback。
 
 验收：`aihi-models` wheel 可独立安装、导入和通过类型检查，import graph 不包含 `aihi.agent` 或
-旧 `aiharness`。
+旧单包实现。
 
 ##### H-15c：提取 `aihi-agent`（Done）
 
@@ -445,12 +444,12 @@ Compaction 和 Subagent 集成测试。
 
 ##### H-15d：原子切换与删除旧包（Done）
 
-- 根项目变为 workspace/tooling，不再发布 `aiharness` wheel；
+- 根项目变为 workspace/tooling，不再发布旧单包 wheel；
 - 所有测试切换到安装后的 `aihi.models`/`aihi.agent` 公共 API；
-- 删除前检查 README、代码、文档、fixture generator 和配置对 `src/aiharness` 的引用；
+- 删除前检查 README、代码、文档、fixture generator 和配置对旧源码路径的引用；
 - 删除旧实现，不保留 re-export shim，也不长期维护双写/双入口。
 
-验收：仓库不再生成或导入 `aiharness`；卸载任一 wheel 不破坏另一个 namespace 叶子；两个 wheel
+验收：仓库不再生成或导入旧单包；卸载任一 wheel 不破坏另一个 namespace 叶子；两个 wheel
 共同安装后 `aihi.models` 与 `aihi.agent` 均可导入。
 
 ##### H-15e：最终质量门禁（Done）

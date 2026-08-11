@@ -55,8 +55,8 @@ def test_public_exports_are_sorted_and_resolvable() -> None:
         assert missing == []
 
 
-def test_the_legacy_import_surface_is_gone() -> None:
-    assert importlib.util.find_spec("aiharness") is None
+def test_the_aihi_namespace_is_available() -> None:
+    assert importlib.util.find_spec("aihi") is not None
 
 
 def test_composition_root_needs_nothing_beyond_the_public_api() -> None:

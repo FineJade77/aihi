@@ -415,7 +415,7 @@ lockfile；Manifest 或内容 Hash 变化后自动失效。
 
 Host 激活还必须通过显式 `PluginHostPolicy`：Manifest 的 `capabilities` 和 `permissions` 必须
 分别是当前 Run 允许集合的子集，否则拒绝启动。Host 使用最小环境、无 Shell 的独立进程组和
-有界 JSON-lines JSON-RPC（兼容标识 `aiharness.plugin.v1`）；超时、协议错误、崩溃都会终止整个进程组。
+有界 JSON-lines JSON-RPC（`aihi.plugin.v1`）；超时、协议错误、崩溃都会终止整个进程组。
 主进程只持有 `PluginRemoteTool`，Tool 调用仍由 `ToolDispatcher` 统一执行；Plugin Host 不得
 直接授予 Policy、Approval、Capability Lease 或 Sandbox 权限。
 

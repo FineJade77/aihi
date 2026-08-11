@@ -105,7 +105,7 @@ class McpToolDefinition:
             raise McpProtocolError("MCP tool name and description must be strings")
         if not isinstance(input_schema, dict):
             raise McpProtocolError("MCP tool inputSchema must be an object")
-        raw_capabilities = value.get("x-aiharness-required-capabilities", [])
+        raw_capabilities = value.get("x-aihi-required-capabilities", [])
         if not isinstance(raw_capabilities, list | tuple) or any(
             not isinstance(item, str) for item in raw_capabilities
         ):
@@ -140,7 +140,7 @@ class McpToolDefinition:
         if self.output_schema is not None:
             value["outputSchema"] = self.output_schema
         if self.required_capabilities:
-            value["x-aiharness-required-capabilities"] = list(self.required_capabilities)
+            value["x-aihi-required-capabilities"] = list(self.required_capabilities)
         return value
 
     def to_tool_spec(self, *, exposed_name: str | None = None) -> ToolSpec:

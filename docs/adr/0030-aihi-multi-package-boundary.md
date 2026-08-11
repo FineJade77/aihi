@@ -6,7 +6,7 @@
 
 ## 背景
 
-现有 `aiharness` 把模型契约与 Provider、Agent Loop、Session、Tool、Policy、Sandbox 和扩展能力
+现有旧单包把模型契约与 Provider、Agent Loop、Session、Tool、Policy、Sandbox 和扩展能力
 发布在同一个 distribution 中。为了让模型适配和通用 Agent Runtime 可以独立复用，项目决定迁移为
 monorepo 内的多个 distribution，并把 Coding Agent 留在后续应用层。
 
@@ -34,7 +34,7 @@ packages/aihi/agent/                  distribution: aihi-agent
 
 `src/aihi/` 是隐式 namespace，不得包含 `__init__.py` 或 namespace 根级 `py.typed`；每个叶子包
 分别包含自己的 `__init__.py`、`__all__` 和 `py.typed`。两个 wheel 必须能够独立安装，也能共同
-安装。根项目只承担 workspace、统一开发工具和跨 wheel 测试，不再发布 `aiharness` wheel。
+安装。根项目只承担 workspace、统一开发工具和跨 wheel 测试，不再发布旧单包 wheel。
 
 依赖方向只有：
 
@@ -175,7 +175,7 @@ routing/fallback，而不是把现有 Gateway 隐式搬入 Agent 包。
 
 否决。Provider 选择、角色、路由和 fallback 是应用组合决策；基础 Runtime 只消费显式 Provider。
 
-### 保留 `aiharness` 兼容 re-export 包
+### 不保留旧单包兼容 re-export 包
 
 否决。当前没有外部 Python API 消费者，不承担无收益的双入口维护成本；但持久化 Session、Trace 和
 Event Schema 的兼容性仍是硬门禁。
@@ -187,5 +187,5 @@ Event Schema 的兼容性仍是硬门禁。
   `ModelRoles.compact` 所在层的决策被本 ADR 取代；异步模型摘要与降级语义继续有效；
 - 当前单包公共 API 将一次性切换为两个叶子公共 API；无旧 import shim；
 - 构建门禁必须检查 wheel 内容、PEP 420 共存、叶子 `py.typed` 和安装后的类型识别；
-- 迁移先冻结兼容语料，再移动模型包，最后移动 Agent 包和删除旧 `src/aiharness`；
+- 迁移先冻结兼容语料，再移动模型包，最后移动 Agent 包和删除旧单包源码；
 - 本 ADR 只批准边界与迁移设计，不授权提前建设 `aihi-code-agent`。
