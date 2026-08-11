@@ -8,7 +8,6 @@ from aihi.code_agent.protocol import (
     COMMAND_DESCRIPTORS,
     PROTOCOL_VERSION,
     SERVER_NAME,
-    WorkerServer,
 )
 from aihi.code_agent.runtime import CodeAgentRuntime
 
@@ -16,9 +15,11 @@ from aihi.code_agent.runtime import CodeAgentRuntime
 def __getattr__(name: str) -> Any:
     """Load the executable Worker module lazily so ``python -m`` stays quiet."""
 
-    if name in {"main", "serve_stdio"}:
-        from aihi.code_agent.worker import main, serve_stdio
+    if name in {"WorkerServer", "main", "serve_stdio"}:
+        from aihi.code_agent.worker import WorkerServer, main, serve_stdio
 
+        if name == "WorkerServer":
+            return WorkerServer
         return main if name == "main" else serve_stdio
     raise AttributeError(name)
 
