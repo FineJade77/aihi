@@ -205,6 +205,12 @@ JSON Schema 归 `packages/aihi/code-protocol`；Worker 是 Session/Event Store �
 重连方必须通过 `session.events(after_seq)` 完整分页 replay 后再依赖实时通知，不能把首屏缓存或
 TUI 内存当作事实源（ADR-0033、ADR-0034）。
 
+Coding TUI 的 Transcript 是 Event Log 的应用层投影：历史 Event 与实时 durable notification
+必须经过同一个纯 reducer；投影按 seq 去重，发现缺口时完整 replay。`model.chunk` 只维护临时
+stream buffer，canonical `assistant.message` 到达后替换它。Tool Call、Tool 生命周期、Approval
+与 Tool Result 通过稳定 ID 合并为同一展示项；Tool input 只允许显示显式白名单字段，不能把任意
+输入复制进终端记录，白名单文本中的 credential pattern 仍须脱敏（ADR-0035）。
+
 ## 4. Runtime 与 Agent Loop
 
 一次用户请求对应一个 `Run`，一次会话可以有多个 Run。Runtime 是可恢复状态机：

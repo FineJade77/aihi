@@ -26,3 +26,16 @@ export { runTui, TuiApp } from "./tui/index.js";
 export type { TuiAppProps } from "./tui/index.js";
 export { readSessionHistory } from "./history.js";
 export type { SessionHistory } from "./history.js";
+export {
+  TranscriptGapError,
+  appendTranscriptEvent,
+  mergeTranscriptEvents,
+  projectTranscript,
+  transcriptEventFromNotification,
+} from "./transcript.js";
+export type {
+  TranscriptEntry,
+  TranscriptEvent,
+  TranscriptProjection,
+  TranscriptToolStatus,
+} from "./transcript.js";

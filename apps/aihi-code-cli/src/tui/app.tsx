@@ -1,12 +1,9 @@
 import { homedir } from "node:os";
 import { Box, Text, useApp, useInput } from "ink";
 import TextInput from "ink-text-input";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
-  AgentEvent,
   ApprovalDescriptor,
-  EventRecord,
-  JsonObject,
   RunResult,
   SessionDescriptor,
   TaskDescriptor,
@@ -14,6 +11,16 @@ import type {
 import { RpcClient } from "../rpc/client.js";
 import { resolveApprovalAndResume } from "../approval.js";
 import { readSessionHistory } from "../history.js";
+import {
+  TranscriptGapError,
+  appendTranscriptEvent,
+  mergeTranscriptEvents,
+  projectTranscript,
+  transcriptEventFromNotification,
+  type TranscriptEntry,
+  type TranscriptEvent,
+  type TranscriptProjection,
+} from "../transcript.js";
 import { Banner, GradientText } from "./banner.js";
 
 const COLORS = {
@@ -26,13 +33,6 @@ const COLORS = {
   panel: "blue",
 } as const;
 type UiColor = (typeof COLORS)[keyof typeof COLORS];
-
-interface UiEvent {
-  seq: number | null;
-  type: string;
-  ephemeral: boolean;
-  data: JsonObject;
-}
 
 export interface TuiAppProps {
   client: RpcClient;
@@ -48,40 +48,6 @@ export interface TuiAppProps {
   prompt?: string;
   onSessionOpened?: (sessionId: string) => void;
 }
-
-function eventFromRecord(event: EventRecord): UiEvent {
-  return {
-    seq: event.seq,
-    type: event.type,
-    ephemeral: event.ephemeral,
-    data: event.data,
-  };
-}
-
-function eventFromNotification(event: AgentEvent): UiEvent {
-  return {
-    seq: event.seq ?? null,
-    type: event.event_type,
-    ephemeral: event.ephemeral,
-    data: event.data,
-  };
-}
-
-/** Joins the text parts of a Message payload; other content kinds are skipped. */
-function messageText(data: JsonObject): string {
-  const message = data.message;
-  if (typeof message !== "object" || message === null || Array.isArray(message)) return "";
-  const content = (message as { content?: unknown }).content;
-  if (!Array.isArray(content)) return "";
-  return content
-    .map((part) => {
-      if (typeof part !== "object" || part === null) return "";
-      const { kind, text } = part as { kind?: unknown; text?: unknown };
-      return kind === "text" && typeof text === "string" ? text : "";
-    })
-    .join("");
-}
-
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -302,20 +268,77 @@ function HostConsentPanel({ cwd, root }: { cwd: string; root: string }) {
   );
 }
 
-/** The readable answer. The event log truncates; this is where text is legible. */
-function AnswerPanel({ text, streaming }: { text: string; streaming: boolean }) {
-  const shown = text.length > 1_200 ? `…${text.slice(-1_200)}` : text;
+function TranscriptRow({ entry }: { entry: TranscriptEntry }) {
+  if (entry.kind === "tool") {
+    const tone = entry.isError
+      ? COLORS.bad
+      : entry.status === "succeeded"
+        ? COLORS.good
+        : entry.status === "waiting_approval"
+          ? COLORS.warn
+          : COLORS.muted;
+    return (
+      <Box flexDirection="column">
+        <Text color={tone}>
+          ↳ {entry.toolName ?? "tool"} · {entry.status ?? "requested"}
+        </Text>
+        <Text color={COLORS.muted} wrap="wrap">  {entry.text}</Text>
+        {entry.detail !== undefined && entry.detail.length > 0 && (
+          <Text color={entry.isError ? COLORS.bad : COLORS.muted} wrap="wrap">
+            {"  "}{entry.detail}
+          </Text>
+        )}
+      </Box>
+    );
+  }
+  if (entry.kind === "status") {
+    return (
+      <Text color={entry.isError ? COLORS.bad : COLORS.muted} wrap="wrap">
+        {entry.text}{entry.detail ? ` · ${entry.detail}` : ""}
+      </Text>
+    );
+  }
+  return (
+    <Box flexDirection="column">
+      <Text bold color={entry.kind === "user" ? COLORS.accent : COLORS.brand}>
+        {entry.kind === "user" ? "YOU" : "AIHI"}
+      </Text>
+      <Text wrap="wrap">{entry.text}</Text>
+    </Box>
+  );
+}
+
+/** A bounded, event-derived conversation view; the Event Store remains canonical. */
+function TranscriptPanel({
+  entries,
+  streamText,
+}: {
+  entries: TranscriptEntry[];
+  streamText: string;
+}) {
+  const visible = entries.slice(-12);
+  const hidden = entries.length - visible.length;
   return (
     <Box
       borderStyle="round"
-      borderColor={streaming ? COLORS.accent : COLORS.panel}
+      borderColor={streamText ? COLORS.accent : COLORS.panel}
       flexDirection="column"
       paddingX={1}
     >
       <Text bold color={COLORS.brand}>
-        ANSWER{streaming ? " · streaming" : ""}
+        CONVERSATION{streamText ? " · streaming" : ""}
       </Text>
-      {shown ? <Text wrap="wrap">{shown}</Text> : <Text color={COLORS.muted}>No answer yet</Text>}
+      {hidden > 0 && <Text color={COLORS.muted}>… {hidden} earlier entries</Text>}
+      {visible.map((entry) => <TranscriptRow key={entry.id} entry={entry} />)}
+      {streamText && (
+        <Box flexDirection="column">
+          <Text bold color={COLORS.brand}>AIHI</Text>
+          <Text wrap="wrap">{streamText.length > 1_200 ? `…${streamText.slice(-1_200)}` : streamText}</Text>
+        </Box>
+      )}
+      {visible.length === 0 && !streamText && (
+        <Text color={COLORS.muted}>No conversation yet</Text>
+      )}
     </Box>
   );
 }
@@ -346,9 +369,16 @@ export function TuiApp({
   const [activeModel, setActiveModel] = useState(model);
   const [activeRunId, setActiveRunId] = useState<string>();
   const [streamText, setStreamText] = useState("");
-  const [answerText, setAnswerText] = useState("");
+  const [transcript, setTranscript] = useState<TranscriptProjection>({
+    headSeq: 0,
+    entries: [],
+  });
+  const transcriptRef = useRef<TranscriptProjection>(transcript);
+  const selectedSessionIdRef = useRef(selectedSessionId);
+  const loadingTranscriptSessionsRef = useRef(new Map<string, number>());
+  const bufferedTranscriptEventsRef = useRef(new Map<string, TranscriptEvent[]>());
+  const sessionLoadGenerationRef = useRef(0);
   const [splashVisible, setSplashVisible] = useState(true);
-  const [headSeq, setHeadSeq] = useState<number>();
   const [context, setContext] = useState({ tokens: 0, limit: 0 });
   const [promptSent, setPromptSent] = useState(false);
   const [approvals, setApprovals] = useState<ApprovalDescriptor[]>([]);
@@ -358,23 +388,76 @@ export function TuiApp({
   const [hostConsentPending, setHostConsentPending] = useState(hostConsentRequired);
 
   const loadSession = useCallback(async (sessionId: string) => {
-    const [session, historyPage, nextTasks, nextApprovals] = await Promise.all([
-      client.getSession(sessionId),
-      readSessionHistory(client, sessionId),
-      client.listTasks(sessionId),
-      client.listApprovals(sessionId),
-    ]);
-    setApprovals(nextApprovals);
-    setHeadSeq(historyPage.headSeq);
-    setSelectedSessionId(session.session_id);
-    setSelectedSession(session);
-    const history = historyPage.events.map(eventFromRecord);
-    setTasks(nextTasks);
-    setStreamText("");
-    // Reopening a session should still show its last answer, not an empty pane.
-    const lastAnswer = [...history].reverse().find((item) => item.type === "assistant.message");
-    setAnswerText(lastAnswer ? messageText(lastAnswer.data) : "");
-    setStatus(`Session ${shortId(session.session_id)} · seq ${historyPage.headSeq}`);
+    const generation = sessionLoadGenerationRef.current + 1;
+    sessionLoadGenerationRef.current = generation;
+    // Only the newest load for a Session owns its buffering marker. An older
+    // overlapping load must not keep live events trapped after the new view is
+    // already published.
+    loadingTranscriptSessionsRef.current.set(sessionId, generation);
+    try {
+      const [session, historyPage, nextTasks, nextApprovals] = await Promise.all([
+        client.getSession(sessionId),
+        readSessionHistory(client, sessionId),
+        client.listTasks(sessionId),
+        client.listApprovals(sessionId),
+      ]);
+      if (generation !== sessionLoadGenerationRef.current) return;
+      let selectedApprovals = nextApprovals;
+      let nextTranscript = projectTranscript(historyPage.events);
+      let approvalsDirty = false;
+      while (true) {
+        const batch = bufferedTranscriptEventsRef.current.get(session.session_id) ?? [];
+        bufferedTranscriptEventsRef.current.delete(session.session_id);
+        if (batch.length > 0) {
+          approvalsDirty ||= batch.some((event) =>
+            event.type === "approval.requested" || event.type === "approval.resolved"
+          );
+          try {
+            nextTranscript = mergeTranscriptEvents(nextTranscript, batch);
+          } catch (error) {
+            if (!(error instanceof TranscriptGapError)) throw error;
+            // The notification stream is advisory. If it skipped a durable
+            // event while replay was in flight, rebuild from the Event Store.
+            const repairedHistory = await readSessionHistory(client, session.session_id);
+            if (generation !== sessionLoadGenerationRef.current) return;
+            nextTranscript = projectTranscript(repairedHistory.events);
+            approvalsDirty = true;
+          }
+          continue;
+        }
+        if (approvalsDirty) {
+          selectedApprovals = await client.listApprovals(session.session_id);
+          if (generation !== sessionLoadGenerationRef.current) return;
+          approvalsDirty = false;
+          // Notifications received during the RPC were buffered; drain them
+          // before publishing a mutually consistent transcript and snapshot.
+          continue;
+        }
+        break;
+      }
+      const currentTranscript = transcriptRef.current;
+      const selectedTranscript = currentTranscript.sessionId === session.session_id &&
+        currentTranscript.headSeq > nextTranscript.headSeq
+        ? currentTranscript
+        : nextTranscript;
+      transcriptRef.current = selectedTranscript;
+      setTranscript(selectedTranscript);
+      setActiveRunId(selectedTranscript.activeRunId);
+      setApprovals(selectedApprovals);
+      selectedSessionIdRef.current = session.session_id;
+      setSelectedSessionId(session.session_id);
+      setSelectedSession(session);
+      setTasks(nextTasks);
+      setStreamText("");
+      setStatus(`Session ${shortId(session.session_id)} · seq ${selectedTranscript.headSeq}`);
+    } finally {
+      if (loadingTranscriptSessionsRef.current.get(sessionId) === generation) {
+        loadingTranscriptSessionsRef.current.delete(sessionId);
+        if (generation !== sessionLoadGenerationRef.current) {
+          bufferedTranscriptEventsRef.current.delete(sessionId);
+        }
+      }
+    }
   }, [client]);
 
   const refreshSessions = useCallback(async () => {
@@ -402,6 +485,7 @@ export function TuiApp({
   }, [client, loadSession, sessionId]);
 
   useEffect(() => {
+    selectedSessionIdRef.current = selectedSessionId;
     if (selectedSessionId) onSessionOpened?.(selectedSessionId);
   }, [selectedSessionId, onSessionOpened]);
 
@@ -418,56 +502,81 @@ export function TuiApp({
 
   useEffect(() => {
     const unsubscribe = client.subscribeEvents((event) => {
-      if (event.session_id !== selectedSessionId) return;
-      const nextEvent = eventFromNotification(event);
-      if (nextEvent.type === "run.started" || nextEvent.type === "run.resumed") {
+      if (loadingTranscriptSessionsRef.current.has(event.session_id)) {
+        if (!event.ephemeral) {
+          const buffered = bufferedTranscriptEventsRef.current.get(event.session_id) ?? [];
+          buffered.push(transcriptEventFromNotification(event));
+          bufferedTranscriptEventsRef.current.set(event.session_id, buffered);
+        }
+        return;
+      }
+      if (event.session_id !== selectedSessionIdRef.current) return;
+      if (!event.ephemeral) {
+        try {
+          const nextTranscript = appendTranscriptEvent(
+            transcriptRef.current,
+            transcriptEventFromNotification(event),
+          );
+          transcriptRef.current = nextTranscript;
+          setTranscript(nextTranscript);
+        } catch (error) {
+          if (error instanceof TranscriptGapError) {
+            setNotice({ text: `${error.message} · replaying session`, tone: COLORS.warn });
+            void loadSession(event.session_id).catch((loadError) => {
+              setNotice({ text: `Replay failed: ${errorMessage(loadError)}`, tone: COLORS.bad });
+            });
+          } else {
+            throw error;
+          }
+        }
+      }
+      const eventType = event.event_type;
+      const eventData = event.data;
+      if (eventType === "run.started" || eventType === "run.resumed") {
         setActiveRunId(event.run_id);
         setStreamText("");
-        setAnswerText("");
         setNotice(undefined);
       }
-      if (nextEvent.type === "model.chunk" && nextEvent.data.kind === "text_delta") {
-        const delta = nextEvent.data.text;
+      if (eventType === "model.chunk" && eventData.kind === "text_delta") {
+        const delta = eventData.text;
         if (typeof delta === "string") setStreamText((current) => `${current}${delta}`);
       }
-      if (nextEvent.type === "assistant.message") {
+      if (eventType === "assistant.message") {
         // The persisted message is authoritative; drop the accumulated deltas.
-        setAnswerText(messageText(nextEvent.data));
         setStreamText("");
       }
-      if (["run.completed", "run.failed", "run.interrupted", "run.cancelled"].includes(nextEvent.type)) {
+      if (["run.completed", "run.failed", "run.interrupted", "run.cancelled"].includes(eventType)) {
         setActiveRunId(undefined);
-        setStatus(`Run ${shortId(event.run_id ?? "")} ${nextEvent.type.slice(4)}`);
+        setStatus(`Run ${shortId(event.run_id ?? "")} ${eventType.slice(4)}`);
       }
-      if (nextEvent.type.startsWith("subagent.")) {
+      if (eventType.startsWith("subagent.")) {
         void client.listTasks(event.session_id).then(setTasks).catch(() => undefined);
       }
-      if (nextEvent.type === "model.usage") {
-        const tokens = nextEvent.data.context_tokens;
-        const limit = nextEvent.data.context_limit;
+      if (eventType === "model.usage") {
+        const tokens = eventData.context_tokens;
+        const limit = eventData.context_limit;
         if (typeof tokens === "number" && typeof limit === "number") {
           setContext({ tokens, limit });
         }
       }
-      if (nextEvent.type === "approval.requested" || nextEvent.type === "approval.resolved") {
+      if (eventType === "approval.requested" || eventType === "approval.resolved") {
         void client.listApprovals(event.session_id).then(setApprovals).catch(() => undefined);
       }
-      if (nextEvent.type === "approval.requested") {
+      if (eventType === "approval.requested") {
         setNotice({ text: "Approval required · /approvals to list", tone: COLORS.warn });
       }
-      if (nextEvent.type === "run.failed" || nextEvent.type === "run.interrupted") {
-        const detail = nextEvent.data.error;
+      if (eventType === "run.failed" || eventType === "run.interrupted") {
+        const detail = eventData.error;
         setNotice({
-          text: `Run ${nextEvent.type.slice(4)}: ${typeof detail === "string" ? detail : "no detail"}`,
+          text: `Run ${eventType.slice(4)}: ${typeof detail === "string" ? detail : "no detail"}`,
           tone: COLORS.bad,
         });
       }
       // The sequence number belongs in the header, not in the message line it
       // used to overwrite on every single event.
-      if (nextEvent.seq !== null) setHeadSeq(nextEvent.seq);
     });
     return unsubscribe;
-  }, [client, selectedSessionId]);
+  }, [client, loadSession]);
 
   const quit = useCallback(async () => {
     setBusy(true);
@@ -905,12 +1014,14 @@ export function TuiApp({
             ) : (
               <Text color={COLORS.muted}>none · use /new</Text>
             )}
-            {headSeq !== undefined && <Text color={COLORS.muted}>  seq {headSeq}</Text>}
+            {transcript.headSeq > 0 && (
+              <Text color={COLORS.muted}>  seq {transcript.headSeq}</Text>
+            )}
             {activeRunId !== undefined && <Text color={COLORS.muted}>  run  {activeRunId}</Text>}
           </Box>
           {approvals.length > 0 && <ApprovalPanel approvals={approvals} />}
           <Box flexDirection="column" flexGrow={1} marginTop={1}>
-            <AnswerPanel text={streamText || answerText} streaming={streamText.length > 0} />
+            <TranscriptPanel entries={transcript.entries} streamText={streamText} />
           </Box>
         </>
       )}

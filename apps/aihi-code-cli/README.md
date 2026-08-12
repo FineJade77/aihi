@@ -35,7 +35,12 @@ The current Worker command surface is deliberately small:
 
 Mutating commands append canonical events in the Worker and the same events are
 sent to the CLI as `event` notifications. `session.events` is the replay path
-for reconnecting a TUI from a known sequence number.
+for reconnecting a TUI from a known sequence number. Replay and live durable
+notifications feed the same Transcript projector: user and assistant messages,
+Tool lifecycle, Approval state, and Run failures therefore render identically
+before and after reconnect. Tool previews use an allowlist of display fields;
+arbitrary Tool inputs are never serialized into the terminal transcript, and
+credential-shaped substrings in allowlisted text are redacted.
 
 After installing the TypeScript dependencies and building, start the local TUI
 with:
@@ -126,7 +131,8 @@ switch to another one. `/runs` lists run states, `/history` reloads the event
 history, `/fork [SEQ]` creates a branch, and `/cancel RUN_ID` requests
 cancellation of an active run or closes a suspended/recoverable run. Model
 chunks are delivered as ephemeral Worker notifications and rendered while the
-run is in progress.
+run is in progress. The canonical `assistant.message` replaces that temporary
+stream display; ephemeral chunks are never inserted into the durable transcript.
 Only one foreground Run may own a Session. While it is active the composer is
 disabled; `Ctrl-C` requests interruption of that Run, while `Ctrl-C` with no
 active Run exits the CLI. Different Sessions may still run concurrently in the
