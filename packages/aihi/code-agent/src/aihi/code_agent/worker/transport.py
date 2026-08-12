@@ -64,7 +64,6 @@ def serve_stdio(
 
     runtime = server or WorkerServer(
         store_path=os.environ.get("AIHI_CODE_AGENT_STORE"),
-        config_path=os.environ.get("AIHI_CODE_AGENT_CONFIG"),
     )
     error_stream = sys.stderr if stderr is None else stderr
     incoming: Queue[tuple[str, object]] = Queue()

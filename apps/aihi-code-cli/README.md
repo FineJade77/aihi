@@ -15,7 +15,9 @@ Content-Length: <UTF-8 byte length>\r\n
 The worker must be installed in the selected Python environment, or callers can
 override `command`, `args`, `cwd`, and `env` in `RpcClient.connect()`. Set
 `storePath` to use the Worker's SQLite event store; when omitted, the Worker
-uses an in-memory store for the process lifetime.
+uses an in-memory store for the process lifetime. The `aihi-code` executable
+always supplies `~/.aihi/sessions.sqlite3` by default, so normal CLI sessions
+survive process restarts.
 
 The current Worker command surface is deliberately small:
 
@@ -36,32 +38,34 @@ with:
 
 ```bash
 npm run build
-aihi-code --store ~/.aihi/code-agent/events.sqlite3
+aihi-code
 ```
 
-Launching always starts a **new** session. Any bare words after the options are
-the first turn, so a one-shot run is just:
+Launching starts a **new** session unless `--continue` or `--session` is used.
+Any bare words after the options are the first turn, so a one-shot run is just:
 
 ```bash
-aihi-code --store ~/.aihi/code-agent/events.sqlite3 summarize the auth module
+aihi-code summarize the auth module
 ```
 
 On exit the CLI prints the closed session's id and the command that reopens it
-(`aihi-code --session SESSION_ID`). Without `--store` the session lives only in
-the Worker process, so the hint says so rather than offering a resume that
-cannot work.
+(`aihi-code --session SESSION_ID`). `--continue` (or `-c`) reopens the newest
+session belonging to the selected workspace. `--store` remains available for
+tests or advanced isolation of the event database.
 
 `--workspace PATH` selects the project workspace and is an alias for `--cwd PATH`.
 When `sandbox.root` is omitted, the Worker uses this workspace as the sandbox root;
 an explicit `sandbox.root` can still restrict execution to another directory.
 
 Configuration directories are fixed: the Worker checks
-`<workspace>/.aihi/aihi-code.toml`, the legacy project-root `aihi-code.toml`,
-and then `~/.aihi/aihi-code.toml` in that order. The CLI does not accept a
-configuration-path argument. Relative paths in a discovered file are resolved
-from the file's directory. Configure the provider, sandbox, Skill roots, and
-MCP servers there; credentials are referenced by environment variable name and
-are never stored in TOML:
+`~/.aihi/aihi-code.toml`, the legacy project-root `aihi-code.toml`, and
+`<workspace>/.aihi/aihi-code.toml`. Existing layers are deep-merged in that
+low-to-high precedence order; arrays are replaced by the higher layer. The CLI,
+Worker RPC, and Worker environment do not accept a configuration-path override.
+Relative paths are anchored to the file that declares them before layers are
+merged. Configure the provider, sandbox, Skill roots, and MCP servers there;
+credentials are referenced by environment variable name and are never stored
+in TOML:
 
 ```toml
 [provider]
@@ -103,7 +107,8 @@ command = ["python3", "-m", "example_mcp_server"]
 allowed_tools = ["search"]
 ```
 
-Use `--session SESSION_ID` to reopen a known session on startup. `/sessions`
+Use `--session SESSION_ID` to reopen a known session on startup, or `--continue`
+to reopen the newest session for the workspace. `/sessions`
 selects the newest persisted session when no session is specified; `/open` can
 switch to another one. `/runs` lists run states, `/history` reloads the event
 history, `/fork [SEQ]` creates a branch, and `/cancel RUN_ID` requests

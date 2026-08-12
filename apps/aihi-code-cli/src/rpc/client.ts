@@ -29,7 +29,6 @@ import { launchWorker, type WorkerLaunchOptions } from "../worker/launcher.js";
 export interface RpcClientOptions extends WorkerLaunchOptions {
   requestTimeoutMs?: number;
   storePath?: string;
-  configPath?: string;
   onEvent?: (event: AgentEvent) => void;
   onRunError?: (runId: string, message: string) => void;
   onLog?: (chunk: string) => void;
@@ -50,8 +49,8 @@ export class RpcError extends Error {
 
 export interface SessionCreateParams {
   cwd: string;
-  provider: string;
-  model: string;
+  provider?: string;
+  model?: string;
   session_id?: string;
   metadata?: JsonObject;
 }
@@ -133,7 +132,6 @@ export class RpcClient {
   private readonly pending = new Map<string, PendingRequest>();
   private readonly requestTimeoutMs: number;
   private readonly storePath?: string;
-  private readonly configPath?: string;
   private readonly onEventCallback?: (event: AgentEvent) => void;
   private readonly onRunErrorCallback?: (runId: string, message: string) => void;
   private readonly onLogCallback?: (chunk: string) => void;
@@ -157,7 +155,6 @@ export class RpcClient {
       throw new TypeError("requestTimeoutMs must be a positive safe integer");
     }
     this.storePath = options.storePath;
-    this.configPath = options.configPath;
     this.onEventCallback = options.onEvent;
     this.onRunErrorCallback = options.onRunError;
     this.onLogCallback = options.onLog;
@@ -169,7 +166,13 @@ export class RpcClient {
   }
 
   public static async connect(options: RpcClientOptions = {}): Promise<RpcClient> {
-    const client = new RpcClient(launchWorker(options), options);
+    const launchOptions: RpcClientOptions = options.storePath === undefined
+      ? options
+      : {
+          ...options,
+          env: { ...options.env, AIHI_CODE_AGENT_STORE: options.storePath },
+        };
+    const client = new RpcClient(launchWorker(launchOptions), options);
     try {
       await client.initialize();
       return client;
@@ -218,9 +221,6 @@ export class RpcClient {
     };
     if (this.storePath !== undefined) {
       initializeParams.store_path = this.storePath;
-    }
-    if (this.configPath !== undefined) {
-      initializeParams.config_path = this.configPath;
     }
     const result = await this.request<InitializeResult>("initialize", initializeParams);
     this.notify("initialized", { protocol_version: PROTOCOL_VERSION });

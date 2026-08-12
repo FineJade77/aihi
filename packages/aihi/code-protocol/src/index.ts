@@ -151,6 +151,7 @@ export interface ProviderDescriptor {
 
 export interface ConfigDescriptor extends JsonObject {
   source_path: string | null;
+  source_paths: string[];
   base_dir: string;
   provider: ProviderDescriptor;
   providers: ProviderDescriptor[];

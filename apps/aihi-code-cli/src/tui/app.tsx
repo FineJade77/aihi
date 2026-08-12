@@ -39,7 +39,7 @@ export interface TuiAppProps {
   model: string;
   sessionId?: string;
   storePath?: string;
-  configPath?: string;
+  configPaths?: string[];
   /** First turn to run once the session is up. */
   prompt?: string;
   onSessionOpened?: (sessionId: string) => void;
@@ -141,13 +141,13 @@ function Splash({
   provider,
   model,
   storePath,
-  configPath,
+  configPaths,
 }: {
   cwd: string;
   provider: string;
   model: string;
   storePath?: string;
-  configPath?: string;
+  configPaths?: string[];
 }) {
   return (
     <Box flexDirection="column" marginBottom={1}>
@@ -156,7 +156,9 @@ function Splash({
         <InfoRow label="cwd" value={tildePath(cwd)} />
         <InfoRow label="provider" value={`${provider} · ${model}`} />
         <InfoRow label="store" value={storePath ? tildePath(storePath) : "in-memory (this process only)"} />
-        {configPath !== undefined && <InfoRow label="config" value={tildePath(configPath)} />}
+        {configPaths !== undefined && configPaths.length > 0 && (
+          <InfoRow label="config" value={configPaths.map(tildePath).join(" → ")} />
+        )}
       </Box>
     </Box>
   );
@@ -267,7 +269,7 @@ export function TuiApp({
   model,
   sessionId,
   storePath,
-  configPath,
+  configPaths,
   prompt,
   onSessionOpened,
 }: TuiAppProps) {
@@ -329,33 +331,13 @@ export function TuiApp({
   }, [client, loadSession, selectedSessionId]);
 
   useEffect(() => {
-    void client.getConfig(cwd).then((config) => {
-      setActiveProvider(config.provider.name);
-      setActiveModel(config.provider.model);
-    }).catch((error) => setStatus(`Config load failed: ${errorMessage(error)}`));
-  }, [client, cwd]);
-
-  useEffect(() => {
-    // Starting up means starting work: create a session rather than silently
-    // adopting whichever one happens to be newest in the store. `--session`
-    // is the explicit way to continue an old one.
     const bootstrap = async () => {
-      if (sessionId) {
-        await loadSession(sessionId);
-      } else {
-        const created = await client.createSession({
-          cwd,
-          provider: activeProvider,
-          model: activeModel,
-        });
-        await loadSession(created.session_id);
-      }
+      if (!sessionId) throw new Error("No bootstrapped session was provided");
+      await loadSession(sessionId);
       await client.listSessions().then(setSessions).catch(() => undefined);
     };
     void bootstrap().catch((error) => setStatus(`Load failed: ${errorMessage(error)}`));
-  // Session bootstrap is intentionally run once per Worker.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [client]);
+  }, [client, loadSession, sessionId]);
 
   useEffect(() => {
     if (selectedSessionId) onSessionOpened?.(selectedSessionId);
@@ -779,7 +761,7 @@ export function TuiApp({
           provider={activeProvider}
           model={activeModel}
           storePath={storePath}
-          configPath={configPath}
+          configPaths={configPaths}
         />
       ) : (
         <>

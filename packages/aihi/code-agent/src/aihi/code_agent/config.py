@@ -12,6 +12,7 @@ import os
 import re
 import tomllib
 from collections.abc import Mapping
+from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
@@ -24,7 +25,7 @@ _CONFIG_FILENAME = "aihi-code.toml"
 _PROJECT_CONFIG_DIRNAME = ".aihi"
 DEFAULT_USER_CONFIG_TOML = '''\
 # AIHI Coding Agent user configuration.
-# Project config (<cwd>/.aihi/aihi-code.toml) overrides every value here.
+# Project config (<cwd>/.aihi/aihi-code.toml) is merged over these defaults.
 
 [provider]
 name = "fake"
@@ -125,8 +126,9 @@ class SubagentSettings:
 class CodeAgentConfig:
     """Resolved Coding Agent settings.
 
-    ``base_dir`` is the directory containing the loaded file (or the supplied
-    workspace when no file exists), so all relative paths are deterministic.
+    ``base_dir`` is the explicit file directory or the workspace for a merged
+    configuration. ``source_paths`` records merged layers from low to high
+    precedence; ``source_path`` is the highest-precedence compatibility view.
     """
 
     base_dir: Path
@@ -146,6 +148,7 @@ class CodeAgentConfig:
     context_window: int | None = None
     subagents: SubagentSettings = SubagentSettings()
     source_path: Path | None = None
+    source_paths: tuple[Path, ...] = ()
 
     @classmethod
     def defaults(cls, cwd: str | Path) -> CodeAgentConfig:
@@ -167,6 +170,7 @@ class CodeAgentConfig:
         base_dir: str | Path,
         workspace_root: str | Path | None = None,
         source_path: str | Path | None = None,
+        source_paths: tuple[str | Path, ...] = (),
     ) -> CodeAgentConfig:
         root = Path(base_dir).expanduser().resolve(strict=True)
         workspace = Path(workspace_root or root).expanduser().resolve(strict=True)
@@ -295,6 +299,7 @@ class CodeAgentConfig:
             context_window=context_window,
             subagents=subagents,
             source_path=(Path(source_path).expanduser().resolve() if source_path else None),
+            source_paths=tuple(Path(path).expanduser().resolve() for path in source_paths),
         )
 
     def select_provider(
@@ -326,6 +331,7 @@ class CodeAgentConfig:
         providers.sort(key=lambda item: str(item["name"]))
         return {
             "source_path": str(self.source_path) if self.source_path else None,
+            "source_paths": [str(path) for path in self.source_paths],
             "base_dir": str(self.base_dir),
             "provider": {
                 "name": self.provider.name,
@@ -370,21 +376,36 @@ def load_config(
     *,
     cwd: str | Path,
 ) -> CodeAgentConfig:
-    """Load explicit, project, or user config, then return safe defaults.
+    """Load an explicit file or merge the fixed user/project config layers.
 
-    With no explicit path, project configuration in ``<cwd>/.aihi`` takes
-    precedence over the legacy project-root location and the user config in
-    ``~/.aihi``. Relative paths in a discovered config remain relative to the
-    directory containing that config file.
+    Implicit configuration is merged from low to high precedence: user,
+    legacy project-root, then ``<cwd>/.aihi``. Tables are merged recursively
+    and arrays are replaced by the higher layer. Paths declared in a layer are
+    resolved relative to that layer before merging, so inherited user Skill or
+    MCP paths keep their original meaning.
+
+    ``path`` remains an embedded-Python API for tests and custom hosts. The
+    Worker wire protocol intentionally exposes no configuration-path override.
     """
 
     workspace = Path(cwd).expanduser().resolve(strict=True)
     if path is None:
-        requested = _discover_default_config(workspace)
-        if requested is None:
+        sources = _discover_default_configs(workspace)
+        if not sources:
             return CodeAgentConfig.defaults(workspace)
-    else:
-        requested = Path(path).expanduser()
+        merged: dict[str, Any] = {}
+        for source in sources:
+            raw = _load_toml(source)
+            _deep_merge(merged, _anchor_layer_paths(raw, source.parent))
+        return CodeAgentConfig.from_mapping(
+            merged,
+            base_dir=workspace,
+            workspace_root=workspace,
+            source_path=sources[-1],
+            source_paths=tuple(sources),
+        )
+
+    requested = Path(path).expanduser()
     if not requested.is_absolute():
         requested = workspace / requested
     requested = requested.resolve()
@@ -394,18 +415,13 @@ def load_config(
         return CodeAgentConfig.defaults(workspace)
     if not requested.is_file():
         raise CodeAgentConfigError(f"Configuration path is not a file: {requested}")
-    try:
-        with requested.open("rb") as stream:
-            raw = tomllib.load(stream)
-    except (OSError, tomllib.TOMLDecodeError) as error:
-        raise CodeAgentConfigError(f"Cannot load configuration: {requested}") from error
-    if not isinstance(raw, dict):
-        raise CodeAgentConfigError("Configuration root must be a TOML table")
+    raw = _load_toml(requested)
     return CodeAgentConfig.from_mapping(
         raw,
         base_dir=requested.parent,
         workspace_root=workspace,
         source_path=requested,
+        source_paths=(requested,),
     )
 
 
@@ -435,16 +451,79 @@ def ensure_user_config() -> tuple[Path, bool]:
     return path, True
 
 
-def _discover_default_config(workspace: Path) -> Path | None:
-    """Return the highest-precedence implicit config file, if one exists."""
+def _discover_default_configs(workspace: Path) -> tuple[Path, ...]:
+    """Return existing implicit config layers from lowest to highest precedence."""
 
     candidates = (
-        workspace / _PROJECT_CONFIG_DIRNAME / _CONFIG_FILENAME,
-        # Keep the old project-root location readable during migration.
-        workspace / _CONFIG_FILENAME,
         Path.home() / _PROJECT_CONFIG_DIRNAME / _CONFIG_FILENAME,
+        # Keep the old project-root location readable as a migration layer.
+        workspace / _CONFIG_FILENAME,
+        workspace / _PROJECT_CONFIG_DIRNAME / _CONFIG_FILENAME,
     )
-    return next((candidate for candidate in candidates if candidate.is_file()), None)
+    sources: list[Path] = []
+    seen: set[Path] = set()
+    for candidate in candidates:
+        if not candidate.is_file():
+            continue
+        resolved = candidate.resolve()
+        if resolved not in seen:
+            sources.append(resolved)
+            seen.add(resolved)
+    return tuple(sources)
+
+
+def _load_toml(path: Path) -> dict[str, Any]:
+    try:
+        with path.open("rb") as stream:
+            raw = tomllib.load(stream)
+    except (OSError, tomllib.TOMLDecodeError) as error:
+        raise CodeAgentConfigError(f"Cannot load configuration: {path}") from error
+    if not isinstance(raw, dict):
+        raise CodeAgentConfigError("Configuration root must be a TOML table")
+    return raw
+
+
+def _deep_merge(target: dict[str, Any], overlay: Mapping[str, Any]) -> None:
+    """Merge a config table in place; higher-layer arrays and scalars replace."""
+
+    for key, value in overlay.items():
+        current = target.get(key)
+        if isinstance(current, dict) and isinstance(value, Mapping):
+            _deep_merge(current, value)
+        else:
+            target[key] = deepcopy(value)
+
+
+def _anchor_layer_paths(value: Mapping[str, Any], base_dir: Path) -> dict[str, Any]:
+    """Make path values absolute before differently-rooted layers are merged."""
+
+    anchored = deepcopy(dict(value))
+
+    def anchor(table: object, key: str) -> None:
+        if not isinstance(table, dict) or key not in table:
+            return
+        candidate = table[key]
+        if not isinstance(candidate, str) or not candidate.strip():
+            return
+        path = Path(candidate).expanduser()
+        table[key] = str((path if path.is_absolute() else base_dir / path).resolve())
+
+    anchor(anchored.get("sandbox"), "root")
+    anchor(anchored.get("artifacts"), "path")
+    skills = anchored.get("skills")
+    anchor(skills, "trust_lockfile")
+    if isinstance(skills, dict):
+        roots = skills.get("roots")
+        if isinstance(roots, list):
+            for root in roots:
+                anchor(root, "path")
+    mcp = anchored.get("mcp")
+    if isinstance(mcp, dict):
+        servers = mcp.get("servers")
+        if isinstance(servers, dict):
+            for server in servers.values():
+                anchor(server, "cwd")
+    return anchored
 
 
 def resolve_env_mapping(value: Mapping[str, str]) -> dict[str, str]:

@@ -103,7 +103,9 @@ unsafe = true
     assert config.sandbox.root == workspace.resolve()
 
 
-def test_config_discovers_project_aihi_config_before_user_config(tmp_path, monkeypatch) -> None:
+def test_config_merges_user_and_project_layers_with_project_precedence(
+    tmp_path, monkeypatch
+) -> None:
     home = tmp_path / "home"
     workspace = tmp_path / "project"
     (home / ".aihi").mkdir(parents=True)
@@ -111,18 +113,63 @@ def test_config_discovers_project_aihi_config_before_user_config(tmp_path, monke
     monkeypatch.setenv("HOME", str(home))
 
     (home / ".aihi" / "aihi-code.toml").write_text(
-        '[provider]\nname = "user"\nmodel = "user-model"\n', encoding="utf-8"
+        """[provider]
+name = "user"
+model = "user-model"
+
+[providers.openai]
+model = "gpt-user"
+api_key_env = "OPENAI_API_KEY"
+
+[agent]
+tools = ["read_file", "grep"]
+
+[[skills.roots]]
+path = "skills"
+scope = "user"
+
+[mcp.servers.user-search]
+command = ["user-search"]
+cwd = "mcp"
+""",
+        encoding="utf-8",
+    )
+    legacy_config = workspace / "aihi-code.toml"
+    legacy_config.write_text(
+        """[providers.anthropic]
+model = "claude-user"
+""",
+        encoding="utf-8",
     )
     project_config = workspace / ".aihi" / "aihi-code.toml"
     project_config.write_text(
-        '[provider]\nname = "project"\nmodel = "project-model"\n', encoding="utf-8"
+        """[provider]
+name = "project"
+model = "project-model"
+
+[agent]
+max_output_tokens = 1234
+tools = ["read_file"]
+""",
+        encoding="utf-8",
     )
 
     config = load_config(cwd=workspace)
 
     assert config.provider.name == "project"
     assert config.provider.model == "project-model"
+    assert config.provider_profiles["openai"].model == "gpt-user"
+    assert config.provider_profiles["anthropic"].model == "claude-user"
+    assert config.max_output_tokens == 1234
+    assert config.tools == ("read_file",)
+    assert config.skill_roots[0].path == (home / ".aihi" / "skills").resolve()
+    assert config.mcp_servers[0].cwd == (home / ".aihi" / "mcp").resolve()
     assert config.source_path == project_config.resolve()
+    assert config.source_paths == (
+        (home / ".aihi" / "aihi-code.toml").resolve(),
+        legacy_config.resolve(),
+        project_config.resolve(),
+    )
 
 
 def test_config_discovers_user_aihi_config_when_project_config_is_absent(
@@ -144,6 +191,7 @@ def test_config_discovers_user_aihi_config_when_project_config_is_absent(
     assert config.provider.name == "user"
     assert config.provider.model == "user-model"
     assert config.source_path == user_config.resolve()
+    assert config.source_paths == (user_config.resolve(),)
 
 
 @pytest.mark.asyncio
@@ -182,7 +230,10 @@ capabilities = ["filesystem.read"]
         encoding="utf-8",
     )
     config = load_config(config_path, cwd=tmp_path)
-    server = WorkerServer(store_path=tmp_path / "events.sqlite3", config_path=config_path)
+    server = WorkerServer(
+        store_path=tmp_path / "events.sqlite3",
+        config_loader=lambda cwd: load_config(config_path, cwd=cwd),
+    )
     server.handle(
         {
             "jsonrpc": "2.0",
@@ -231,7 +282,10 @@ unsafe = true
         + "\n",
         encoding="utf-8",
     )
-    server = WorkerServer(store_path=tmp_path / "events.sqlite3", config_path=config_path)
+    server = WorkerServer(
+        store_path=tmp_path / "events.sqlite3",
+        config_loader=lambda cwd: load_config(config_path, cwd=cwd),
+    )
     initialized = server.handle(
         {
             "jsonrpc": "2.0",
@@ -310,7 +364,10 @@ def _write_skill_config(tmp_path):
 @pytest.mark.asyncio
 async def test_skill_trust_commands_enable_explicit_skill_loading(tmp_path) -> None:
     config_path = _write_skill_config(tmp_path)
-    server = WorkerServer(store_path=tmp_path / "events.sqlite3", config_path=config_path)
+    server = WorkerServer(
+        store_path=tmp_path / "events.sqlite3",
+        config_loader=lambda cwd: load_config(config_path, cwd=cwd),
+    )
     server.handle(
         {
             "jsonrpc": "2.0",

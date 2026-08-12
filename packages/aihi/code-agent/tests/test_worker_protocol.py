@@ -6,6 +6,7 @@ from threading import Event as ThreadEvent
 
 import pytest
 from aihi.agent import Event
+from aihi.code_agent.config import load_config
 from aihi.code_agent.framing import FrameError, read_frame, write_frame
 from aihi.code_agent.protocol import (
     INVALID_PARAMS,
@@ -72,6 +73,26 @@ def test_worker_rejects_unsupported_protocol_and_notification_is_silent() -> Non
     assert response is not None
     assert response["error"]["code"] == INVALID_PARAMS  # type: ignore[index]
     assert server.handle({"jsonrpc": "2.0", "method": "missing"}) is None
+
+
+def test_worker_rejects_configuration_path_override() -> None:
+    server = WorkerServer()
+
+    response = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocol_version": PROTOCOL_VERSION,
+                "config_path": "/tmp/not-allowed.toml",
+            },
+        }
+    )
+
+    assert response is not None
+    assert response["error"]["code"] == INVALID_PARAMS  # type: ignore[index]
+    assert "locations are fixed" in response["error"]["message"]  # type: ignore[index]
 
 
 def test_stdio_server_emits_responses_and_stops_after_shutdown() -> None:
@@ -173,7 +194,7 @@ allowed_tools = ["search"]
 """,
         encoding="utf-8",
     )
-    server = WorkerServer(config_path=config_path)
+    server = WorkerServer(config_loader=lambda cwd: load_config(config_path, cwd=cwd))
     server.handle(
         {
             "jsonrpc": "2.0",
@@ -190,6 +211,7 @@ allowed_tools = ["search"]
     assert descriptor["provider"]["name"] == "fake"
     assert {item["name"] for item in descriptor["providers"]} == {"fake", "openai"}
     assert descriptor["providers"][1]["api_key_env"] == "OPENAI_API_KEY"
+    assert descriptor["source_paths"] == [str(config_path.resolve())]
     created = server.handle(
         {
             "jsonrpc": "2.0",
@@ -200,6 +222,17 @@ allowed_tools = ["search"]
     )
     assert created is not None
     session_id = created["result"]["session"]["session_id"]  # type: ignore[index]
+    selected = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 31,
+            "method": "session.create",
+            "params": {"cwd": str(tmp_path), "provider": "openai"},
+        }
+    )
+    assert selected is not None
+    assert selected["result"]["session"]["metadata"]["provider"] == "openai"  # type: ignore[index]
+    assert selected["result"]["session"]["metadata"]["model"] == "gpt-4o"  # type: ignore[index]
     mcp = server.handle(
         {"jsonrpc": "2.0", "id": 4, "method": "mcp.list", "params": {"session_id": session_id}}
     )
@@ -371,7 +404,10 @@ unsafe = true
 
 def test_run_list_and_session_fork_are_recoverable(tmp_path) -> None:
     config_path = _write_worker_config(tmp_path)
-    server = WorkerServer(store_path=tmp_path / "events.sqlite3", config_path=config_path)
+    server = WorkerServer(
+        store_path=tmp_path / "events.sqlite3",
+        config_loader=lambda cwd: load_config(config_path, cwd=cwd),
+    )
     server.handle(
         {
             "jsonrpc": "2.0",
@@ -426,7 +462,10 @@ def test_run_list_and_session_fork_are_recoverable(tmp_path) -> None:
 
 def test_run_cancel_closes_a_suspended_run(tmp_path) -> None:
     config_path = _write_worker_config(tmp_path)
-    server = WorkerServer(store_path=tmp_path / "events.sqlite3", config_path=config_path)
+    server = WorkerServer(
+        store_path=tmp_path / "events.sqlite3",
+        config_loader=lambda cwd: load_config(config_path, cwd=cwd),
+    )
     server.handle(
         {
             "jsonrpc": "2.0",
@@ -477,7 +516,7 @@ def test_run_cancel_closes_a_suspended_run(tmp_path) -> None:
 
 def test_background_run_honors_cancellation_signal(tmp_path) -> None:
     config_path = _write_worker_config(tmp_path)
-    server = WorkerServer(config_path=config_path)
+    server = WorkerServer(config_loader=lambda cwd: load_config(config_path, cwd=cwd))
     server.handle(
         {
             "jsonrpc": "2.0",
@@ -603,7 +642,7 @@ def test_session_usage_totals_what_the_run_spent(tmp_path) -> None:
         '[sandbox]\nbackend = "host"\nunsafe = true\n',
         encoding="utf-8",
     )
-    server = WorkerServer(config_path=config_path)
+    server = WorkerServer(config_loader=lambda cwd: load_config(config_path, cwd=cwd))
     server.handle(
         {
             "jsonrpc": "2.0",

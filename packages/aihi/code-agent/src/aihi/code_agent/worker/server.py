@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -65,7 +65,7 @@ class WorkerServer:
         *,
         store: EventStore | None = None,
         store_path: str | Path | None = None,
-        config_path: str | Path | None = None,
+        config_loader: Callable[[str | Path], CodeAgentConfig] | None = None,
     ) -> None:
         if store is not None and store_path is not None:
             raise ValueError("store and store_path are mutually exclusive")
@@ -74,9 +74,7 @@ class WorkerServer:
         self.shutdown_requested = False
         self._store: EventStore | None = store
         self._store_path = str(store_path) if store_path is not None else None
-        self._config_path = (
-            str(Path(config_path).expanduser().resolve()) if config_path is not None else None
-        )
+        self._config_loader = config_loader or (lambda cwd: load_config(cwd=cwd))
         self._owns_store = False
         self._sessions: dict[str, Session] = {}
         self._task_graphs: dict[str, TaskGraph] = {}
@@ -301,11 +299,10 @@ class WorkerServer:
 
     def _session_create(self, params: JsonObject) -> JsonObject:
         cwd = self._required_text(params, "cwd", max_length=4_096)
-        config = load_config(self._config_path, cwd=cwd)
+        config = self._config_loader(cwd)
         provider = self._optional_text_value(params.get("provider"), "provider", max_length=256)
         model = self._optional_text_value(params.get("model"), "model", max_length=256)
-        resolved_provider = provider or config.provider.name
-        resolved_model = model or config.provider.model
+        selected = config.select_provider(provider, model=model)
         session_id = params.get("session_id")
         if session_id is not None and (
             not isinstance(session_id, str) or not session_id.strip()
@@ -315,8 +312,8 @@ class WorkerServer:
         session = Session.create(
             self._ensure_store(),
             cwd=cwd,
-            provider=resolved_provider,
-            model=resolved_model,
+            provider=selected.provider.name,
+            model=selected.provider.model,
             session_id=session_id,
             metadata=metadata,
             event_observer=self._observe_event,
@@ -515,7 +512,7 @@ class WorkerServer:
             params.get("max_output_tokens"), "max_output_tokens"
         )
         run_id = self._optional_text_value(params.get("run_id"), "run_id", max_length=256)
-        config = load_config(self._config_path, cwd=session.cwd)
+        config = self._config_loader(session.cwd)
         config = config.select_provider(provider, model=model)
         return asyncio.run(
             self._execute_run_start(
@@ -540,7 +537,7 @@ class WorkerServer:
 
     def _config_get(self, params: JsonObject) -> JsonObject:
         cwd = self._optional_text_value(params.get("cwd"), "cwd", max_length=4_096)
-        config = load_config(self._config_path, cwd=cwd or str(Path.cwd()))
+        config = self._config_loader(cwd or str(Path.cwd()))
         return {"config": config.public_descriptor()}
 
     def _run_resume(
@@ -557,7 +554,7 @@ class WorkerServer:
         max_output_tokens = self._optional_positive_int(
             params.get("max_output_tokens"), "max_output_tokens"
         )
-        config = load_config(self._config_path, cwd=session.cwd)
+        config = self._config_loader(session.cwd)
         return asyncio.run(
             self._execute_run_resume(
                 config,
@@ -614,7 +611,7 @@ class WorkerServer:
         session = self._load_session(params)
         run_id = self._required_text(params, "run_id", max_length=256)
         reason = self._optional_text_value(params.get("reason"), "reason", max_length=4_096)
-        config = load_config(self._config_path, cwd=session.cwd)
+        config = self._config_loader(session.cwd)
         return asyncio.run(self._execute_run_cancel(config, session, run_id=run_id, reason=reason))
 
     @staticmethod
@@ -769,7 +766,7 @@ class WorkerServer:
 
     def _skill_list(self, params: JsonObject) -> JsonObject:
         session = self._load_session(params)
-        config = load_config(self._config_path, cwd=session.cwd)
+        config = self._config_loader(session.cwd)
         discovery, trust = self._skill_components(config)
         candidates = discovery.discover()
         return {
@@ -798,7 +795,7 @@ class WorkerServer:
         enable = params.get("enable", True)
         if not isinstance(enable, bool):
             raise RpcValidationError("enable must be a boolean", code=INVALID_PARAMS)
-        config = load_config(self._config_path, cwd=session.cwd)
+        config = self._config_loader(session.cwd)
         discovery, trust = self._skill_components(config)
         candidate = next((item for item in discovery.discover() if item.key == name), None)
         if candidate is None:
@@ -809,7 +806,7 @@ class WorkerServer:
     def _skill_untrust(self, params: JsonObject) -> JsonObject:
         session = self._load_session(params)
         name = self._required_text(params, "name", max_length=256)
-        config = load_config(self._config_path, cwd=session.cwd)
+        config = self._config_loader(session.cwd)
         discovery, trust = self._skill_components(config)
         candidate = next((item for item in discovery.discover() if item.key == name), None)
         if candidate is None:
@@ -821,7 +818,7 @@ class WorkerServer:
 
     def _mcp_list(self, params: JsonObject) -> JsonObject:
         session = self._load_session(params)
-        config = load_config(self._config_path, cwd=session.cwd)
+        config = self._config_loader(session.cwd)
         return {
             "session_id": session.id,
             "servers": [
@@ -843,7 +840,7 @@ class WorkerServer:
 
     def _tool_list(self, params: JsonObject) -> JsonObject:
         session = self._load_session(params)
-        config = load_config(self._config_path, cwd=session.cwd)
+        config = self._config_loader(session.cwd)
         names = list(config.tools)
         if config.skill_load_tool and config.skill_roots and "load_skill" not in names:
             names.append("load_skill")
@@ -1096,19 +1093,11 @@ class WorkerServer:
                         code=INVALID_PARAMS,
                     )
             self._store_path = requested_path
-        raw_config_path = params.get("config_path")
-        if raw_config_path is not None:
-            if not isinstance(raw_config_path, str) or not raw_config_path.strip():
-                raise RpcValidationError(
-                    "config_path must be a non-empty string", code=INVALID_PARAMS
-                )
-            requested_config = str(Path(raw_config_path).expanduser().resolve())
-            if self._config_path is not None and self._config_path != requested_config:
-                raise RpcValidationError(
-                    "initialize config_path does not match the Worker configuration",
-                    code=INVALID_PARAMS,
-                )
-            self._config_path = requested_config
+        if "config_path" in params:
+            raise RpcValidationError(
+                "config_path is not supported; configuration locations are fixed",
+                code=INVALID_PARAMS,
+            )
         self._ensure_store()
         self.initialized = True
         if is_notification:
