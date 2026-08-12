@@ -1,80 +1,114 @@
 # @aihi/code-cli
 
-TypeScript-side transport and Ink TUI for the local AIHI Code Worker. It
-launches the Python worker, performs the versioned `initialize` handshake,
-receives `event` notifications, and exposes the Coding Agent run loop.
+Local TypeScript/Ink terminal UI for the AIHI coding-agent Worker.
 
-The current local wire contract is protocol `0.2`. It requires an exact-version
-handshake: a `0.1` CLI and `0.2` Worker intentionally refuse to connect instead
-of guessing across incompatible Run acknowledgement shapes.
+The CLI launches the Python `aihi-code-agent` Worker, performs the protocol `0.2` handshake, renders durable and live events, and provides the interactive controls expected from a small coding-agent CLI. It is a private workspace app rather than a published npm library.
 
-The worker uses JSON-RPC 2.0 envelopes framed as:
+## Features
+
+- Workspace-aware sessions backed by a SQLite event store.
+- New, continue, open, fork, resume, interrupt, and cancel workflows.
+- Provider and model pickers, approval prompts, Skill/MCP/tool inspection, and `/doctor` diagnostics.
+- Content-Length framed JSON-RPC over a local Worker process; reconnect and event replay use the same transcript projector.
+- Multiline composer, command suggestions, scrollable transcript, tool previews with credential redaction, and light/dark terminal themes.
+
+## Architecture
 
 ```text
-Content-Length: <UTF-8 byte length>\r\n
-\r\n
-<JSON object>
+Ink TUI (React)
+      │
+      ▼
+RpcClient ── Content-Length framed JSON-RPC 2.0 ── stdin/stdout
+                                                        │
+                                                        ▼
+                                   aihi-code-agent Worker (Python)
+                                                        │
+                                                        ▼
+                                   SQLite events + configured workspace
 ```
 
-The worker must be installed in the selected Python environment, or callers can
-override `command`, `args`, `cwd`, and `env` in `RpcClient.connect()`. Set
-`storePath` to use the Worker's SQLite event store; when omitted, the Worker
-uses an in-memory store for the process lifetime. The `aihi-code` executable
-always supplies `~/.aihi/sessions.sqlite3` by default, so normal CLI sessions
-survive process restarts.
+The TUI owns presentation and user interaction. The Worker owns configuration, provider/runtime composition, tools, Skills, MCP, approvals, and durable state. Protocol DTOs and schemas are shared through [`@aihi/code-protocol`](../../packages/aihi/code-protocol/README.md).
 
-The current Worker command surface is deliberately small:
+## Requirements
 
-- `session.create`, `session.list`, `session.get`, `session.events`
-- `session.fork`
-- `task.create`, `task.spawn`, `task.get`, `task.list`, `task.transition`
-- `run.start`, `run.resume`, `run.list`, `run.cancel`
-- `approval.list`, `approval.resolve`
-- `skill.list`, `skill.trust`, `skill.untrust`
-- `config.get`, `mcp.list`, `tool.list`
+- Node.js 20 or newer
+- pnpm 9
+- Python 3.11 or newer
+- An installed or workspace-available `aihi-code-agent-worker`
 
-Mutating commands append canonical events in the Worker and the same events are
-sent to the CLI as `event` notifications. `session.events` is the replay path
-for reconnecting a TUI from a known sequence number. Replay and live durable
-notifications feed the same Transcript projector: user and assistant messages,
-Tool lifecycle, Approval state, and Run failures therefore render identically
-before and after reconnect. Tool previews use an allowlist of display fields;
-arbitrary Tool inputs are never serialized into the terminal transcript, and
-credential-shaped substrings in allowlisted text are redacted.
+## Install and build
 
-After installing the TypeScript dependencies and building, start the local TUI
-with:
+From the repository root:
 
 ```bash
-npm run build
-aihi-code
+uv sync
+pnpm install
+pnpm --filter @aihi/code-cli build
 ```
 
-Launching starts a **new** session unless `--continue` or `--session` is used.
-Any bare words after the options are the first turn, so a one-shot run is just:
+The Python Worker can be installed into the active environment with:
 
 ```bash
-aihi-code summarize the auth module
+uv pip install -e packages/aihi/code-agent
 ```
 
-On exit the CLI prints the closed session's id and the command that reopens it
-(`aihi-code --session SESSION_ID`). `--continue` (or `-c`) reopens the newest
-session belonging to the selected workspace. `--store` remains available for
-tests or advanced isolation of the event database.
+## Run
 
-`--workspace PATH` selects the project workspace and is an alias for `--cwd PATH`.
-When `sandbox.root` is omitted, the Worker uses this workspace as the sandbox root;
-an explicit `sandbox.root` can still restrict execution to another directory.
+Start an interactive session in a project:
 
-Configuration directories are fixed: the Worker checks
-`~/.aihi/aihi-code.toml`, the legacy project-root `aihi-code.toml`, and
-`<workspace>/.aihi/aihi-code.toml`. Existing layers are deep-merged in that
-low-to-high precedence order; arrays are replaced by the higher layer. The CLI,
-Worker RPC, and Worker environment do not accept a configuration-path override.
-Relative paths are anchored to the file that declares them before layers are
-merged. Configure the provider, sandbox, Skill roots, and MCP servers there;
-credentials are referenced by environment variable name and are never stored
-in TOML:
+```bash
+node apps/aihi-code-cli/dist/main.js --workspace /path/to/project
+```
+
+After the package is linked or exposed on `PATH`:
+
+```bash
+aihi-code --workspace /path/to/project
+aihi-code --continue --workspace /path/to/project
+aihi-code --session SESSION_ID --workspace /path/to/project
+aihi-code --workspace /path/to/project summarize the auth module
+```
+
+`--workspace` is the readable alias for `--cwd`; both default to the current directory. The default event store is `~/.aihi/sessions.sqlite3`. `--store` is available for tests and advanced isolation, but it does not change the configuration directory.
+
+### Command-line options
+
+| Option | Meaning |
+| --- | --- |
+| `--workspace PATH` | Workspace to operate in; alias for `--cwd` |
+| `--cwd PATH` | Workspace path (default: current directory) |
+| `--store PATH` | SQLite event store (default: `~/.aihi/sessions.sqlite3`) |
+| `--provider NAME` | Provider profile for the first/new session |
+| `--model NAME` | Model for the first/new session |
+| `--session ID` | Open a known session |
+| `--continue`, `-c` | Open the newest session for the workspace |
+| `PROMPT...` | Run a first user turn after startup |
+
+## Slash commands
+
+Type `/help` in the TUI to see the current command list. The main commands are:
+
+| Area | Commands |
+| --- | --- |
+| Sessions | `/new`, `/open`, `/sessions`, `/history`, `/refresh`, `/fork`, `/quit` |
+| Runs | `/run`, `/runs`, `/resume`, `/cancel`, `/interrupt` |
+| Models | `/provider`, `/model`, `/status` |
+| Approvals | `/approvals`, `/approve ID [once]`, `/deny ID` |
+| Configuration | `/config`, `/doctor` |
+| Integrations | `/skills`, `/skill-trust`, `/skill-disable`, `/skill-untrust`, `/mcp`, `/tools` |
+| Tasks | `/task`, `/task-start`, `/task-done`, `/task-cancel` |
+
+Approving or denying a tool request resolves the Worker-owned approval and then resumes the run so the model receives the resulting `ToolResult`. A session has at most one foreground run; `Ctrl-C` interrupts that run and exits when no run is active.
+
+## Configuration
+
+The Worker checks these fixed locations, in increasing precedence:
+
+1. `~/.aihi/aihi-code.toml`
+2. legacy project-root `aihi-code.toml`
+3. `<workspace>/.aihi/aihi-code.toml`
+
+The CLI, Worker RPC, and environment do not accept a configuration-path override. Relative paths are anchored to the file that declares them. A typical project configuration is:
 
 ```toml
 [provider]
@@ -88,26 +122,14 @@ api_key_env = "OPENAI_API_KEY"
 
 [sandbox]
 backend = "host"
-unsafe = true
-
-[artifacts]
-enabled = true
-path = "artifacts"
-
-[audit]
-# Redacted event audit, relative to this config file.
-enabled = true
-path = "audit.jsonl"
+unsafe = false
 
 [agent]
-permission_mode = "default"
-compact_model = "deepseek-chat"
-context_window = 128000
+permission_mode = "default" # default | accept_edits | plan | bypass
 
-[subagents]
-enabled = false
-model = "deepseek-chat"
-capabilities = ["filesystem.read"]
+[audit]
+enabled = true
+path = "audit.jsonl"
 
 [[skills.roots]]
 path = "skills"
@@ -115,88 +137,43 @@ scope = "project"
 
 [skills]
 load_tool = true
-trust_lockfile = "skills.lock.json"
 
 [mcp.servers.example]
 command = ["python3", "-m", "example_mcp_server"]
 allowed_tools = ["search"]
 ```
 
-The generated user configuration keeps `sandbox.unsafe = false`. On first use
-of Host mode, the TUI explains that Host execution is not isolated and asks the
-user to trust the exact workspace and resolved Host execution root. That
-acknowledgement is stored in the fixed user file `~/.aihi/host-workspaces.json`;
-trusting one workspace does not trust another, and changing `sandbox.root`
-requires confirmation again. Setting `unsafe = true` in configuration remains
-the explicit non-interactive opt-in.
+API keys are referenced by environment variable name and are not stored in TOML. The generated user configuration keeps Host execution disabled. If Host mode is selected, the TUI requests consent for the exact workspace and resolved root; the acknowledgement is stored in `~/.aihi/host-workspaces.json`. Host mode is not process isolation.
 
-`[agent].permission_mode` controls the default Tool authorization policy for
-new Runs. Valid values are:
+## Sessions and recovery
 
-- `default`: read-only Tools run normally; edits and process execution require Approval;
-- `accept_edits`: workspace edits are allowed without Approval, but process execution still requires Approval;
-- `plan`: mutating and process-executing Tools are denied;
-- `bypass`: explicitly allows Tools after hard safety denies; use only in a trusted, isolated setup.
+The Worker persists canonical events; the CLI replays `session.events` and feeds replayed and live notifications through the same transcript projector. Temporary model chunks are rendered while a run is active, but only the canonical assistant message is durable. `/history` reloads persisted events, `/refresh` replays the current session, and `/fork [SEQ]` creates a branch.
 
-The setting is recorded in Run metadata for resume consistency and does not
-disable hard denies such as sensitive credential paths.
+`PageUp`/`PageDown` scroll the transcript, `Ctrl-E` follows the newest output, and `Ctrl-O` expands or collapses tool details. The composer supports pasted or `Ctrl-J`-inserted multiline prompts, local history with `Up`/`Down`, and slash completion with `Tab`/`Shift-Tab`.
 
-Use `--session SESSION_ID` to reopen a known session on startup, or `--continue`
-to reopen the newest session for the workspace. `/sessions`
-selects the newest persisted session when no session is specified; `/open` can
-switch to another one. `/runs` lists run states, `/history` reloads the event
-history, `/fork [SEQ]` creates a branch, and `/cancel RUN_ID` requests
-cancellation of an active run or closes a suspended/recoverable run. Model
-chunks are delivered as ephemeral Worker notifications and rendered while the
-run is in progress. The canonical `assistant.message` replaces that temporary
-stream display; ephemeral chunks are never inserted into the durable transcript.
-The transcript viewport follows the newest line by default. `PageUp`/`PageDown`
-scroll it without changing the underlying Event projection, `Ctrl-E` resumes
-tail following, and `Ctrl-O` expands or collapses Tool result details. Its line
-budget tracks terminal resize events instead of keeping a fixed entry count.
-Only one foreground Run may own a Session. While it is active the composer is
-disabled; `Ctrl-C` requests interruption of that Run, while `Ctrl-C` with no
-active Run exits the CLI. Different Sessions may still run concurrently in the
-Worker.
-The composer supports pasted or `Ctrl-J`-inserted multiline prompts, local
-command history with `Up`/`Down`, and slash-command suggestions completed with
-`Tab` or `Shift-Tab`. `Enter` submits the full draft; command history remains
-process-local and is not another durable Session store.
-Editing follows readline: `Backspace` erases the previous character,
-`Ctrl-W` or `Option`/`Alt`-`Backspace` the previous word, `Ctrl-U` back to the
-start of the current line, `Ctrl-D` the character ahead of the cursor, and
-`Esc` the whole draft. Terminals report `Backspace` as the DEL byte, which Ink
-cannot distinguish from the forward-delete key, so that key also erases
-backwards.
-The palette is chosen for contrast rather than the terminal's own 16-colour
-names, whose "gray" and "blue" are frequently unreadable on a dark background:
-text tones hold at least 4.5:1 and chrome at least 3:1 against the backgrounds
-of their scheme. The scheme is taken from `COLORFGBG` when the terminal
-publishes it and assumed dark otherwise; `AIHI_THEME=light` or
-`AIHI_THEME=dark` overrides the detection.
-The default Coding tool set also includes read-only `git_status` and `git_diff`;
-they never stage or modify changes and remain subject to the same Tool policy
-chain.
+## Diagnostics and security
 
-After `/new`, ordinary input is a user turn and runs the Coding Agent loop.
-Use `/provider NAME [MODEL]` and `/model MODEL` to choose a configured Provider
-profile and model for subsequent new Runs; omit the arguments to open a
-keyboard-searchable picker. `/sessions [QUERY]` opens the same kind of picker
-for persisted sessions (the optional query is applied immediately). `/status`
-shows the active workspace/session/model/run snapshot, while `/doctor` checks
-the resolved configuration, the configured audit JSONL destination (including
-whether an existing file or its parent is writable), and the session-scoped
-Tool, MCP, and Skill registries. `/config` shows the effective, non-secret configuration. Provider profiles are declared under
-`[providers.<name>]`, while `[provider]` remains the default.
-Use `/mcp` and `/tools` to inspect configured integrations, and
-`/skill-disable NAME` or `/skill-untrust NAME` to remove a Skill's active trust.
-`/run MESSAGE` is an explicit equivalent; `/resume RUN_ID` continues an
-interrupted or approval-suspended run. Use `/approvals`, `/approve ID [once]`,
-and `/deny ID` to operate the Worker-owned approval projection; resolving an
-approval never auto-resumes inside the Worker. The TUI resumes after both an
-approval and a denial so the model receives the decision as its ToolResult.
-Approval prompts show a bounded, credential-redacted preview of the proposed
-command or file change together with required capabilities, reason, and sandbox
-context. Use `/skills` and `/skill-trust NAME` to inspect and explicitly trust
-Skill hashes. Skill bodies remain explicit/trusted, and MCP tools enter the same
-registry/policy chain as built-in tools.
+`/doctor` checks resolved configuration, provider metadata, session-scoped tools/MCP/Skills, audit destination writability, and Host consent state. Audit observations are redacted, bounded, and written with owner-only permissions by the Worker. Tool previews use an allowlist and credential-shaped substrings are redacted before display.
+
+Review `permission_mode` before enabling edits or process execution:
+
+- `default`: read-only tools run; edits and processes ask.
+- `accept_edits`: edits run; processes still ask.
+- `plan`: mutating/process tools are denied.
+- `bypass`: permits tools after hard safety denies; use only in a trusted isolated setup.
+
+## Development
+
+```bash
+pnpm --filter @aihi/code-cli typecheck
+pnpm --filter @aihi/code-cli test
+pnpm --filter @aihi/code-cli build
+```
+
+Protocol changes should update the Worker, [`@aihi/code-protocol`](../../packages/aihi/code-protocol/README.md), CLI tests, and compatibility handshake together.
+
+## Related documentation
+
+- [`aihi-code-agent`](../../packages/aihi/code-agent/README.md)
+- [`aihi-agent`](../../packages/aihi/agent/README.md)
+- [Repository architecture](../../docs/ARCHITECTURE.md)

@@ -1,33 +1,80 @@
 # @aihi/code-protocol
 
-Language-neutral RPC schemas and TypeScript types for the TypeScript
-`aihi-code-cli` and Python `aihi-code-agent` Worker boundary.
+Versioned TypeScript DTOs and JSON Schemas for the AIHI coding-agent Worker boundary.
 
-The protocol uses JSON-RPC 2.0 envelopes framed with `Content-Length` headers.
-Durable Agent events carry a session sequence; ephemeral stream events are
-best-effort UI data and never replace the persisted event log.
+This private workspace package is the language-neutral contract between the Python `aihi-code-agent` Worker and the TypeScript `@aihi/code-cli` client. It defines data and compatibility rules; it does not start a Worker, execute tools, or contain business policy.
 
-The Worker advertises the available command descriptors in the `initialize`
-result. Protocol `0.2` uses an exact-version handshake and publishes:
+## Responsibilities
 
-```text
-session.create/list/get/events/fork/usage
-task.create/spawn/get/list/transition
-run.start/resume/list/cancel
-approval.list/resolve
-skill.list/trust/untrust
-config.get/init/acknowledge_host
-mcp.list   tool.list
+- JSON-RPC 2.0 request, response, notification, and error types.
+- Agent, session, task, run, approval, Skill, MCP, tool, and configuration DTOs.
+- Protocol version and exact handshake constants.
+- Checked-in JSON Schemas for envelopes and high-value notifications.
+- TypeScript compile-time contracts shared by clients and protocol tests.
+
+The Worker implementation and Content-Length framing live in `aihi-code-agent` and the CLI RPC client respectively. Keep this package free of runtime side effects so another host can implement the same protocol.
+
+## Compatibility
+
+The current protocol version is `0.2`. Clients and Workers perform an exact-version handshake; a mismatch must be surfaced as a compatibility error rather than silently downgraded.
+
+Transport messages are JSON-RPC 2.0 objects framed with a `Content-Length` header over a byte stream. The framing is deliberately separate from the DTO package so transports other than stdio can reuse the same payloads.
+
+## Command groups
+
+| Group | Methods |
+| --- | --- |
+| Sessions | `session.create`, `session.list`, `session.get`, `session.events`, `session.fork`, `session.usage` |
+| Tasks | `task.create`, `task.spawn`, `task.get`, `task.list`, `task.transition` |
+| Runs | `run.start`, `run.resume`, `run.list`, `run.cancel` |
+| Approvals | `approval.list`, `approval.resolve` |
+| Skills | `skill.list`, `skill.trust`, `skill.untrust` |
+| Configuration | `config.get`, `config.init`, `config.acknowledge_host` |
+| Integrations | `mcp.list`, `tool.list` |
+
+`run.start` and `run.resume` are asynchronous acceptance commands. Terminal state is delivered through notifications such as `run.completed`, `run.failed`, `run.interrupted`, `run.cancelled`, `run.error`, and `approval.requested`.
+
+## Usage
+
+```ts
+import {
+  PROTOCOL_VERSION,
+  type ConfigDescriptor,
+  type CodeRpcMethod,
+} from "@aihi/code-protocol";
+
+const version = PROTOCOL_VERSION; // "0.2"
+const method: CodeRpcMethod = "run.start";
+
+function showConfig(config: ConfigDescriptor) {
+  console.log(config.workspace, config.provider, config.audit);
+}
 ```
 
-`run.start` and `run.resume` return a non-blocking acknowledgement with a
-required `run_id`; progress and terminal state arrive through `event`
-notifications. If an acknowledged Run fails before it can produce a canonical
-Run event, the Worker emits `run.error` with both `session_id` and `run_id`.
+The package exports its TypeScript entrypoint as `@aihi/code-protocol` and checked-in schemas under `@aihi/code-protocol/schema/*`.
 
-All mutating commands are handled by the Python Worker. The CLI recovers a
-session by following `session.events(after_seq)` until `has_more` is false, then
-continues consuming `event` notifications. TypeScript request/result mappings
-and runtime guards live in this package beside the language-neutral JSON
-schemas. The protocol carries JSON DTOs only; it never exposes Python runtime
-objects.
+## Repository layout
+
+```text
+src/index.ts                         DTOs, unions, constants, and type guards
+schema/rpc-envelope.schema.json      JSON-RPC envelope
+schema/event-notification.schema.json event stream notifications
+schema/run-accepted.schema.json      asynchronous run acceptance
+schema/run-error-notification.schema.json pre-run errors
+schema/approval-descriptor.schema.json approval payloads
+```
+
+## Development
+
+```bash
+pnpm --filter @aihi/code-protocol typecheck
+pnpm --filter @aihi/code-protocol build
+```
+
+The package is currently `private` and is consumed through the workspace. Any protocol change should update the TypeScript unions, the corresponding schema, Worker behavior, CLI behavior, and contract tests together.
+
+## Related packages
+
+- [`aihi-code-agent`](../code-agent/README.md) implements the Python Worker.
+- [`@aihi/code-cli`](../../../apps/aihi-code-cli/README.md) is the local TUI client.
+- [Repository architecture](../../../docs/ARCHITECTURE.md)
