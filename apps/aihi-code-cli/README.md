@@ -163,8 +163,12 @@ chain.
 
 After `/new`, ordinary input is a user turn and runs the Coding Agent loop.
 Use `/provider NAME [MODEL]` and `/model MODEL` to choose a configured Provider
-profile and model for subsequent new Runs; `/config` shows the effective,
-non-secret configuration. Provider profiles are declared under
+profile and model for subsequent new Runs; omit the arguments to open a
+keyboard-searchable picker. `/sessions [QUERY]` opens the same kind of picker
+for persisted sessions (the optional query is applied immediately). `/status`
+shows the active workspace/session/model/run snapshot, while `/doctor` checks
+the resolved configuration and the session-scoped Tool, MCP, and Skill
+registries. `/config` shows the effective, non-secret configuration. Provider profiles are declared under
 `[providers.<name>]`, while `[provider]` remains the default.
 Use `/mcp` and `/tools` to inspect configured integrations, and
 `/skill-disable NAME` or `/skill-untrust NAME` to remove a Skill's active trust.

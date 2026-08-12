@@ -3,6 +3,7 @@ import { Box, Text, useApp, useInput, useStdout } from "ink";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   ApprovalDescriptor,
+  ConfigDescriptor,
   RunResult,
   SessionDescriptor,
   TaskDescriptor,
@@ -27,6 +28,17 @@ import {
 } from "./composer.js";
 import { ComposerInput } from "./composer-view.js";
 import { commandHelpSummary, SLASH_COMMANDS } from "./commands.js";
+import {
+  filterPickerOptions,
+  modelPickerOptions,
+  movePickerSelection,
+  pickerTitle,
+  providerPickerOptions,
+  sessionPickerOptions,
+  type PickerMode,
+  type PickerOption,
+  type PickerState,
+} from "./picker.js";
 import { createTheme, resolveThemeName, ThemeProvider, useTheme, type Theme } from "./theme.js";
 import {
   buildTranscriptLines,
@@ -45,6 +57,11 @@ type UiColor = string;
 
 /** Notices name a tone rather than a colour, so state outlives the palette. */
 type NoticeTone = "warn" | "bad";
+
+interface CommandReport {
+  title: string;
+  lines: string[];
+}
 
 export interface TuiAppProps {
   client: RpcClient;
@@ -107,6 +124,55 @@ function approvalStatus(approvals: ApprovalDescriptor[]): string {
 
 function truncate(value: string, length = 600): string {
   return value.length > length ? `${value.slice(0, length)}…` : value;
+}
+
+function statusReport({
+  cwd,
+  selectedSession,
+  selectedSessionId,
+  activeProvider,
+  activeModel,
+  activeRunId,
+  transcript,
+  context,
+  tasks,
+  approvals,
+}: {
+  cwd: string;
+  selectedSession?: SessionDescriptor;
+  selectedSessionId?: string;
+  activeProvider: string;
+  activeModel: string;
+  activeRunId?: string;
+  transcript: TranscriptProjection;
+  context: { tokens: number; limit: number };
+  tasks: TaskDescriptor[];
+  approvals: ApprovalDescriptor[];
+}): CommandReport {
+  return {
+    title: "STATUS",
+    lines: [
+      `workspace · ${tildePath(cwd)}`,
+      `session · ${selectedSessionId ?? "none"}${selectedSession ? ` · seq ${transcript.headSeq}` : ""}`,
+      `model · ${activeProvider}/${activeModel}`,
+      `run · ${activeRunId ?? "ready"}${approvals.length > 0 ? ` · ${approvals.length} approval(s)` : ""}`,
+      `context · ${context.limit > 0 ? `${context.tokens}/${context.limit} (${((context.tokens / context.limit) * 100).toFixed(1)}%)` : "not reported"}`,
+      `tasks · ${tasks.length}`,
+    ],
+  };
+}
+
+function configReport(config: ConfigDescriptor, sessionId?: string): CommandReport {
+  return {
+    title: "DOCTOR",
+    lines: [
+      "✓ config loaded" + (config.source_path ? ` · ${tildePath(config.source_path)}` : " · defaults"),
+      `✓ providers · ${config.providers.length || 1} configured · active ${config.provider.name}/${config.provider.model}`,
+      `✓ sandbox · ${config.sandbox.backend}${config.sandbox.unsafe ? " · unsafe host opt-in" : ""}`,
+      `✓ tools · ${config.tools.length}`,
+      `! session-scoped checks ${sessionId ? "pending" : "skipped · no session"}`,
+    ],
+  };
 }
 
 function approvalInput(approval: ApprovalDescriptor): string {
@@ -300,6 +366,71 @@ function HostConsentPanel({ cwd, root }: { cwd: string; root: string }) {
   );
 }
 
+/** Keyboard-first selector shared by Sessions, Providers, and Models. */
+function PickerPanel({
+  state,
+  options,
+}: {
+  state: PickerState;
+  options: PickerOption[];
+}) {
+  const theme = useTheme();
+  const start = Math.min(
+    Math.max(0, state.selectedIndex - 7),
+    Math.max(0, options.length - 8),
+  );
+  const visible = options.slice(start, start + 8);
+  const selected = options[state.selectedIndex];
+  return (
+    <Box borderStyle="round" borderColor={theme.accent} flexDirection="column" paddingX={1}>
+      <Box justifyContent="space-between">
+        <Text bold color={theme.accent}>{pickerTitle(state.mode)}</Text>
+        <Text color={theme.faint}>{options.length} match{options.length === 1 ? "" : "es"}</Text>
+      </Box>
+      <Box>
+        <Text color={theme.accent}>⌕ </Text>
+        <Text color={theme.text}>{state.query || "Type to search…"}</Text>
+      </Box>
+      {visible.length === 0 ? (
+        <Text color={theme.muted}>No matching entries</Text>
+      ) : (
+        visible.map((option, index) => {
+          const absoluteIndex = start + index;
+          return (
+          <Box key={option.key}>
+            <Text color={absoluteIndex === state.selectedIndex ? theme.accent : theme.muted}>
+              {absoluteIndex === state.selectedIndex ? "› " : "  "}
+            </Text>
+            <Text bold={absoluteIndex === state.selectedIndex} color={absoluteIndex === state.selectedIndex ? theme.text : theme.muted}>
+              {option.label}
+            </Text>
+            {option.detail && <Text color={theme.faint}>  {option.detail}</Text>}
+          </Box>
+          );
+        })
+      )}
+      {selected !== undefined && options.length > 8 && (
+        <Text color={theme.faint}>showing 8 of {options.length}</Text>
+      )}
+      <Text color={theme.faint}>↑/↓ select · Enter confirm · Esc close · Backspace erase</Text>
+    </Box>
+  );
+}
+
+function ReportPanel({ report }: { report: CommandReport }) {
+  const theme = useTheme();
+  return (
+    <Box borderStyle="round" borderColor={theme.border} flexDirection="column" paddingX={1}>
+      <Text bold color={theme.brand}>{report.title}</Text>
+      {report.lines.map((line, index) => (
+        <Text key={`${index}-${line}`} color={line.startsWith("✓") ? theme.good : line.startsWith("!") ? theme.warn : theme.text} wrap="truncate">
+          {line}
+        </Text>
+      ))}
+    </Box>
+  );
+}
+
 function transcriptTone(theme: Theme, tone: TranscriptLineTone): UiColor | undefined {
   if (tone === "user") return theme.accent;
   if (tone === "assistant") return theme.brand;
@@ -407,7 +538,31 @@ export function TuiApp({
   // Kept apart from `status`: a notice must survive the event traffic that
   // follows it, which is exactly what the old status heartbeat destroyed.
   const [notice, setNotice] = useState<{ text: string; tone: NoticeTone }>();
+  const [report, setReport] = useState<CommandReport>();
+  const [picker, setPicker] = useState<PickerState>();
   const [hostConsentPending, setHostConsentPending] = useState(hostConsentRequired);
+
+  const openPicker = useCallback(async (mode: PickerMode, initialQuery = "") => {
+    let options: PickerOption[];
+    if (mode === "session") {
+      const nextSessions = await client.listSessions();
+      setSessions(nextSessions);
+      options = sessionPickerOptions(nextSessions);
+    } else {
+      const config = await client.getConfig(cwd);
+      const providers = config.providers.length > 0 ? config.providers : [config.provider];
+      options = mode === "provider"
+        ? providerPickerOptions(providers)
+        : modelPickerOptions(providers);
+    }
+    setPicker({ mode, query: initialQuery, selectedIndex: 0, options });
+    setStatus(`${pickerTitle(mode)} · type to filter`);
+  }, [client, cwd]);
+
+  const filteredPickerOptions = useMemo(
+    () => picker === undefined ? [] : filterPickerOptions(picker.options, picker.query),
+    [picker],
+  );
 
   useEffect(() => {
     const updateTerminal = () => setTerminal({
@@ -655,6 +810,7 @@ export function TuiApp({
     const name = parts[0].toLowerCase().replace(/^\//, "");
     const args = parts.slice(1);
     let submittedRunId: string | undefined;
+    setReport(undefined);
     setBusy(true);
     try {
       if (name === "quit" || name === "exit" || name === "q") {
@@ -672,9 +828,48 @@ export function TuiApp({
         );
         return;
       }
+      if (name === "status") {
+        setReport(statusReport({
+          cwd,
+          selectedSession,
+          selectedSessionId,
+          activeProvider,
+          activeModel,
+          activeRunId,
+          transcript,
+          context,
+          tasks,
+          approvals,
+        }));
+        setStatus("Status snapshot ready");
+        return;
+      }
+      if (name === "doctor") {
+        const config = await client.getConfig(cwd);
+        const reportLines = configReport(config, selectedSessionId).lines;
+        if (selectedSessionId) {
+          const checks = await Promise.allSettled([
+            client.listTools(selectedSessionId),
+            client.listMcpServers(selectedSessionId),
+            client.listSkills(selectedSessionId),
+          ]);
+          const [tools, mcp, skills] = checks;
+          reportLines.push(
+            tools.status === "fulfilled" ? `✓ tool registry · ${tools.value.length} available` : `! tool registry · ${errorMessage(tools.reason)}`,
+            mcp.status === "fulfilled" ? `✓ MCP registry · ${mcp.value.length} configured` : `! MCP registry · ${errorMessage(mcp.reason)}`,
+            skills.status === "fulfilled" ? `✓ skill registry · ${skills.value.length} discovered` : `! skill registry · ${errorMessage(skills.reason)}`,
+          );
+        }
+        setReport({ title: "DOCTOR", lines: reportLines });
+        setStatus("Diagnostics complete");
+        return;
+      }
       if (name === "provider") {
         const selectedName = args[0];
-        if (!selectedName) throw new Error("Usage: /provider NAME [MODEL]");
+        if (!selectedName) {
+          await openPicker("provider");
+          return;
+        }
         const config = await client.getConfig(cwd);
         const selected = config.providers.find((item) => item.name === selectedName.replace(/-/g, "_").toLowerCase());
         if (!selected) throw new Error(`Provider is not configured: ${selectedName}`);
@@ -685,13 +880,16 @@ export function TuiApp({
       }
       if (name === "model") {
         const selectedModel = args[0];
-        if (!selectedModel) throw new Error("Usage: /model MODEL");
+        if (!selectedModel) {
+          await openPicker("model");
+          return;
+        }
         setActiveModel(selectedModel);
         setStatus(`Selected ${activeProvider}/${selectedModel}`);
         return;
       }
       if (name === "sessions" || name === "ls") {
-        await refreshSessions();
+        await openPicker("session", args.join(" "));
         return;
       }
       if (name === "runs" || name === "run-list") {
@@ -915,7 +1113,30 @@ export function TuiApp({
       commandInFlightRef.current = false;
       setBusy(false);
     }
-  }, [activeModel, activeProvider, activeRunId, cwd, loadSession, model, provider, quit, refreshSessions, resolvePendingApproval, selectedSessionId]);
+  }, [activeModel, activeProvider, activeRunId, approvals, context, cwd, loadSession, model, openPicker, provider, quit, refreshSessions, resolvePendingApproval, selectedSession, selectedSessionId, tasks, transcript]);
+
+  const selectPickerOption = useCallback(async (option: PickerOption) => {
+    const mode = picker?.mode;
+    setPicker(undefined);
+    setBusy(true);
+    try {
+      if (mode === "session" && option.sessionId !== undefined) {
+        await loadSession(option.sessionId);
+      } else if (mode === "provider" && option.provider !== undefined) {
+        setActiveProvider(option.provider);
+        setActiveModel(option.model ?? activeModel);
+        setStatus(`Selected ${option.provider}/${option.model ?? activeModel}`);
+      } else if (mode === "model" && option.model !== undefined) {
+        setActiveProvider(option.provider ?? activeProvider);
+        setActiveModel(option.model);
+        setStatus(`Selected ${option.provider ?? activeProvider}/${option.model}`);
+      }
+    } catch (error) {
+      setNotice({ text: `Selection failed: ${errorMessage(error)}`, tone: "bad" });
+    } finally {
+      setBusy(false);
+    }
+  }, [activeModel, activeProvider, loadSession, picker]);
 
   useEffect(() => {
     // Fires once, after the session exists — a prompt on the command line is
@@ -994,6 +1215,8 @@ export function TuiApp({
     13 +
     (notice === undefined ? 0 : 1) +
     (approvals.length > 0 ? 10 : 0) +
+    (report === undefined ? 0 : report.lines.length + 2) +
+    (picker === undefined ? 0 : 12) +
     (composerLines > 1 ? Math.min(3, composerLines) : 0) +
     (suggestionRows > 0 ? suggestionRows + 1 : 0)
   ));
@@ -1019,6 +1242,45 @@ export function TuiApp({
       }
       if (!key.ctrl && !key.meta && input.toLowerCase() === "n") {
         void resolveHostConsent(false);
+      }
+      return;
+    }
+    if (picker !== undefined) {
+      if (key.escape) {
+        setPicker(undefined);
+        setStatus("Selection cancelled");
+        return;
+      }
+      if (key.return) {
+        const selected = filteredPickerOptions[picker.selectedIndex];
+        if (selected !== undefined) void selectPickerOption(selected);
+        return;
+      }
+      if (key.upArrow || key.downArrow) {
+        setPicker((current) => current === undefined ? current : {
+          ...current,
+          selectedIndex: movePickerSelection(
+            current.selectedIndex,
+            filterPickerOptions(current.options, current.query).length,
+            key.downArrow ? "down" : "up",
+          ),
+        });
+        return;
+      }
+      if (key.backspace || key.delete) {
+        setPicker((current) => current === undefined ? current : {
+          ...current,
+          query: Array.from(current.query).slice(0, -1).join(""),
+          selectedIndex: 0,
+        });
+        return;
+      }
+      if (!key.ctrl && !key.meta && input && input !== "\n" && input !== "\r") {
+        setPicker((current) => current === undefined ? current : {
+          ...current,
+          query: `${current.query}${input}`,
+          selectedIndex: 0,
+        });
       }
       return;
     }
@@ -1138,6 +1400,8 @@ export function TuiApp({
           </Text>
         </Box>
       )}
+      {report !== undefined && <ReportPanel report={report} />}
+      {picker !== undefined && <PickerPanel state={{ ...picker, options: filteredPickerOptions }} options={filteredPickerOptions} />}
       {hostConsentPending ? null : awaitingApproval ? (
         <Box>
           <Text bold color={theme.warn}>
@@ -1151,7 +1415,7 @@ export function TuiApp({
         <Box>
           <Text color={theme.warn}>Run in progress · Ctrl-C to interrupt</Text>
         </Box>
-      ) : (
+      ) : picker !== undefined ? null : (
         <ComposerInput
           state={composer}
           commands={SLASH_COMMANDS}

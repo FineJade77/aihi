@@ -513,7 +513,7 @@ OpenAI-compatible 构造器契约以及完整 compile/test/lint/type 门禁全�
 | P-01.1 | 本地协议与恢复加固 | Done | Code Protocol 0.2 冻结非阻塞 Run、`run.error` 与 Approval DTO；共享 method map/runtime guards；TUI 完整分页 replay 长 Session |
 | P-01.2 | 事件驱动对话记录 | Done | Replay 与实时 notification 共用 Transcript projector；展示 User/Assistant、Tool 生命周期与 Approval 状态；序号缺口自动触发完整 replay |
 | P-01.3 | 交互式 Transcript viewport | Done | 终端高度感知、滚动与自动跟随、Tool 结果折叠、多行输入、进程内历史和 slash 补全；Ink 输入流测试覆盖，不改协议 |
-| P-01.4 | 会话与模型选择 UX | Planned | 可搜索 Session/Provider/Model picker、`/status` 与 `/doctor`；继续复用既有 RPC，不先扩协议 |
+| P-01.4 | 会话与模型选择 UX | Done | 可搜索 Session/Provider/Model picker、`/status` 与 `/doctor`；继续复用既有 RPC，不扩协议 |
 | P-02 | Cowork 形态所需的 Harness 缺口 | Planned | 先做现状评估再立项。只有 Provider-neutral、跨产品线可复用的缺口才进 Harness |
 | P-03 | 平台增强（H-03 ~ H-06） | Planned | 控制面、多 Worker、PostgreSQL、远程 OTel。只能是既有协议的新增适配器 |
 | P-04 | Web 前端 | 待办 | TUI 形态跑通前不开工 |

@@ -32,4 +32,4 @@
 - 终端 resize、长消息和多行输入不会再依赖固定条目数；
 - 用户向上滚动后实时事件仍进入同一 Transcript，但视图保持暂停并提示存在更新，直到向下或跟随；
 - Tool output 折叠减少屏幕噪声，完整结果仍保留在 Transcript 投影；
-- Session/Provider/Model 的搜索式选择仍未实现，登记为 P-01.4。
+- Session/Provider/Model 的搜索式选择、`/status` 与 `/doctor` 在 P-01.4 中作为 CLI 应用层能力补齐，继续复用既有 RPC，不改变协议。
