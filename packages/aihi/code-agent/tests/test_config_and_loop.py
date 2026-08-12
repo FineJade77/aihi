@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 
 import pytest
-from aihi.agent import ToolContext, UnsafeHostNotAcknowledged
+from aihi.agent import InMemoryEventStore, ToolContext, UnsafeHostNotAcknowledged
 from aihi.code_agent.config import (
     ensure_user_config,
     load_config,
@@ -152,7 +152,7 @@ async def test_config_defaults_keep_host_execution_disabled(tmp_path) -> None:
 
     assert config.sandbox.unsafe is False
     with pytest.raises(UnsafeHostNotAcknowledged, match="unsafe=True"):
-        await CodeAgentRuntime.create(config)
+        await CodeAgentRuntime.create(config, store=InMemoryEventStore())
 
 
 @pytest.mark.asyncio
@@ -401,7 +401,7 @@ async def test_skill_trust_commands_enable_explicit_skill_loading(tmp_path) -> N
     server.close()
 
     config = load_config(config_path, cwd=tmp_path)
-    runtime = await CodeAgentRuntime.create(config)
+    runtime = await CodeAgentRuntime.create(config, store=InMemoryEventStore())
     try:
         tool = runtime.runtime.registry.get("load_skill")
         assert tool is not None

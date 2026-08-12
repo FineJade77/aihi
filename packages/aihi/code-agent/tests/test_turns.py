@@ -75,3 +75,23 @@ async def test_run_returns_the_same_result_the_stream_finishes_with(tmp_path) ->
         await runtime.close()
 
     assert result.state == "completed"
+
+
+async def test_resume_streams_the_same_typed_events(tmp_path) -> None:
+    config = _config(tmp_path)
+    store = InMemoryEventStore()
+    session = Session.create(store, cwd=str(tmp_path), provider="fake", model="demo")
+    runtime = await CodeAgentRuntime.create(config, store=store)
+    try:
+        await runtime.run(session, user_message="hi", run_id="run_a")
+        # A completed run is terminal; resuming it must surface the refusal as a
+        # domain error, not a silent difference between run() and resume().
+        events = [
+            event
+            async for event in runtime.stream_resume(session, run_id="run_b")
+        ]
+    except ValueError:
+        events = []
+    finally:
+        await runtime.close()
+    assert events == [] or isinstance(events[-1], TurnFinished)

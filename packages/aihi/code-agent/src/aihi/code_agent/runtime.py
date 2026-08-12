@@ -73,8 +73,16 @@ class CodeAgentRuntime:
 
     @classmethod
     async def create(
-        cls, config: CodeAgentConfig, *, store: EventStore | None = None
+        cls, config: CodeAgentConfig, *, store: EventStore
     ) -> CodeAgentRuntime:
+        """Assemble a runtime.
+
+        `store` is required rather than optional: subagents put their child
+        sessions in it, and those children must land in the *parent's* store for
+        joint replay (ADR-0027) to work. Defaulting it would either disable
+        subagents silently or split the two logs apart.
+        """
+
         provider = _build_provider(config)
         sandbox = _build_sandbox(config)
         configured_roots = [SkillRoot(root.path, root.scope) for root in config.skill_roots]
@@ -107,10 +115,6 @@ class CodeAgentRuntime:
         if config.context_window is not None:
             builder = builder.with_context_window(config.context_window)
         if config.subagents.enabled:
-            if store is None:
-                raise CodeAgentConfigError(
-                    "Enabled subagents require a Session EventStore"
-                )
             authority = SubagentAuthority(
                 budget=AgentBudget(
                     max_tokens=config.subagents.max_tokens,
@@ -206,6 +210,33 @@ class CodeAgentRuntime:
             raise AgentRuntimeError("Turn ended without a result")
         return final
 
+    def stream_resume(
+        self,
+        session: Session,
+        *,
+        run_id: str,
+        model: str | None = None,
+        max_output_tokens: int | None = None,
+        cancel_event: asyncio.Event | None = None,
+    ) -> AsyncIterator[TurnEvent]:
+        """Stream a resumed run, with the same ordering guarantee as `stream()`."""
+
+        def invoke() -> Coroutine[Any, Any, RunResult]:
+            return self.runtime.coordinator.resume(
+                session,
+                run_id=run_id,
+                model=model,
+                permission_mode=self.config.permission_mode,
+                require_capability_lease=self.config.require_capability_lease,
+                system_prompt=build_system_prompt(
+                    self.config, workspace=Path(session.cwd)
+                ),
+                max_output_tokens=max_output_tokens,
+                cancel_event=cancel_event,
+            )
+
+        return drive_turn(session=session, pump=self.pump, invoke=invoke)
+
     async def resume(
         self,
         session: Session,
@@ -215,16 +246,25 @@ class CodeAgentRuntime:
         max_output_tokens: int | None = None,
         cancel_event: asyncio.Event | None = None,
     ) -> RunResult:
-        return await self.runtime.coordinator.resume(
+        """Resume an interrupted run.
+
+        Implemented on top of `stream_resume()`, so resuming and starting share
+        one execution path and one ordering guarantee.
+        """
+
+        final: RunResult | None = None
+        async for event in self.stream_resume(
             session,
             run_id=run_id,
             model=model,
-            permission_mode=self.config.permission_mode,
-            require_capability_lease=self.config.require_capability_lease,
-            system_prompt=build_system_prompt(self.config, workspace=Path(session.cwd)),
             max_output_tokens=max_output_tokens,
             cancel_event=cancel_event,
-        )
+        ):
+            if isinstance(event, TurnFinished):
+                final = event.result
+        if final is None:  # pragma: no cover - drive_turn always ends with TurnFinished
+            raise AgentRuntimeError("Resumed turn ended without a result")
+        return final
 
     async def close(self) -> None:
         for client in reversed(self.mcp_clients):

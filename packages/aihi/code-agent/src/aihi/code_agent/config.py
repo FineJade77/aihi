@@ -108,9 +108,9 @@ class SubagentTypeSettings:
 
 @dataclass(frozen=True, slots=True)
 class SubagentSettings:
-    # Still opt-in: enabling by default makes `CodeAgentRuntime.create()` fail
-    # for every caller that has no EventStore to give it. See RFC-0003.
-    enabled: bool = False
+    # On by default, but the ceiling below is read-only: delegation that works
+    # out of the box must not also grant write or process capabilities.
+    enabled: bool = True
     model: str | None = None
     max_tokens: int = 8_192
     timeout_seconds: float = 600.0
@@ -585,7 +585,7 @@ def _parse_subagents(value: Mapping[str, Any]) -> SubagentSettings:
     capabilities = frozenset(_string_tuple(raw_capabilities, "subagents.capabilities"))
     raw_model = value.get("model")
     return SubagentSettings(
-        enabled=_boolean(value.get("enabled", False), "subagents.enabled"),
+        enabled=_boolean(value.get("enabled", True), "subagents.enabled"),
         model=_text(raw_model, "subagents.model") if raw_model is not None else None,
         max_tokens=_positive_int(value.get("max_tokens", 8_192), "subagents.max_tokens"),
         timeout_seconds=_positive_float(

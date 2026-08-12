@@ -32,7 +32,9 @@ expanded by application configuration.
   `USER` / `PROJECT` / `WORKSPACE` 作用域的显式信任要求不变。
 - 新增命名 Subagent 类型（`explore`、`code_review`、`test`、`general`），
   经 `task` 工具的 `agent_type` 字段选择，各自带专属提示词。
-  `[subagents]` 仍默认关闭，且启用时需要向 `CodeAgentRuntime.create()` 传入 EventStore。
+  `[subagents]` 现在默认开启，授权收敛为只读（`max_depth = 1`、`max_children = 3`、
+  仅 `filesystem.read`）。`CodeAgentRuntime.create()` 的 `store` 参数改为必填——子会话
+  必须落在父会话同一个 store 里，联合回放（ADR-0027）才成立。
 
 ## Run 提交是非阻塞的
 

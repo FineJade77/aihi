@@ -97,3 +97,58 @@ def test_a_type_without_a_ceiling_keeps_the_authority_default() -> None:
     tool = _typed_tool()
     granted = tool.capabilities_for("general", {})
     assert granted == frozenset(_authority().capabilities) - {"agent.spawn"}
+
+
+def test_child_runs_inherit_context_contributors() -> None:
+    """A subagent that cannot see the skill index cannot load a skill.
+
+    The child coordinator is built separately from the parent's, so it silently
+    started with empty extensions until this was wired.
+    """
+
+    from aihi.agent import (
+        AgentBudget,
+        HostBackend,
+        InMemoryEventStore,
+        ReadFileTool,
+        RuntimeBuilder,
+        SubagentAuthority,
+        WorkspaceScope,
+    )
+    from aihi.agent.runtime.extensions import ContextSection
+    from aihi.models import FakeProvider
+
+    class Marker:
+        def sections(self, request: object) -> tuple[ContextSection, ...]:
+            return (ContextSection(title="Marker", body="visible", source="test"),)
+
+    import tempfile
+    from pathlib import Path
+
+    workspace = Path(tempfile.mkdtemp())
+    runtime = (
+        RuntimeBuilder(
+            provider=FakeProvider(),
+            model="demo",
+            sandbox=HostBackend(workspace, unsafe=True),
+            tools=[ReadFileTool()],
+        )
+        .with_context_contributors(Marker())
+        .with_subagents(
+            authority=SubagentAuthority(
+                budget=AgentBudget(max_tokens=1000, timeout_seconds=30.0, max_tool_calls=5),
+                workspace=WorkspaceScope(root=str(workspace), read_only=True),
+            ),
+            store=InMemoryEventStore(),
+            provider=FakeProvider(),
+            model="demo",
+        )
+        .build()
+    )
+
+    task = runtime.registry.get("task")
+    assert task is not None
+    child = task.runner.coordinator_factory(object(), runtime.sandbox)
+    assert child.extensions.context_contributors, (
+        "child coordinator has no contributors: subagents cannot see the skill index"
+    )

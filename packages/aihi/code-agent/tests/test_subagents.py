@@ -23,10 +23,9 @@ def test_read_only_types_never_request_write_capabilities() -> None:
         assert not any("process" in capability for capability in capabilities)
 
 
-def test_defaults_keep_a_read_only_subagent_ceiling(tmp_path) -> None:
+def test_defaults_enable_subagents_under_a_read_only_ceiling(tmp_path) -> None:
     config = load_config(cwd=tmp_path)
-    # Enabling by default would break every create() call without an EventStore.
-    assert config.subagents.enabled is False
+    assert config.subagents.enabled is True
     assert config.subagents.capabilities == frozenset({"filesystem.read"})
     assert config.subagents.max_depth == 1
     assert config.subagents.max_children == 3

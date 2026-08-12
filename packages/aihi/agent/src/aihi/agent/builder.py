@@ -261,6 +261,13 @@ class RuntimeBuilder:
                 registry=registry,
                 sandbox=child_sandbox,
                 policy=self.policy or DefaultPolicyEngine(),
+                # Contributors are read-only context: a child that cannot see the
+                # skill index cannot load a skill. Recorders are deliberately not
+                # inherited — they write, and one candidate per subagent run is a
+                # volume decision the parent application should make explicitly.
+                extensions=RuntimeExtensions(
+                    context_contributors=self.context_contributors,  # type: ignore[arg-type]
+                ),
             )
 
         def make_runner(system_prompt: str, model: str) -> ChildRunSubagentRunner:
