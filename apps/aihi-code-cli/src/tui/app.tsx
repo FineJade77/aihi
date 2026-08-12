@@ -168,6 +168,7 @@ function configReport(config: ConfigDescriptor, sessionId?: string): CommandRepo
     lines: [
       "✓ config loaded" + (config.source_path ? ` · ${tildePath(config.source_path)}` : " · defaults"),
       `✓ providers · ${config.providers.length || 1} configured · active ${config.provider.name}/${config.provider.model}`,
+      `✓ permissions · ${config.permission_mode}`,
       `✓ sandbox · ${config.sandbox.backend}${config.sandbox.unsafe ? " · unsafe host opt-in" : ""}`,
       `✓ tools · ${config.tools.length}`,
       `! session-scoped checks ${sessionId ? "pending" : "skipped · no session"}`,

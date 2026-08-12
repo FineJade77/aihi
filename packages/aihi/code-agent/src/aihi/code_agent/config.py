@@ -48,6 +48,10 @@ unsafe = false
 # Also relative to this file, so this is ~/.aihi/artifacts.  Override it in a
 # project config to keep a workspace's artifacts inside that workspace.
 path = "artifacts"
+
+[agent]
+# Permission modes: default, accept_edits, plan, or bypass.
+permission_mode = "default"
 '''
 _DEFAULT_TOOLS = (
     "read_file",
@@ -347,6 +351,7 @@ class CodeAgentConfig:
             },
             "providers": providers,
             "tools": list(self.tools),
+            "permission_mode": self.permission_mode.value,
             "sandbox": {
                 "backend": self.sandbox.backend,
                 "root": str(self.sandbox.root),

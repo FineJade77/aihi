@@ -206,6 +206,9 @@ model = "demo"
 model = "gpt-4o"
 api_key_env = "OPENAI_API_KEY"
 
+[agent]
+permission_mode = "plan"
+
 [sandbox]
 backend = "host"
 root = "."
@@ -232,6 +235,7 @@ allowed_tools = ["search"]
     assert response is not None
     descriptor = response["result"]["config"]  # type: ignore[index]
     assert descriptor["provider"]["name"] == "fake"
+    assert descriptor["permission_mode"] == "plan"
     assert {item["name"] for item in descriptor["providers"]} == {"fake", "openai"}
     assert descriptor["providers"][1]["api_key_env"] == "OPENAI_API_KEY"
     assert descriptor["source_paths"] == [str(config_path.resolve())]

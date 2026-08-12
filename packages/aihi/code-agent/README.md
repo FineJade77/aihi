@@ -17,6 +17,10 @@ model-facing index unless `load_skill` is explicitly listed in `agent.tools`.
 Provider profiles can be declared as `[providers.<name>]`; `config.get` exposes
 only non-secret metadata, and `run.start` accepts a configured provider/model
 selection. Resume continues to enforce the persisted run configuration.
+The default Tool authorization policy is configured with
+`[agent].permission_mode`: `default`, `accept_edits`, `plan`, or `bypass`.
+The value is persisted with each Run's startup configuration and hard safety
+denies remain active in every mode.
 Worker configuration locations are fixed and cannot be replaced by initialize
 parameters or environment variables. User, legacy project-root, and
 `<workspace>/.aihi` TOML files are merged in increasing precedence; relative

@@ -156,6 +156,7 @@ export interface ConfigDescriptor extends JsonObject {
   provider: ProviderDescriptor;
   providers: ProviderDescriptor[];
   tools: string[];
+  permission_mode: "default" | "accept_edits" | "plan" | "bypass";
   sandbox: {
     backend: string;
     root: string;

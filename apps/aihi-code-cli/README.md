@@ -95,6 +95,7 @@ enabled = true
 path = "artifacts"
 
 [agent]
+permission_mode = "default"
 compact_model = "deepseek-chat"
 context_window = 128000
 
@@ -123,6 +124,17 @@ acknowledgement is stored in the fixed user file `~/.aihi/host-workspaces.json`;
 trusting one workspace does not trust another, and changing `sandbox.root`
 requires confirmation again. Setting `unsafe = true` in configuration remains
 the explicit non-interactive opt-in.
+
+`[agent].permission_mode` controls the default Tool authorization policy for
+new Runs. Valid values are:
+
+- `default`: read-only Tools run normally; edits and process execution require Approval;
+- `accept_edits`: workspace edits are allowed without Approval, but process execution still requires Approval;
+- `plan`: mutating and process-executing Tools are denied;
+- `bypass`: explicitly allows Tools after hard safety denies; use only in a trusted, isolated setup.
+
+The setting is recorded in Run metadata for resume consistency and does not
+disable hard denies such as sensitive credential paths.
 
 Use `--session SESSION_ID` to reopen a known session on startup, or `--continue`
 to reopen the newest session for the workspace. `/sessions`

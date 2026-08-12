@@ -4,6 +4,7 @@ import json
 
 import pytest
 from aihi.agent import InMemoryEventStore, ToolContext, UnsafeHostNotAcknowledged
+from aihi.agent.policy import PermissionMode
 from aihi.code_agent.config import (
     acknowledge_host_execution,
     ensure_user_config,
@@ -34,6 +35,7 @@ root = "."
 unsafe = true
 
 [agent]
+permission_mode = "accept_edits"
 compact_model = "compact-demo"
 context_window = 4096
 
@@ -65,6 +67,7 @@ allowed_tools = ["search"]
 
     assert config.provider.name == "deepseek"
     assert config.provider.model == "deepseek-chat"
+    assert config.permission_mode is PermissionMode.ACCEPT_EDITS
     assert config.provider_profiles["openai"].api_key_env == "OPENAI_API_KEY"
     selected = config.select_provider("openai", model="gpt-4.1")
     assert selected.provider.name == "openai"
@@ -103,6 +106,17 @@ unsafe = true
 
     assert config.base_dir == config_path.parent.resolve()
     assert config.sandbox.root == workspace.resolve()
+
+
+def test_config_rejects_unknown_permission_mode(tmp_path) -> None:
+    path = tmp_path / "aihi-code.toml"
+    path.write_text(
+        '[provider]\nname = "fake"\nmodel = "demo"\n\n'
+        '[agent]\npermission_mode = "unsafe_everything"\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="agent.permission_mode must be one of"):
+        load_config(path, cwd=tmp_path)
 
 
 def test_config_merges_user_and_project_layers_with_project_precedence(
