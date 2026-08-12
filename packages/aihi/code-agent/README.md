@@ -33,3 +33,12 @@ expanded by application configuration.
 - 新增命名 Subagent 类型（`explore`、`code_review`、`test`、`general`），
   经 `task` 工具的 `agent_type` 字段选择，各自带专属提示词。
   `[subagents]` 仍默认关闭，且启用时需要向 `CodeAgentRuntime.create()` 传入 EventStore。
+
+## Run 提交是非阻塞的
+
+`run.start` 与 `run.resume` 在 Worker **受理**后立即返回 `{run_id, accepted}`，不等运行结束。
+运行结果由事件送达：`run.completed` / `run.failed` / `run.interrupted` / `run.cancelled`，
+审批则是 `approval.requested`。
+
+这样客户端的请求超时只覆盖真正快速的命令，不会再压在模型的思考时间上——此前一次超过
+客户端超时的编码运行会让请求失败，而 Worker 仍在后台执行。

@@ -1236,16 +1236,12 @@ def serve_stdio(
             if not item.future.done():
                 continue
             try:
-                response = item.future.result()
+                item.future.result()
             except Exception as error:  # noqa: BLE001 - protocol boundary must stay alive.
+                # The request was acknowledged long ago; a late error can only be
+                # reported out of band. The run's own terminal event is the
+                # client-visible outcome.
                 print(f"aihi-code-agent worker internal error: {error}", file=error_stream)
-                response = {
-                    "jsonrpc": "2.0",
-                    "id": item.request_id,
-                    "error": {"code": INTERNAL_ERROR, "message": "Internal worker error"},
-                }
-            if response is not None:
-                write_frame(stdout, response)
             pending.pop(run_id, None)
             emit_notifications()
 
@@ -1306,6 +1302,14 @@ def serve_stdio(
                 future = executor.submit(
                     runtime.handle_background, decoded, cancel_signal=signal
                 )
+                # Acknowledge now, not when the run ends: a coding run lasts
+                # minutes, and holding the response open makes every client
+                # impose a request timeout on the model's thinking time.
+                write_frame(stdout, {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "result": {"run_id": run_id or None, "accepted": True},
+                })
                 if run_id:
                     pending[run_id] = _PendingRun(request_id, run_id, signal, future)
                 else:

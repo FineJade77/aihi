@@ -103,6 +103,12 @@ export type RunState =
   | "interrupted"
   | "cancelled";
 
+/** run.start and run.resume acknowledge immediately; the outcome arrives as events. */
+export interface RunAccepted {
+  run_id: string | null;
+  accepted: boolean;
+}
+
 export interface RunResult {
   run_id: string;
   state: RunState;

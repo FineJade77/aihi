@@ -15,6 +15,7 @@ import type {
   SkillDescriptor,
   McpServerDescriptor,
   ToolDescriptor,
+  RunAccepted,
   RunResult,
   RunDescriptor,
   RunCancelResult,
@@ -331,8 +332,9 @@ export class RpcClient {
     return result.task;
   }
 
-  public async startRun(params: RunStartParams): Promise<RunResult> {
-    return this.request<RunResult>("run.start", params as unknown as JsonObject);
+  /** Returns as soon as the Worker accepts the run; watch events for the outcome. */
+  public async startRun(params: RunStartParams): Promise<RunAccepted> {
+    return this.request<RunAccepted>("run.start", params as unknown as JsonObject);
   }
 
   /** Seeds ~/.aihi/aihi-code.toml when absent; never overwrites an existing file. */
@@ -347,8 +349,9 @@ export class RpcClient {
     return result.config;
   }
 
-  public async resumeRun(params: RunResumeParams): Promise<RunResult> {
-    return this.request<RunResult>("run.resume", params as unknown as JsonObject);
+  /** Returns as soon as the Worker accepts the resume; watch events for the outcome. */
+  public async resumeRun(params: RunResumeParams): Promise<RunAccepted> {
+    return this.request<RunAccepted>("run.resume", params as unknown as JsonObject);
   }
 
   public async listRuns(sessionId: string): Promise<RunDescriptor[]> {

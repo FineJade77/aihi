@@ -384,6 +384,7 @@ export function TuiApp({
       }
       if (["run.completed", "run.failed", "run.interrupted", "run.cancelled"].includes(nextEvent.type)) {
         setActiveRunId(undefined);
+        setStatus(`Run ${shortId(event.run_id ?? "")} ${nextEvent.type.slice(4)}`);
       }
       if (nextEvent.type.startsWith("subagent.")) {
         void client.listTasks(event.session_id).then(setTasks).catch(() => undefined);
@@ -509,11 +510,10 @@ export function TuiApp({
           provider: activeProvider,
           model: activeModel,
         });
-        setStatus(runStatus(result));
-        if (result.state !== "running" && result.state !== "waiting_tool" && !result.suspended) {
-          setActiveRunId(undefined);
-        }
-        await loadSession(selectedSessionId);
+        // The Worker acknowledges immediately; run.completed / run.failed and
+        // the approval events drive the rest, so the UI never waits on a
+        // request that lasts as long as the model takes to think.
+        setStatus(`Run ${shortId(result.run_id ?? runId)} accepted`);
         return;
       }
       if (name === "resume") {
@@ -524,8 +524,8 @@ export function TuiApp({
           session_id: selectedSessionId,
           run_id: runId,
         });
-        setStatus(runStatus(result));
-        await loadSession(selectedSessionId);
+        setActiveRunId(result.run_id ?? runId);
+        setStatus(`Resume of ${shortId(runId)} accepted`);
         return;
       }
       if (name === "cancel" || name === "interrupt") {
@@ -648,11 +648,10 @@ export function TuiApp({
           provider: activeProvider,
           model: activeModel,
         });
-        setStatus(runStatus(result));
-        if (result.state !== "running" && result.state !== "waiting_tool" && !result.suspended) {
-          setActiveRunId(undefined);
-        }
-        await loadSession(selectedSessionId);
+        // The Worker acknowledges immediately; run.completed / run.failed and
+        // the approval events drive the rest, so the UI never waits on a
+        // request that lasts as long as the model takes to think.
+        setStatus(`Run ${shortId(result.run_id ?? runId)} accepted`);
         return;
       }
       if (name === "task") {
@@ -690,6 +689,9 @@ export function TuiApp({
     if (key.escape) setCommand("");
   });
 
+  // A run outlives the request that started it, so "busy" must follow the run.
+  const running = busy || activeRunId !== undefined;
+
   const sessionTitle = useMemo(
     () => selectedSession?.metadata.model
       ? `${selectedSession.metadata.provider ?? activeProvider} / ${selectedSession.metadata.model ?? activeModel}`
@@ -715,7 +717,9 @@ export function TuiApp({
               <GradientText bold>AI-HI!</GradientText>
             </Box>
             <Text color={COLORS.muted}>{sessionTitle}</Text>
-            <Text color={busy ? COLORS.warn : COLORS.good}>{busy ? "● busy" : "● ready"}</Text>
+            <Text color={running ? COLORS.warn : COLORS.good}>
+              {running ? "● busy" : "● ready"}
+            </Text>
           </Box>
           <Text color={COLORS.muted} wrap="truncate-start">{tildePath(cwd)}</Text>
           <Box>
