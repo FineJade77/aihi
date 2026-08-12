@@ -12,6 +12,7 @@ import type {
   TaskDescriptor,
 } from "@aihi/code-protocol";
 import { RpcClient } from "../rpc/client.js";
+import { resolveApprovalAndResume } from "../approval.js";
 import { Banner, GradientText } from "./banner.js";
 
 const COLORS = {
@@ -40,6 +41,8 @@ export interface TuiAppProps {
   sessionId?: string;
   storePath?: string;
   configPaths?: string[];
+  hostConsentRequired?: boolean;
+  hostExecutionRoot?: string;
   /** First turn to run once the session is up. */
   prompt?: string;
   onSessionOpened?: (sessionId: string) => void;
@@ -121,6 +124,37 @@ function approvalStatus(approvals: ApprovalDescriptor[]): string {
     .slice(0, 3)
     .map((approval) => `${shortId(approval.approval_id)} ${approval.tool_name ?? approval.scope}`)
     .join(" · ");
+}
+
+function truncate(value: string, length = 600): string {
+  return value.length > length ? `${value.slice(0, length)}…` : value;
+}
+
+function approvalInput(approval: ApprovalDescriptor): string {
+  const input = approval.tool_input ?? {};
+  if (approval.tool_name === "bash" && typeof input.command === "string") {
+    return `$ ${truncate(input.command)}`;
+  }
+  const path = typeof input.path === "string" ? input.path : undefined;
+  if (approval.tool_name === "write_file" && path !== undefined) {
+    const content = typeof input.content === "string" ? input.content : "";
+    return `${path} · write ${content.length} chars\n${truncate(content)}`;
+  }
+  if (approval.tool_name === "edit_file" && path !== undefined) {
+    const oldText = typeof input.old_text === "string" ? input.old_text : "";
+    const newText = typeof input.new_text === "string" ? input.new_text : "";
+    return `${path}\n- ${truncate(oldText, 240)}\n+ ${truncate(newText, 240)}`;
+  }
+  return truncate(JSON.stringify(input, null, 2));
+}
+
+function approvalSandbox(approval: ApprovalDescriptor): string | undefined {
+  const sandbox = approval.sandbox;
+  if (sandbox === undefined) return undefined;
+  const name = typeof sandbox.name === "string" ? sandbox.name : "sandbox";
+  const root = typeof sandbox.root === "string" ? sandbox.root : undefined;
+  const unsafe = sandbox.unsafe === true ? "unsafe host" : name;
+  return root === undefined ? unsafe : `${unsafe} · ${root}`;
 }
 
 function InfoRow({ label, value }: { label: string; value: string }) {
@@ -227,18 +261,42 @@ function StatusBar({
 
 /** Pending approvals, with the ids the /approve and /deny commands need. */
 function ApprovalPanel({ approvals }: { approvals: ApprovalDescriptor[] }) {
+  const approval = approvals[0];
+  if (approval === undefined) return null;
+  const sandbox = approvalSandbox(approval);
   return (
     <Box borderStyle="round" borderColor={COLORS.warn} flexDirection="column" paddingX={1}>
       <Text bold color={COLORS.warn}>
         APPROVAL REQUIRED ({approvals.length})
       </Text>
-      {approvals.slice(0, 5).map((approval) => (
-        <Text key={approval.approval_id} wrap="truncate">
-          <Text color={COLORS.accent}>{approval.approval_id}</Text>{" "}
-          <Text>{approval.tool_name ?? approval.scope}</Text>
-        </Text>
-      ))}
-      <Text color={COLORS.muted}>/approve ID [once] · /deny ID · then /resume RUN_ID</Text>
+      <Text>
+        <Text color={COLORS.accent}>{approval.approval_id}</Text>{" "}
+        <Text bold>{approval.tool_name ?? approval.scope}</Text>
+      </Text>
+      <Text wrap="wrap">{approvalInput(approval)}</Text>
+      {approval.reason !== undefined && (
+        <Text color={COLORS.muted} wrap="wrap">reason · {approval.reason}</Text>
+      )}
+      {approval.required_capabilities !== undefined && approval.required_capabilities.length > 0 && (
+        <Text color={COLORS.muted}>capabilities · {approval.required_capabilities.join(", ")}</Text>
+      )}
+      {sandbox !== undefined && <Text color={COLORS.muted}>sandbox · {sandbox}</Text>}
+      <Text color={COLORS.muted}>[y] allow for run · [o] allow once · [n] deny</Text>
+    </Box>
+  );
+}
+
+function HostConsentPanel({ cwd, root }: { cwd: string; root: string }) {
+  return (
+    <Box borderStyle="round" borderColor={COLORS.warn} flexDirection="column" paddingX={1}>
+      <Text bold color={COLORS.warn}>TRUST THIS WORKSPACE?</Text>
+      <Text wrap="wrap">
+        Host mode is not an isolation boundary. AIHI tools can read and modify files and run
+        commands as your local user inside this execution root:
+      </Text>
+      <Text color={COLORS.accent}>{root}</Text>
+      {root !== cwd && <Text color={COLORS.muted}>workspace · {cwd}</Text>}
+      <Text color={COLORS.muted}>[y] trust this workspace · [n] exit</Text>
     </Box>
   );
 }
@@ -270,6 +328,8 @@ export function TuiApp({
   sessionId,
   storePath,
   configPaths,
+  hostConsentRequired = false,
+  hostExecutionRoot = cwd,
   prompt,
   onSessionOpened,
 }: TuiAppProps) {
@@ -294,6 +354,7 @@ export function TuiApp({
   // Kept apart from `status`: a notice must survive the event traffic that
   // follows it, which is exactly what the old status heartbeat destroyed.
   const [notice, setNotice] = useState<{ text: string; tone: UiColor }>();
+  const [hostConsentPending, setHostConsentPending] = useState(hostConsentRequired);
 
   const loadSession = useCallback(async (sessionId: string) => {
     const [session, page, nextTasks, nextApprovals] = await Promise.all([
@@ -413,6 +474,31 @@ export function TuiApp({
     exit();
   }, [client, exit]);
 
+  const resolvePendingApproval = useCallback(async (
+    approvalId: string,
+    approved: boolean,
+    oneShot = false,
+  ) => {
+    if (!selectedSessionId) throw new Error("Create or open a session first");
+    try {
+      const { resolution, run } = await resolveApprovalAndResume(client, {
+        session_id: selectedSessionId,
+        approval_id: approvalId,
+        approved,
+        one_shot: oneShot,
+        resolved_by: "tui",
+      });
+      setApprovals(await client.listApprovals(selectedSessionId));
+      setActiveRunId(run.run_id ?? resolution.run_id);
+      setStatus(`${approved ? "Approved" : "Denied"} ${shortId(approvalId)} · resuming`);
+    } catch (error) {
+      // Resolution may have persisted before resume failed. Unlock the composer
+      // so the operator can inspect /runs and retry /resume explicitly.
+      setActiveRunId(undefined);
+      throw error;
+    }
+  }, [client, selectedSessionId]);
+
   const runCommand = useCallback(async (rawCommand: string) => {
     const trimmed = rawCommand.trim();
     setCommand("");
@@ -422,6 +508,7 @@ export function TuiApp({
     const parts = trimmed.split(/\s+/);
     const name = parts[0].toLowerCase().replace(/^\//, "");
     const args = parts.slice(1);
+    let submittedRunId: string | undefined;
     setBusy(true);
     try {
       if (name === "quit" || name === "exit" || name === "q") {
@@ -497,6 +584,7 @@ export function TuiApp({
         const userMessage = args.join(" ").trim();
         if (!userMessage) throw new Error("Usage: /run MESSAGE");
         const runId = `run_tui_${Date.now()}`;
+        submittedRunId = runId;
         setActiveRunId(runId);
         setStreamText("");
         setStatus(`Running ${shortId(runId)}…`);
@@ -570,15 +658,11 @@ export function TuiApp({
         if (!selectedSessionId) throw new Error("Create or open a session first");
         const approvalId = args[0];
         if (!approvalId) throw new Error(`Usage: /${name} APPROVAL_ID${name === "approve" ? " [once]" : ""}`);
-        const result = await client.resolveApproval({
-          session_id: selectedSessionId,
-          approval_id: approvalId,
-          approved: name === "approve",
-          one_shot: name === "approve" && args[1]?.toLowerCase() === "once",
-          resolved_by: "tui",
-        });
-        setStatus(`${result.approved ? "Approved" : "Denied"} ${shortId(result.approval_id)} · use /resume RUN_ID`);
-        await loadSession(selectedSessionId);
+        await resolvePendingApproval(
+          approvalId,
+          name === "approve",
+          name === "approve" && args[1]?.toLowerCase() === "once",
+        );
         return;
       }
       if (name === "skills") {
@@ -634,6 +718,7 @@ export function TuiApp({
       if (!trimmed.startsWith("/")) {
         if (!selectedSessionId) throw new Error("Create or open a session first");
         const runId = `run_tui_${Date.now()}`;
+        submittedRunId = runId;
         setActiveRunId(runId);
         setStreamText("");
         setStatus(`Running ${shortId(runId)}…`);
@@ -674,19 +759,22 @@ export function TuiApp({
       }
       setStatus(`Unknown command: ${name} · use /help`);
     } catch (error) {
+      if (submittedRunId !== undefined) {
+        setActiveRunId((current) => current === submittedRunId ? undefined : current);
+      }
       setNotice({ text: `Error: ${errorMessage(error)}`, tone: COLORS.bad });
     } finally {
       setBusy(false);
     }
-  }, [activeModel, activeProvider, activeRunId, cwd, loadSession, model, provider, quit, refreshSessions, selectedSessionId]);
+  }, [activeModel, activeProvider, activeRunId, cwd, loadSession, model, provider, quit, refreshSessions, resolvePendingApproval, selectedSessionId]);
 
   useEffect(() => {
     // Fires once, after the session exists — a prompt on the command line is
     // the first turn, not a queued command waiting for the user to press enter.
-    if (!prompt || promptSent || !selectedSessionId) return;
+    if (!prompt || promptSent || !selectedSessionId || hostConsentPending) return;
     setPromptSent(true);
     void runCommand(prompt);
-  }, [prompt, promptSent, selectedSessionId, runCommand]);
+  }, [hostConsentPending, prompt, promptSent, selectedSessionId, runCommand]);
 
   /** Resolve the oldest pending approval, then continue its run.
    *
@@ -700,41 +788,74 @@ export function TuiApp({
       if (!approval || !selectedSessionId) return;
       setBusy(true);
       try {
-        await client.resolveApproval({
-          session_id: selectedSessionId,
-          approval_id: approval.approval_id,
-          approved,
-          one_shot: oneShot,
-          resolved_by: "tui",
-        });
-        setApprovals(await client.listApprovals(selectedSessionId));
-        if (approved && approval.run_id) {
-          await client.resumeRun({
-            session_id: selectedSessionId,
-            run_id: approval.run_id,
-          });
-          setActiveRunId(approval.run_id);
-          setStatus(`Approved ${shortId(approval.approval_id)} · resuming`);
-        } else {
-          setStatus(`${approved ? "Approved" : "Denied"} ${shortId(approval.approval_id)}`);
-        }
+        await resolvePendingApproval(approval.approval_id, approved, oneShot);
       } catch (error) {
         setNotice({ text: `Error: ${errorMessage(error)}`, tone: COLORS.bad });
       } finally {
         setBusy(false);
       }
     },
-    [approvals, client, selectedSessionId],
+    [approvals, resolvePendingApproval, selectedSessionId],
   );
 
   const awaitingApproval = approvals.length > 0;
 
+  const interruptRun = useCallback(async () => {
+    if (!selectedSessionId || !activeRunId) return;
+    setStatus(`Interrupting ${shortId(activeRunId)}…`);
+    try {
+      const result = await client.cancelRun({
+        session_id: selectedSessionId,
+        run_id: activeRunId,
+        reason: "interrupted by user",
+      });
+      if (result.requested) {
+        setStatus(`Interruption requested for ${shortId(activeRunId)}`);
+      } else {
+        setActiveRunId(undefined);
+        setStatus(runStatus(result as RunResult));
+      }
+    } catch (error) {
+      setNotice({ text: `Interrupt failed: ${errorMessage(error)}`, tone: COLORS.bad });
+    }
+  }, [activeRunId, client, selectedSessionId]);
+
+  const resolveHostConsent = useCallback(async (approved: boolean) => {
+    if (!approved) {
+      await quit();
+      return;
+    }
+    setBusy(true);
+    setStatus("Saving workspace trust…");
+    try {
+      await client.acknowledgeHost(cwd);
+      setHostConsentPending(false);
+      setStatus("Workspace trusted for Host execution");
+    } catch (error) {
+      setNotice({ text: `Trust failed: ${errorMessage(error)}`, tone: COLORS.bad });
+    } finally {
+      setBusy(false);
+    }
+  }, [client, cwd, quit]);
+
   useInput((input, key) => {
-    if (key.ctrl && input === "c") void quit();
+    if (hostConsentPending) {
+      if (key.ctrl && input === "c") void quit();
+      if (busy) return;
+      if (input.toLowerCase() === "y") void resolveHostConsent(true);
+      if (input.toLowerCase() === "n") void resolveHostConsent(false);
+      return;
+    }
+    if (key.ctrl && input === "c") {
+      if (activeRunId) void interruptRun();
+      else void quit();
+      return;
+    }
     if (!awaitingApproval) {
       if (key.escape) setCommand("");
       return;
     }
+    if (busy) return;
     // While an approval is pending the prompt owns the keyboard, so a stray
     // keystroke cannot be typed into a command line that is not being shown.
     const choice = input.toLowerCase();
@@ -791,6 +912,7 @@ export function TuiApp({
           </Box>
         </>
       )}
+      {hostConsentPending && <HostConsentPanel cwd={cwd} root={hostExecutionRoot} />}
       <Box marginTop={1}>
         <Text color={COLORS.muted}>{status}</Text>
       </Box>
@@ -801,7 +923,7 @@ export function TuiApp({
           </Text>
         </Box>
       )}
-      {awaitingApproval ? (
+      {hostConsentPending ? null : awaitingApproval ? (
         <Box>
           <Text bold color={COLORS.warn}>
             ▸ {approvals[0]?.tool_name ?? approvals[0]?.scope}
@@ -809,6 +931,10 @@ export function TuiApp({
           <Text color={COLORS.muted}>
             {"  "}[y] allow  [o] allow once  [n] deny
           </Text>
+        </Box>
+      ) : activeRunId !== undefined ? (
+        <Box>
+          <Text color={COLORS.warn}>Run in progress · Ctrl-C to interrupt</Text>
         </Box>
       ) : (
         <Box>
@@ -829,7 +955,7 @@ export function TuiApp({
         contextLimit={context.limit}
         tasks={tasks}
       />
-      <Text color={COLORS.muted}>message  /provider  /model  /config  /runs  /cancel  /history  /fork  /approvals  /approve  /skills  /skill-trust  /skill-disable  /skill-untrust  /mcp  /tools  /resume  /quit · Ctrl-C exits</Text>
+      <Text color={COLORS.muted}>message  /provider  /model  /config  /runs  /cancel  /history  /fork  /approvals  /approve  /skills  /skill-trust  /skill-disable  /skill-untrust  /mcp  /tools  /resume  /quit · Ctrl-C interrupts/exits</Text>
     </Box>
   );
 }

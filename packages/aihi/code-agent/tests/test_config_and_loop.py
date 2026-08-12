@@ -5,8 +5,10 @@ import json
 import pytest
 from aihi.agent import InMemoryEventStore, ToolContext, UnsafeHostNotAcknowledged
 from aihi.code_agent.config import (
+    acknowledge_host_execution,
     ensure_user_config,
     load_config,
+    load_worker_config,
     resolve_env_mapping,
 )
 from aihi.code_agent.protocol import PROTOCOL_VERSION, WorkerServer
@@ -502,7 +504,17 @@ def test_worker_approval_commands_are_event_backed(tmp_path) -> None:
         "process.exec",
         requested_by="policy",
         run_id="run_approval_test",
-        metadata={"tool_name": "bash", "tool_call_id": "call_1", "reason": "exec"},
+        metadata={
+            "tool_name": "bash",
+            "tool_call_id": "call_1",
+            "tool_input": {
+                "command": "TOKEN=top-secret git status",
+                "api_key": "also-secret",
+            },
+            "reason": "exec",
+            "required_capabilities": ["process.exec"],
+            "sandbox": {"name": "host", "root": str(tmp_path), "unsafe": True},
+        },
     )
 
     listed = server.handle(
@@ -514,7 +526,13 @@ def test_worker_approval_commands_are_event_backed(tmp_path) -> None:
         }
     )
     assert listed is not None
-    assert listed["result"]["approvals"][0]["tool_name"] == "bash"  # type: ignore[index]
+    descriptor = listed["result"]["approvals"][0]  # type: ignore[index]
+    assert descriptor["tool_name"] == "bash"
+    assert descriptor["tool_input"] == {
+        "command": "TOKEN=<redacted> git status",
+        "api_key": "<redacted>",
+    }
+    assert descriptor["required_capabilities"] == ["process.exec"]
 
     resolved = server.handle(
         {
@@ -532,6 +550,7 @@ def test_worker_approval_commands_are_event_backed(tmp_path) -> None:
     )
     assert resolved is not None
     assert resolved["result"]["approved"] is True  # type: ignore[index]
+    assert resolved["result"]["run_id"] == "run_approval_test"  # type: ignore[index]
     remaining = server.handle(
         {
             "jsonrpc": "2.0",
@@ -560,7 +579,26 @@ def test_ensure_user_config_seeds_a_loadable_default(tmp_path, monkeypatch) -> N
 
     config = load_config(cwd=workspace)
     assert config.source_path == path
-    assert config.sandbox.unsafe is True
+    assert config.sandbox.unsafe is False
+    assert load_worker_config(workspace).sandbox.unsafe is False
+    acknowledgement = acknowledge_host_execution(workspace)
+    assert acknowledgement == home / ".aihi" / "host-workspaces.json"
+    assert acknowledgement.stat().st_mode & 0o777 == 0o600
+    assert load_worker_config(workspace).sandbox.unsafe is True
+    other_workspace = tmp_path / "other"
+    other_workspace.mkdir()
+    assert load_worker_config(other_workspace).sandbox.unsafe is False
+    config_dir = workspace / ".aihi"
+    config_dir.mkdir()
+    expanded_root = tmp_path / "expanded-root"
+    expanded_root.mkdir()
+    (config_dir / "aihi-code.toml").write_text(
+        f'[sandbox]\nbackend = "host"\nroot = "{expanded_root}"\nunsafe = false\n',
+        encoding="utf-8",
+    )
+    assert load_worker_config(workspace).sandbox.unsafe is False
+    acknowledge_host_execution(workspace, root=expanded_root)
+    assert load_worker_config(workspace).sandbox.unsafe is True
     # sandbox.root is omitted on purpose: relative paths resolve against the
     # config's own directory, so writing "." would sandbox the agent to ~/.aihi.
     assert config.sandbox.root == workspace.resolve()

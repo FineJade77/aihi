@@ -107,6 +107,14 @@ command = ["python3", "-m", "example_mcp_server"]
 allowed_tools = ["search"]
 ```
 
+The generated user configuration keeps `sandbox.unsafe = false`. On first use
+of Host mode, the TUI explains that Host execution is not isolated and asks the
+user to trust the exact workspace and resolved Host execution root. That
+acknowledgement is stored in the fixed user file `~/.aihi/host-workspaces.json`;
+trusting one workspace does not trust another, and changing `sandbox.root`
+requires confirmation again. Setting `unsafe = true` in configuration remains
+the explicit non-interactive opt-in.
+
 Use `--session SESSION_ID` to reopen a known session on startup, or `--continue`
 to reopen the newest session for the workspace. `/sessions`
 selects the newest persisted session when no session is specified; `/open` can
@@ -115,6 +123,10 @@ history, `/fork [SEQ]` creates a branch, and `/cancel RUN_ID` requests
 cancellation of an active run or closes a suspended/recoverable run. Model
 chunks are delivered as ephemeral Worker notifications and rendered while the
 run is in progress.
+Only one foreground Run may own a Session. While it is active the composer is
+disabled; `Ctrl-C` requests interruption of that Run, while `Ctrl-C` with no
+active Run exits the CLI. Different Sessions may still run concurrently in the
+Worker.
 The default Coding tool set also includes read-only `git_status` and `git_diff`;
 they never stage or modify changes and remain subject to the same Tool policy
 chain.
@@ -129,6 +141,10 @@ Use `/mcp` and `/tools` to inspect configured integrations, and
 `/run MESSAGE` is an explicit equivalent; `/resume RUN_ID` continues an
 interrupted or approval-suspended run. Use `/approvals`, `/approve ID [once]`,
 and `/deny ID` to operate the Worker-owned approval projection; resolving an
-approval never auto-resumes a run. Use `/skills` and `/skill-trust NAME` to
-inspect and explicitly trust Skill hashes. Skill bodies remain explicit/trusted,
-and MCP tools enter the same registry/policy chain as built-in tools.
+approval never auto-resumes inside the Worker. The TUI resumes after both an
+approval and a denial so the model receives the decision as its ToolResult.
+Approval prompts show a bounded, credential-redacted preview of the proposed
+command or file change together with required capabilities, reason, and sandbox
+context. Use `/skills` and `/skill-trust NAME` to inspect and explicitly trust
+Skill hashes. Skill bodies remain explicit/trusted, and MCP tools enter the same
+registry/policy chain as built-in tools.

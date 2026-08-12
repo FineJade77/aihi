@@ -19,6 +19,11 @@ Worker configuration locations are fixed and cannot be replaced by initialize
 parameters or environment variables. User, legacy project-root, and
 `<workspace>/.aihi` TOML files are merged in increasing precedence; relative
 paths retain the declaring file as their base.
+The generated Host configuration is fail-closed. Interactive acknowledgement
+is persisted for the exact workspace and resolved execution root in
+`~/.aihi/host-workspaces.json`; changing `sandbox.root` requires confirmation
+again. Configuration may still set `sandbox.unsafe = true` for an explicit
+non-interactive opt-in.
 The application adds read-only `git_status`/`git_diff` tools and exposes
 `skill.untrust`, `mcp.list`, and `tool.list` through the Worker.
 Configuration can opt into the Harness artifact store, model-driven context
@@ -52,6 +57,11 @@ expanded by application configuration.
 若一个 Run 在开始前就失败（例如 resume 一个不存在的 run），它不会产生任何终态事件，
 Worker 会发出 `run.error` 通知携带 `run_id` 与原因；这是此类失败唯一的客户端可见信号。
 
-TUI 在有待审批项时由审批提示接管输入行，`y` / `o`（仅此次）/ `n` 单键解决。批准后 CLI
-会紧接着调用 `run.resume`——Worker 的「resolve 从不自动 resume」不变式没有改变，是客户端
-把这两步合成一次按键。
+stdio transport 通过 `RunSupervisor` 保证同一个 Session 同时最多只有一个 foreground
+Run，不同 Session 仍可并行。取消信号按 `(session_id, run_id)` 路由，后台产生的事件通过
+线程安全队列交给 stdout 主线程，避免并发 append/drain 丢失通知。
+
+TUI 在有待审批项时由审批提示接管输入行，展示经过长度限制和凭据脱敏的 Tool input，以及
+capabilities、reason 和 sandbox，并由 `y` / `o`（仅此次）/ `n` 单键解决。批准或拒绝后 CLI
+都会紧接着调用 `run.resume`：批准后执行 Tool，拒绝后把 permission-denied ToolResult 返回给
+模型。Worker 的「resolve 从不自动 resume」不变式没有改变，是客户端把这两步合成一次操作。

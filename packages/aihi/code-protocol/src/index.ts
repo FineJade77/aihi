@@ -174,8 +174,12 @@ export interface ApprovalDescriptor extends JsonObject {
   one_shot: boolean;
   tool_call_id?: string;
   tool_name?: string;
+  /** Bounded, credential-redacted preview; never use this value for execution. */
+  tool_input?: JsonObject;
   reason?: string;
   rule_id?: string;
+  required_capabilities?: string[];
+  sandbox?: JsonObject;
 }
 
 export interface SkillDescriptor {

@@ -8,6 +8,7 @@ import threading
 from collections.abc import Callable, Mapping
 from copy import deepcopy
 from pathlib import Path
+from queue import Empty, Queue
 from typing import Any
 
 from aihi.agent import (
@@ -25,12 +26,18 @@ from aihi.agent import (
     SQLiteEventStore,
     TaskGraph,
     WorkspaceScope,
+    approval_input_preview,
 )
 from aihi.agent import (
     Event as AgentEvent,
 )
 from aihi.agent.runtime import RunResult
-from aihi.code_agent.config import CodeAgentConfig, ensure_user_config, load_config
+from aihi.code_agent.config import (
+    CodeAgentConfig,
+    acknowledge_host_execution,
+    ensure_user_config,
+    load_worker_config,
+)
 from aihi.code_agent.runtime import CodeAgentRuntime
 
 from ..protocol import (
@@ -74,11 +81,11 @@ class WorkerServer:
         self.shutdown_requested = False
         self._store: EventStore | None = store
         self._store_path = str(store_path) if store_path is not None else None
-        self._config_loader = config_loader or (lambda cwd: load_config(cwd=cwd))
+        self._config_loader = config_loader or load_worker_config
         self._owns_store = False
         self._sessions: dict[str, Session] = {}
         self._task_graphs: dict[str, TaskGraph] = {}
-        self._pending_notifications: list[JsonObject] = []
+        self._pending_notifications: Queue[JsonObject] = Queue()
 
     def handle(self, message: object) -> JsonObject | None:
         """Handle one decoded JSON value and return a response if required."""
@@ -202,8 +209,12 @@ class WorkerServer:
     def drain_notifications(self) -> list[JsonObject]:
         """Return queued event notifications in durable sequence order."""
 
-        pending = self._pending_notifications
-        self._pending_notifications = []
+        pending: list[JsonObject] = []
+        while True:
+            try:
+                pending.append(self._pending_notifications.get_nowait())
+            except Empty:
+                break
         return pending
 
     def _dispatch(self, method: str, params: JsonObject) -> JsonObject:
@@ -259,6 +270,8 @@ class WorkerServer:
             return self._config_get(params)
         if method == "config.init":
             return self._config_init()
+        if method == "config.acknowledge_host":
+            return self._config_acknowledge_host(params)
         if method == "approval.list":
             return self._approval_list(params)
         if method == "approval.resolve":
@@ -540,6 +553,38 @@ class WorkerServer:
         config = self._config_loader(cwd or str(Path.cwd()))
         return {"config": config.public_descriptor()}
 
+    def _config_acknowledge_host(self, params: JsonObject) -> JsonObject:
+        cwd = self._required_text(params, "cwd", max_length=4_096)
+        if params.get("acknowledged") is not True:
+            raise RpcValidationError(
+                "acknowledged must be true after explicit user consent",
+                code=INVALID_PARAMS,
+            )
+        config = self._config_loader(cwd)
+        if config.sandbox.backend != "host":
+            raise RpcValidationError(
+                "Host acknowledgement requires the Host backend",
+                code=INVALID_PARAMS,
+            )
+        try:
+            path = acknowledge_host_execution(cwd, root=config.sandbox.root)
+        except (OSError, ValueError) as error:
+            raise RpcValidationError(
+                f"Cannot persist Host acknowledgement: {error}", code=INTERNAL_ERROR
+            ) from error
+        config = self._config_loader(cwd)
+        if config.sandbox.backend != "host" or not config.sandbox.unsafe:
+            raise RpcValidationError(
+                "Host acknowledgement did not enable the Host backend",
+                code=INTERNAL_ERROR,
+            )
+        return {
+            "path": str(path),
+            "workspace": str(Path(cwd).expanduser().resolve(strict=True)),
+            "root": str(config.sandbox.root),
+            "acknowledged": True,
+        }
+
     def _run_resume(
         self, params: JsonObject, *, cancel_signal: threading.Event | None = None
     ) -> JsonObject:
@@ -760,6 +805,7 @@ class WorkerServer:
         return {
             "session_id": session.id,
             "approval_id": approval_id,
+            "run_id": approval.run_id,
             "approved": approved,
             "one_shot": one_shot if approved else False,
         }
@@ -872,9 +918,22 @@ class WorkerServer:
             raw = event.data.get("approval")
             if not isinstance(raw, dict) or raw.get("approval_id") != approval_id:
                 continue
-            for key in ("requested_by", "tool_call_id", "tool_name", "rule_id", "reason"):
+            for key in (
+                "requested_by",
+                "tool_call_id",
+                "tool_name",
+                "tool_input",
+                "rule_id",
+                "reason",
+                "required_capabilities",
+                "sandbox",
+            ):
                 if key in event.data:
-                    descriptor[key] = event.data[key]
+                    descriptor[key] = (
+                        approval_input_preview(event.data[key])
+                        if key == "tool_input" and isinstance(event.data[key], dict)
+                        else event.data[key]
+                    )
             break
         return descriptor
 
@@ -937,7 +996,7 @@ class WorkerServer:
         session.append(event)
 
     def _observe_event(self, event: AgentEvent) -> None:
-        self._pending_notifications.append(
+        self._pending_notifications.put(
             self.emit_event(
                 event.type,
                 session_id=event.session_id,

@@ -354,6 +354,9 @@ def without_additive_v1_fields(payload: object) -> object:
                             data[volatile] = 0
                 data.pop("message_schema_version", None)
                 data.pop("summary_message_schema_version", None)
+                if event.get("type") == "approval.requested":
+                    for additive in ("tool_input", "required_capabilities", "sandbox"):
+                        data.pop(additive, None)
                 if event.get("type") in {"run.started", "run.resumed"}:
                     data.pop("max_output_tokens", None)
                     data.pop("system_prompt_sha256", None)

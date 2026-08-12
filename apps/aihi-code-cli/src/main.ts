@@ -114,6 +114,9 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
       sessionId: bootstrap.session.session_id,
       storePath,
       configPaths: bootstrap.config.source_paths,
+      hostConsentRequired:
+        bootstrap.config.sandbox.backend === "host" && !bootstrap.config.sandbox.unsafe,
+      hostExecutionRoot: bootstrap.config.sandbox.root,
     });
     if (lastSessionId !== undefined) {
       process.stderr.write(

@@ -6,6 +6,7 @@ from aihi.agent.policy.approvals import (
     ApprovalResolver,
     StaticApprovalResolver,
     SuspendingApprovalResolver,
+    approval_input_preview,
     resolver_id,
 )
 from aihi.agent.policy.engine import (
@@ -33,5 +34,6 @@ __all__ = [
     "PolicyEngine",
     "StaticApprovalResolver",
     "SuspendingApprovalResolver",
+    "approval_input_preview",
     "resolver_id",
 ]

@@ -114,7 +114,15 @@ def test_installed_wheels_coexist_run_and_remain_typed(
 ) -> None:
     environment = clean_environment()
     virtualenv = tmp_path / "venv"
-    venv.EnvBuilder(with_pip=True, system_site_packages=False).create(virtualenv)
+    # A pure-wheel smoke does not need pip. Avoid ensurepip here: managed Python
+    # installations can make it unavailable, and copying a uv-managed macOS
+    # launcher breaks its relative libpython rpath. A symlink keeps that runtime
+    # intact while the environment's site-packages remain isolated.
+    venv.EnvBuilder(
+        with_pip=False,
+        system_site_packages=False,
+        symlinks=True,
+    ).create(virtualenv)
     python = virtualenv / "bin" / "python"
     site_packages = Path(
         subprocess.run(
@@ -126,23 +134,8 @@ def test_installed_wheels_coexist_run_and_remain_typed(
         ).stdout.strip()
     )
     isolated = isolated_environment(site_packages)
-    subprocess.run(
-        [
-            str(python),
-            "-m",
-            "pip",
-            "--disable-pip-version-check",
-            "install",
-            "--no-deps",
-            "--no-compile",
-            str(wheels["models"]),
-            str(wheels["agent"]),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-        env=environment,
-    )
+    install_pure_wheel(wheels["models"], site_packages)
+    install_pure_wheel(wheels["agent"], site_packages)
 
     subprocess.run(
         [str(python), "-S", str(SMOKE), str(tmp_path / "workspace")],

@@ -132,6 +132,7 @@ from aihi.agent.policy import (
     PolicyEngine,
     StaticApprovalResolver,
     SuspendingApprovalResolver,
+    approval_input_preview,
 )
 from aihi.agent.runtime import (
     ContextContributor,
@@ -308,6 +309,7 @@ __all__ = [
     "UnsafeHostNotAcknowledged",
     "WorkspaceScope",
     "WriteFileTool",
+    "approval_input_preview",
     "new_id",
     "register_mcp_tools",
     "register_plugin_tools",

@@ -1,9 +1,9 @@
 """Typed, file-backed configuration for the Coding Agent application.
 
-Configuration is application-owned.  The Harness still owns runtime safety
-defaults: a Host sandbox is never enabled unless the file explicitly contains
-``unsafe = true`` and provider credentials are referenced by environment name,
-never copied into the TOML document.
+Configuration is application-owned. The Harness still owns runtime safety
+defaults: a Host sandbox is never enabled unless configuration explicitly sets
+``unsafe = true`` or the user acknowledges that exact workspace. Provider
+credentials are referenced by environment name, never copied into TOML.
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ import tomllib
 from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +24,7 @@ from aihi.agent.skills import SkillScope
 _ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _CONFIG_FILENAME = "aihi-code.toml"
 _PROJECT_CONFIG_DIRNAME = ".aihi"
+_HOST_ACK_FILENAME = "host-workspaces.json"
 DEFAULT_USER_CONFIG_TOML = '''\
 # AIHI Coding Agent user configuration.
 # Project config (<cwd>/.aihi/aihi-code.toml) is merged over these defaults.
@@ -35,8 +37,9 @@ model = "demo"
 backend = "host"
 # The Host backend is not an isolation boundary.  With unsafe = true the
 # bash, write_file, and edit_file tools act directly on this machine under
-# your own account.  Set it to false to require a sandboxed backend instead.
-unsafe = true
+# your own account. The interactive CLI asks before trusting this workspace;
+# setting this to true is the non-interactive, configuration-owned opt-in.
+unsafe = false
 # sandbox.root is deliberately unset.  Relative paths resolve against the
 # directory holding this file, so root = "." would confine the agent to
 # ~/.aihi; leaving it unset roots the sandbox at the workspace you launch in.
@@ -429,6 +432,90 @@ def user_config_path() -> Path:
     """Return the user-scope config path, the lowest-precedence candidate."""
 
     return Path.home() / _PROJECT_CONFIG_DIRNAME / _CONFIG_FILENAME
+
+
+def host_acknowledgement_path() -> Path:
+    """Return the fixed user-scope store for trusted Host workspaces."""
+
+    return Path.home() / _PROJECT_CONFIG_DIRNAME / _HOST_ACK_FILENAME
+
+
+def host_execution_acknowledged(cwd: str | Path, *, root: str | Path | None = None) -> bool:
+    """Fail closed unless the exact workspace and Host root were acknowledged."""
+
+    workspace = str(Path(cwd).expanduser().resolve(strict=True))
+    execution_root = str(Path(root or cwd).expanduser().resolve(strict=True))
+    path = host_acknowledgement_path()
+    if not path.is_file():
+        return False
+    try:
+        import json
+
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError):
+        return False
+    if not isinstance(raw, dict) or raw.get("version") != 1:
+        return False
+    workspaces = raw.get("workspaces")
+    if not isinstance(workspaces, dict):
+        return False
+    acknowledgement = workspaces.get(workspace)
+    return (
+        isinstance(acknowledgement, dict)
+        and acknowledgement.get("root") == execution_root
+    )
+
+
+def acknowledge_host_execution(
+    cwd: str | Path,
+    *,
+    root: str | Path | None = None,
+) -> Path:
+    """Persist an explicit acknowledgement scoped to a workspace and Host root."""
+
+    import json
+
+    workspace = str(Path(cwd).expanduser().resolve(strict=True))
+    execution_root = str(Path(root or cwd).expanduser().resolve(strict=True))
+    path = host_acknowledgement_path()
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    workspaces: dict[str, object] = {}
+    if path.exists():
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, ValueError) as error:
+            raise CodeAgentConfigError(f"Cannot load Host acknowledgement: {path}") from error
+        if not isinstance(raw, dict) or raw.get("version") != 1:
+            raise CodeAgentConfigError(f"Host acknowledgement has an unsupported format: {path}")
+        existing = raw.get("workspaces")
+        if not isinstance(existing, dict):
+            raise CodeAgentConfigError(f"Host acknowledgement workspaces must be an object: {path}")
+        workspaces.update(existing)
+    workspaces[workspace] = {
+        "acknowledged_at": datetime.now(UTC).isoformat(),
+        "root": execution_root,
+    }
+    temporary = path.with_suffix(f"{path.suffix}.tmp")
+    temporary.write_text(
+        json.dumps({"version": 1, "workspaces": workspaces}, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    temporary.chmod(0o600)
+    temporary.replace(path)
+    return path
+
+
+def load_worker_config(cwd: str | Path) -> CodeAgentConfig:
+    """Load fixed config layers and apply a persisted workspace Host acknowledgement."""
+
+    config = load_config(cwd=cwd)
+    if (
+        config.sandbox.backend == "host"
+        and not config.sandbox.unsafe
+        and host_execution_acknowledged(cwd, root=config.sandbox.root)
+    ):
+        config = replace(config, sandbox=replace(config.sandbox, unsafe=True))
+    return config
 
 
 def ensure_user_config() -> tuple[Path, bool]:

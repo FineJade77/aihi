@@ -38,9 +38,9 @@ def coordinator_for(tmp_path: Path, provider: FakeProvider, **kwargs: object) ->
     )
 
 
-def write_steps(path: str = "note.txt") -> list[FakeStep]:
+def write_steps(path: str = "note.txt", content: str = "approved") -> list[FakeStep]:
     return [
-        FakeStep.call_tool("write_file", {"path": path, "content": "approved"}),
+        FakeStep.call_tool("write_file", {"path": path, "content": content}),
         FakeStep(text="done"),
     ]
 
@@ -51,7 +51,10 @@ async def test_suspended_run_resumes_after_out_of_band_approval(tmp_path: Path) 
     store = SQLiteEventStore(database)
     try:
         session = session_for(tmp_path, "ses-approval-resume", store)
-        first = coordinator_for(tmp_path, FakeProvider(write_steps()))
+        first = coordinator_for(
+            tmp_path,
+            FakeProvider(write_steps(content="TOKEN=top-secret")),
+        )
         suspended = await first.run(
             session, model="fake-model", user_message=Message.text("user", "write")
         )
@@ -61,6 +64,13 @@ async def test_suspended_run_resumes_after_out_of_band_approval(tmp_path: Path) 
         assert not (tmp_path / "note.txt").exists()
         assert not any(event.type == "tool.started" for event in session.events)
         assert not any(event.type == "run.completed" for event in session.events)
+        requested = next(event for event in session.events if event.type == "approval.requested")
+        assert requested.data["tool_input"] == {
+            "path": "note.txt",
+            "content": "TOKEN=<redacted>",
+        }
+        assert requested.data["required_capabilities"] == ["filesystem.write"]
+        assert requested.data["sandbox"]["root"] == str(tmp_path)
     finally:
         store.close()
 
@@ -80,7 +90,7 @@ async def test_suspended_run_resumes_after_out_of_band_approval(tmp_path: Path) 
         result = await second.resume(reloaded, run_id=suspended.run_id, model="fake-model")
 
         assert result.state == RunState.COMPLETED
-        assert (tmp_path / "note.txt").read_text(encoding="utf-8") == "approved"
+        assert (tmp_path / "note.txt").read_text(encoding="utf-8") == "TOKEN=top-secret"
         assert reloaded.orphan_tool_calls == ()
         assert RunCoordinator.suspended_runs(reloaded) == ()
         types = [event.type for event in reloaded.events]

@@ -385,6 +385,59 @@ def test_stdio_streams_session_events_after_command_response(tmp_path) -> None:
     assert messages[2]["params"]["event"]["event_type"] == "session.created"
 
 
+def test_stdio_rejects_a_second_foreground_run_for_the_same_session() -> None:
+    class BlockingWorker(WorkerServer):
+        def handle_background(self, message, *, cancel_signal):  # type: ignore[no-untyped-def]
+            cancel_signal.wait(timeout=2)
+            return {"jsonrpc": "2.0", "id": message.get("id"), "result": {"ok": True}}
+
+    incoming = io.BytesIO()
+    for message in (
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {"protocol_version": PROTOCOL_VERSION},
+        },
+        {"jsonrpc": "2.0", "method": "initialized"},
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "run.start",
+            "params": {
+                "session_id": "ses_busy",
+                "run_id": "run_first",
+                "user_message": "first",
+            },
+        },
+        {
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "run.start",
+            "params": {
+                "session_id": "ses_busy",
+                "run_id": "run_second",
+                "user_message": "second",
+            },
+        },
+        {"jsonrpc": "2.0", "id": 4, "method": "shutdown"},
+    ):
+        write_frame(incoming, message)
+    incoming.seek(0)
+    outgoing = io.BytesIO()
+
+    assert serve_stdio(incoming, outgoing, stderr=io.StringIO(), server=BlockingWorker()) == 0
+
+    outgoing.seek(0)
+    messages = []
+    while (raw := read_frame(outgoing)) is not None:
+        messages.append(json.loads(raw))
+    by_id = {message.get("id"): message for message in messages}
+    assert by_id[2]["result"] == {"run_id": "run_first", "accepted": True}
+    assert "Session already has an active Run" in by_id[3]["error"]["message"]
+    assert by_id[4]["result"] == {"ok": True}
+
+
 def _write_worker_config(tmp_path):
     config_path = tmp_path / "aihi-code.toml"
     config_path.write_text(
@@ -584,6 +637,82 @@ def test_config_init_creates_user_directory_and_default_file(tmp_path, monkeypat
     assert config_path.is_file()
     assert str(config_path) == result["path"]
     assert (home / ".aihi").stat().st_mode & 0o777 == 0o700
+    assert "unsafe = false" in config_path.read_text(encoding="utf-8")
+
+
+def test_config_host_acknowledgement_is_explicit_and_workspace_scoped(
+    tmp_path, monkeypatch
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    server = _initialized_server()
+
+    rejected = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "config.acknowledge_host",
+            "params": {"cwd": str(workspace), "acknowledged": False},
+        }
+    )
+    assert rejected is not None
+    assert rejected["error"]["code"] == INVALID_PARAMS  # type: ignore[index]
+
+    accepted = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "config.acknowledge_host",
+            "params": {"cwd": str(workspace), "acknowledged": True},
+        }
+    )
+    assert accepted is not None
+    assert accepted["result"]["acknowledged"] is True  # type: ignore[index]
+    assert accepted["result"]["workspace"] == str(workspace)  # type: ignore[index]
+    assert accepted["result"]["root"] == str(workspace)  # type: ignore[index]
+
+    effective = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 4,
+            "method": "config.get",
+            "params": {"cwd": str(workspace)},
+        }
+    )
+    assert effective is not None
+    assert effective["result"]["config"]["sandbox"]["unsafe"] is True  # type: ignore[index]
+
+
+def test_config_host_acknowledgement_rejects_non_host_backend_without_writing(
+    tmp_path, monkeypatch
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    workspace = tmp_path / "project"
+    config_dir = workspace / ".aihi"
+    config_dir.mkdir(parents=True)
+    (config_dir / "aihi-code.toml").write_text(
+        '[sandbox]\nbackend = "docker"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("HOME", str(home))
+    server = _initialized_server()
+
+    rejected = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "config.acknowledge_host",
+            "params": {"cwd": str(workspace), "acknowledged": True},
+        }
+    )
+
+    assert rejected is not None
+    assert rejected["error"]["code"] == INVALID_PARAMS  # type: ignore[index]
+    assert not (home / ".aihi" / "host-workspaces.json").exists()
 
 
 def test_config_init_never_overwrites_an_existing_file(tmp_path, monkeypatch) -> None:

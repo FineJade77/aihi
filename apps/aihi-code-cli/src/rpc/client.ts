@@ -354,6 +354,15 @@ export class RpcClient {
     return this.request<{ path: string; created: boolean }>("config.init");
   }
 
+  public async acknowledgeHost(cwd: string): Promise<{
+    path: string;
+    workspace: string;
+    root: string;
+    acknowledged: boolean;
+  }> {
+    return this.request("config.acknowledge_host", { cwd, acknowledged: true });
+  }
+
   public async getConfig(cwd?: string): Promise<ConfigDescriptor> {
     const result = await this.request<{ config: ConfigDescriptor }>("config.get", {
       ...(cwd ? { cwd } : {}),
@@ -398,6 +407,7 @@ export class RpcClient {
 
   public async resolveApproval(params: ApprovalResolveParams): Promise<{
     approval_id: string;
+    run_id: string;
     approved: boolean;
     one_shot: boolean;
   }> {

@@ -7,9 +7,59 @@ application owns *how* a human answers it. Resolvers therefore only translate an
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Protocol, runtime_checkable
+
+_APPROVAL_PREVIEW_STRING_LIMIT = 8_192
+_SENSITIVE_INPUT_KEY = re.compile(
+    r"(?:^|[_-])(?:api[_-]?key|authorization|cookie|passw(?:or)?d|private[_-]?key|secret|token)(?:$|[_-])",
+    re.IGNORECASE,
+)
+_SENSITIVE_COMMAND_VALUE = re.compile(
+    r"(\b(?:api[_-]?key|password|passwd|secret|token)\b\s*(?:=|:)\s*)([^\s]+)",
+    re.IGNORECASE,
+)
+
+
+def _preview_value(value: Any, *, key: str | None = None, depth: int = 0) -> Any:
+    if key is not None and _SENSITIVE_INPUT_KEY.search(key):
+        return "<redacted>"
+    if depth >= 8:
+        return "<preview omitted: nesting limit>"
+    if isinstance(value, dict):
+        preview: dict[str, Any] = {}
+        for index, (child_key, child_value) in enumerate(value.items()):
+            if index >= 100:
+                preview["<omitted>"] = f"{len(value) - index} additional fields"
+                break
+            text_key = str(child_key)
+            preview[text_key] = _preview_value(
+                child_value,
+                key=text_key,
+                depth=depth + 1,
+            )
+        return preview
+    if isinstance(value, (list, tuple)):
+        preview_items = [_preview_value(item, depth=depth + 1) for item in value[:100]]
+        if len(value) > 100:
+            preview_items.append(f"<{len(value) - 100} additional items omitted>")
+        return preview_items
+    if isinstance(value, str):
+        redacted = _SENSITIVE_COMMAND_VALUE.sub(r"\1<redacted>", value)
+        if len(redacted) > _APPROVAL_PREVIEW_STRING_LIMIT:
+            omitted = len(redacted) - _APPROVAL_PREVIEW_STRING_LIMIT
+            return f"{redacted[:_APPROVAL_PREVIEW_STRING_LIMIT]}\n… <{omitted} chars omitted>"
+        return redacted
+    return value
+
+
+def approval_input_preview(value: dict[str, Any]) -> dict[str, Any]:
+    """Build a bounded, credential-redacted copy safe for durable approval metadata."""
+
+    preview = _preview_value(value)
+    return preview if isinstance(preview, dict) else {}
 
 
 class ApprovalOutcome(StrEnum):
@@ -97,5 +147,6 @@ __all__ = [
     "ApprovalResolver",
     "StaticApprovalResolver",
     "SuspendingApprovalResolver",
+    "approval_input_preview",
     "resolver_id",
 ]

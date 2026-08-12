@@ -34,6 +34,7 @@ from aihi.agent.policy import (
     PermissionMode,
     PolicyEngine,
     SuspendingApprovalResolver,
+    approval_input_preview,
     resolver_id,
 )
 from aihi.agent.runtime.extensions import (
@@ -736,6 +737,22 @@ class RunCoordinator:
         if self._approval_was_denied_for_call(session, run_id, call.id):
             return self._denied(call, f"Approval denied for tool {call.name}.")
         approval = self._pending_approval_for_call(session, run_id, call.id)
+        spec = self._tool_spec(call.name)
+        sandbox_descriptor = {
+            **self.sandbox.descriptor.to_dict(),
+            "root": str(self.sandbox.root),
+        }
+        approval_metadata = {
+            "tool_call_id": call.id,
+            "tool_name": call.name,
+            "tool_input": approval_input_preview(call.input),
+            "rule_id": decision.rule_id,
+            "reason": decision.reason,
+            "required_capabilities": list(
+                spec.required_capabilities if spec is not None else ()
+            ),
+            "sandbox": sandbox_descriptor,
+        }
         if not allow_inline_approval:
             if approval is None:
                 approval = session.request_approval(
@@ -743,12 +760,7 @@ class RunCoordinator:
                     requested_by="policy",
                     run_id=run_id,
                     ttl_seconds=self.approval_ttl_seconds,
-                    metadata={
-                        "tool_call_id": call.id,
-                        "tool_name": call.name,
-                        "rule_id": decision.rule_id,
-                        "reason": decision.reason,
-                    },
+                    metadata=approval_metadata,
                 )
             self._transition(session, run_id, machine, RunState.WAITING_APPROVAL)
             raise _RunSuspended(approval.approval_id, (call.id,))
@@ -758,15 +770,9 @@ class RunCoordinator:
                 requested_by="policy",
                 run_id=run_id,
                 ttl_seconds=self.approval_ttl_seconds,
-                metadata={
-                    "tool_call_id": call.id,
-                    "tool_name": call.name,
-                    "rule_id": decision.rule_id,
-                    "reason": decision.reason,
-                },
+                metadata=approval_metadata,
             )
         self._transition(session, run_id, machine, RunState.WAITING_APPROVAL)
-        spec = self._tool_spec(call.name)
         request = ApprovalRequest(
             approval_id=approval.approval_id,
             session_id=session.id,
@@ -777,7 +783,7 @@ class RunCoordinator:
             reason=decision.reason,
             rule_id=decision.rule_id,
             required_capabilities=spec.required_capabilities if spec is not None else (),
-            sandbox=self.sandbox.descriptor.to_dict(),
+            sandbox=sandbox_descriptor,
         )
         outcome = ApprovalOutcome(
             await await_cancelable(self.approval_resolver.resolve(request), cancel_event)

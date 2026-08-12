@@ -9,8 +9,7 @@ from __future__ import annotations
 import json
 import os
 import sys
-from concurrent.futures import Future, ThreadPoolExecutor
-from dataclasses import dataclass
+from functools import partial
 from queue import Empty, Queue
 from threading import Event, Thread
 from typing import Any, BinaryIO
@@ -18,19 +17,19 @@ from typing import Any, BinaryIO
 from aihi.code_agent.framing import FrameError, read_frame, write_frame
 from aihi.code_agent.protocol import (
     INTERNAL_ERROR,
+    INVALID_PARAMS,
     PARSE_ERROR,
     PROTOCOL_VERSION,
     _notification,
 )
 from aihi.code_agent.worker.server import WorkerServer
+from aihi.code_agent.worker.supervisor import RunConflict, RunSupervisor
 
 
-@dataclass(slots=True)
-class _PendingRun:
-    request_id: str | int
-    run_id: str
-    cancel_signal: Event
-    future: Future[dict[str, Any] | None]
+def _handle_background(
+    runtime: WorkerServer, message: object, signal: Event
+) -> dict[str, Any] | None:
+    return runtime.handle_background(message, cancel_signal=signal)
 
 
 def _request_id(message: object) -> str | int | None:
@@ -82,17 +81,14 @@ def serve_stdio(
 
     reader = Thread(target=read_loop, name="aihi-code-agent-reader", daemon=True)
     reader.start()
-    executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="aihi-code-agent-run")
-    pending: dict[str, _PendingRun] = {}
+    supervisor = RunSupervisor(max_workers=4)
 
     def emit_notifications() -> None:
         for notification in runtime.drain_notifications():
             write_frame(stdout, notification)
 
     def finish_runs() -> None:
-        for run_id, item in list(pending.items()):
-            if not item.future.done():
-                continue
+        for item in supervisor.drain_completed():
             failure: str | None = None
             try:
                 response = item.future.result()
@@ -121,16 +117,15 @@ def serve_stdio(
                         },
                     ),
                 )
-            pending.pop(run_id, None)
             emit_notifications()
 
     try:
         while True:
             finish_runs()
             emit_notifications()
-            if eof.is_set() and not pending:
+            if eof.is_set() and not supervisor.has_active:
                 return 0
-            if runtime.shutdown_requested and not pending:
+            if runtime.shutdown_requested and not supervisor.has_active:
                 return 0
             try:
                 kind, payload = incoming.get(timeout=0.02)
@@ -138,8 +133,7 @@ def serve_stdio(
                 continue
             if kind == "eof":
                 eof.set()
-                for item in pending.values():
-                    item.cancel_signal.set()
+                supervisor.cancel_all()
                 continue
             if kind == "frame_error":
                 error = payload
@@ -161,6 +155,17 @@ def serve_stdio(
             params = _params(decoded)
             request_id = _request_id(decoded)
             if method in {"run.start", "run.resume"} and request_id is not None:
+                session_id = params.get("session_id")
+                if not isinstance(session_id, str) or not session_id.strip():
+                    write_frame(stdout, {
+                        "jsonrpc": "2.0",
+                        "id": request_id,
+                        "error": {
+                            "code": INVALID_PARAMS,
+                            "message": "session_id must be a non-empty string",
+                        },
+                    })
+                    continue
                 run_id = params.get("run_id")
                 if not isinstance(run_id, str) or not run_id.strip():
                     if method == "run.start":
@@ -169,43 +174,64 @@ def serve_stdio(
                             decoded = dict(decoded)
                             decoded["params"] = {**params, "run_id": run_id}
                     else:
-                        run_id = ""
-                if run_id and run_id in pending:
+                        write_frame(stdout, {
+                            "jsonrpc": "2.0",
+                            "id": request_id,
+                            "error": {
+                                "code": INVALID_PARAMS,
+                                "message": "run_id must be a non-empty string",
+                            },
+                        })
+                        continue
+                try:
+                    supervisor.submit(
+                        request_id=request_id,
+                        session_id=session_id,
+                        run_id=run_id,
+                        target=partial(_handle_background, runtime, decoded),
+                    )
+                except RunConflict as error:
                     write_frame(stdout, {
                         "jsonrpc": "2.0",
                         "id": request_id,
-                        "error": {"code": -32602, "message": f"Run is already active: {run_id}"},
+                        "error": {"code": INVALID_PARAMS, "message": str(error)},
                     })
                     continue
-                signal = Event()
-                future = executor.submit(
-                    runtime.handle_background, decoded, cancel_signal=signal
-                )
                 # Acknowledge now, not when the run ends: a coding run lasts
                 # minutes, and holding the response open makes every client
                 # impose a request timeout on the model's thinking time.
                 write_frame(stdout, {
                     "jsonrpc": "2.0",
                     "id": request_id,
-                    "result": {"run_id": run_id or None, "accepted": True},
+                    "result": {"run_id": run_id, "accepted": True},
                 })
-                if run_id:
-                    pending[run_id] = _PendingRun(request_id, run_id, signal, future)
-                else:
-                    pending[f"request:{request_id}"] = _PendingRun(
-                        request_id, f"request:{request_id}", signal, future
-                    )
                 continue
             if method == "run.cancel" and request_id is not None:
                 run_id = params.get("run_id")
-                if isinstance(run_id, str) and run_id in pending:
-                    pending[run_id].cancel_signal.set()
+                session_id = params.get("session_id")
+                if (
+                    isinstance(run_id, str)
+                    and isinstance(session_id, str)
+                    and supervisor.request_cancel(session_id=session_id, run_id=run_id)
+                ):
                     write_frame(stdout, {
                         "jsonrpc": "2.0",
                         "id": request_id,
                         "result": {"run_id": run_id, "requested": True},
                     })
                     continue
+                if isinstance(session_id, str):
+                    active = supervisor.active_for_session(session_id)
+                    if active is not None:
+                        write_frame(stdout, {
+                            "jsonrpc": "2.0",
+                            "id": request_id,
+                            "error": {
+                                "code": INVALID_PARAMS,
+                                "message": f"Session has another active Run: {active.run_id}",
+                            },
+                        })
+                        continue
             try:
                 response = runtime.handle(decoded)
             except Exception as error:  # noqa: BLE001 - protocol boundary must stay alive.
@@ -219,12 +245,9 @@ def serve_stdio(
                 write_frame(stdout, response)
             emit_notifications()
             if runtime.shutdown_requested:
-                for item in pending.values():
-                    item.cancel_signal.set()
+                supervisor.cancel_all()
     finally:
-        for item in pending.values():
-            item.cancel_signal.set()
-        executor.shutdown(wait=True, cancel_futures=False)
+        supervisor.close()
         reader.join(timeout=0.2)
         runtime.close()
 

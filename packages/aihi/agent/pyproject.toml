@@ -12,12 +12,16 @@ license = { text = "MIT" }
 dependencies = [
   "aihi-models>=0.1,<0.2",
 ]
+
 classifiers = [
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Typing :: Typed",
 ]
+
+[tool.uv.sources]
+aihi-models = { workspace = true }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/aihi"]
