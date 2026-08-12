@@ -143,6 +143,60 @@ test("Ink composer ignores global Ctrl shortcuts without changing its draft", as
   }
 });
 
+test("Ink composer erases with the terminal's Backspace byte", async () => {
+  const { application, stdin, getState, start } = harness();
+  try {
+    await start();
+    stdin.write("draft");
+    await waitFor(() => getState().value === "draft", "Draft was not entered");
+
+    // Terminals send DEL for Backspace, which Ink reports as `key.delete`.
+    stdin.write("\x7f");
+    await waitFor(() => getState().value === "draf", "Backspace did not erase a character");
+    assert.equal(getState().cursor, 4);
+
+    stdin.write("\b"); // Some terminals (and Ctrl-H) send BS instead.
+    await waitFor(() => getState().value === "dra", "Ctrl-H did not erase a character");
+
+    stdin.write("\x1b\x7f"); // Option-Backspace erases the word.
+    await waitFor(() => getState().value === "", "Option-Backspace did not erase the word");
+  } finally {
+    application.unmount();
+  }
+});
+
+test("Ink composer erases by word and to the line start", async () => {
+  const { application, stdin, getState, start } = harness();
+  try {
+    await start();
+    stdin.write("alpha beta gamma");
+    await waitFor(() => getState().value === "alpha beta gamma", "Draft was not entered");
+
+    stdin.write("\x17"); // Ctrl-W
+    await waitFor(() => getState().value === "alpha beta ", "Ctrl-W did not erase a word");
+
+    stdin.write("\x15"); // Ctrl-U
+    await waitFor(() => getState().value === "", "Ctrl-U did not erase the line");
+  } finally {
+    application.unmount();
+  }
+});
+
+test("Ink composer erases forward with Ctrl-D", async () => {
+  const { application, stdin, getState, start } = harness();
+  try {
+    await start();
+    stdin.write("abc");
+    await waitFor(() => getState().value === "abc", "Draft was not entered");
+    stdin.write("\u001b[D"); // Left arrow, so there is text ahead of the cursor.
+    await waitFor(() => getState().cursor === 2, "Left arrow did not move the cursor");
+    stdin.write("\x04"); // Ctrl-D
+    await waitFor(() => getState().value === "ab", "Ctrl-D did not erase forwards");
+  } finally {
+    application.unmount();
+  }
+});
+
 test("Ink composer clears its draft with Escape", async () => {
   const { application, stdin, getState, start } = harness();
   try {

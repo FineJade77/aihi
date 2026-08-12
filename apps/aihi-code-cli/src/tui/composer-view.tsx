@@ -3,6 +3,8 @@ import {
   clearComposer,
   completeSlashCommand,
   deleteComposerText,
+  deleteComposerToLineStart,
+  deleteComposerWord,
   insertComposerText,
   moveComposerCursor,
   nextComposerHistory,
@@ -12,6 +14,7 @@ import {
   type ComposerState,
   type SlashCommandDescriptor,
 } from "./composer.js";
+import { useTheme } from "./theme.js";
 
 export interface ComposerInputProps {
   state: ComposerState;
@@ -29,10 +32,34 @@ export function ComposerInput({
   onChange,
   onSubmit,
 }: ComposerInputProps) {
+  const theme = useTheme();
   useInput((input, key) => {
     const multilineShortcut = key.ctrl && input === "j";
     if (key.escape) {
       onChange(clearComposer(state));
+      return;
+    }
+    // Backspace reaches us as DEL (0x7f), which Ink reports as `key.delete`,
+    // and Option-Backspace as the same byte behind a meta prefix. Both are
+    // erasures and must be claimed before the Ctrl/meta guard drops modified
+    // keys — routing DEL to a forward delete is what made the prompt look
+    // unclearable, because at the end of a line there is nothing ahead of the
+    // cursor to remove. Ink cannot tell DEL apart from the forward-delete key,
+    // so that key erases backwards too; Ctrl-D is the forward delete.
+    if (key.backspace || key.delete) {
+      onChange(key.meta ? deleteComposerWord(state) : deleteComposerText(state, "backward"));
+      return;
+    }
+    if (key.ctrl && input === "w") {
+      onChange(deleteComposerWord(state));
+      return;
+    }
+    if (key.ctrl && input === "u") {
+      onChange(deleteComposerToLineStart(state));
+      return;
+    }
+    if (key.ctrl && input === "d") {
+      onChange(deleteComposerText(state, "forward"));
       return;
     }
     const tabShortcut = key.tab || input === "\t" || input === "tab";
@@ -55,14 +82,6 @@ export function ComposerInput({
     }
     if (key.rightArrow) {
       onChange(moveComposerCursor(state, "right"));
-      return;
-    }
-    if (key.backspace) {
-      onChange(deleteComposerText(state, "backward"));
-      return;
-    }
-    if (key.delete) {
-      onChange(deleteComposerText(state, "forward"));
       return;
     }
     if (key.return) {
@@ -91,27 +110,28 @@ export function ComposerInput({
   return (
     <Box flexDirection="column">
       <Box>
-        <Text color="magenta">› </Text>
-        <Text>
+        <Text bold color={theme.accent}>› </Text>
+        <Text color={theme.text}>
           {renderSegment(before)}
           <Text inverse>{cursor || " "}</Text>
           {renderSegment(after)}
         </Text>
       </Box>
       {state.value.includes("\n") && (
-        <Text color="gray">Ctrl-J newline · Enter send</Text>
+        <Text color={theme.faint}>Ctrl-J newline · Enter send</Text>
       )}
       {suggestions.length > 0 && (
         <Box flexDirection="column" paddingLeft={2}>
-          {suggestions.map((command, index) => (
-            <Text
-              key={command.name}
-              color={index === selectedSuggestion ? "magenta" : "gray"}
-            >
-              {command.usage} · {command.description}
-            </Text>
-          ))}
-          <Text color="gray">Tab / Shift-Tab complete</Text>
+          {suggestions.map((command, index) => {
+            const selected = index === selectedSuggestion;
+            return (
+              <Text key={command.name} color={selected ? theme.accent : theme.muted}>
+                {selected ? "› " : "  "}
+                {command.usage} · {command.description}
+              </Text>
+            );
+          })}
+          <Text color={theme.faint}>Tab / Shift-Tab complete</Text>
         </Box>
       )}
     </Box>

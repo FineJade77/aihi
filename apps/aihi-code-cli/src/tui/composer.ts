@@ -80,6 +80,27 @@ export function deleteComposerText(
   });
 }
 
+/** Ctrl-W / Option-Backspace: drop the whitespace run, then the word before it. */
+export function deleteComposerWord(state: ComposerState): ComposerState {
+  if (state.cursor === 0) return resetCompletion(state);
+  const before = state.value.slice(0, state.cursor);
+  const trimmed = before.replace(/[^\s]*\s*$/, "");
+  return edited(state, {
+    value: `${trimmed}${state.value.slice(state.cursor)}`,
+    cursor: trimmed.length,
+  });
+}
+
+/** Ctrl-U: drop the current line up to the cursor, keeping earlier lines. */
+export function deleteComposerToLineStart(state: ComposerState): ComposerState {
+  const lineStart = state.value.lastIndexOf("\n", state.cursor - 1) + 1;
+  if (lineStart === state.cursor) return resetCompletion(state);
+  return edited(state, {
+    value: `${state.value.slice(0, lineStart)}${state.value.slice(state.cursor)}`,
+    cursor: lineStart,
+  });
+}
+
 export function clearComposer(state: ComposerState): ComposerState {
   return {
     ...state,

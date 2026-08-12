@@ -5,6 +5,8 @@ import {
   completeSlashCommand,
   createComposerState,
   deleteComposerText,
+  deleteComposerToLineStart,
+  deleteComposerWord,
   insertComposerText,
   moveComposerCursor,
   nextComposerHistory,
@@ -32,6 +34,28 @@ test("composer inserts multiline text at its cursor and supports local editing",
   state = deleteComposerText(state, "forward");
   assert.equal(state.value, "first\nsecondhird");
   assert.equal(clearComposer(state).value, "");
+});
+
+test("composer erases whole words and back to the start of the current line", () => {
+  let state = createComposerState();
+  state = insertComposerText(state, "alpha beta  gamma");
+
+  state = deleteComposerWord(state);
+  assert.equal(state.value, "alpha beta  ");
+  state = deleteComposerWord(state);
+  assert.equal(state.value, "alpha ");
+  assert.equal(state.cursor, "alpha ".length);
+  state = deleteComposerWord(state);
+  assert.equal(state.value, "");
+  // Erasing an empty composer is a no-op, not an underflow.
+  assert.equal(deleteComposerWord(state).value, "");
+
+  state = insertComposerText(state, "keep\ndrop this");
+  state = deleteComposerToLineStart(state);
+  assert.equal(state.value, "keep\n");
+  assert.equal(state.cursor, "keep\n".length);
+  // The cursor already sits at the line start, so there is nothing to erase.
+  assert.equal(deleteComposerToLineStart(state).value, "keep\n");
 });
 
 test("composer history preserves the current draft and deduplicates adjacent submissions", () => {

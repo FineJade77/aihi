@@ -27,6 +27,7 @@ import {
 } from "./composer.js";
 import { ComposerInput } from "./composer-view.js";
 import { commandHelpSummary, SLASH_COMMANDS } from "./commands.js";
+import { createTheme, resolveThemeName, ThemeProvider, useTheme, type Theme } from "./theme.js";
 import {
   buildTranscriptLines,
   createViewportState,
@@ -39,16 +40,11 @@ import {
   type TranscriptViewportState,
 } from "./viewport.js";
 
-const COLORS = {
-  brand: "cyan",
-  accent: "magenta",
-  muted: "gray",
-  good: "green",
-  warn: "yellow",
-  bad: "red",
-  panel: "blue",
-} as const;
-type UiColor = (typeof COLORS)[keyof typeof COLORS];
+/** A palette tone, already resolved to a colour the terminal can render. */
+type UiColor = string;
+
+/** Notices name a tone rather than a colour, so state outlives the palette. */
+type NoticeTone = "warn" | "bad";
 
 export interface TuiAppProps {
   client: RpcClient;
@@ -144,14 +140,15 @@ function approvalSandbox(approval: ApprovalDescriptor): string | undefined {
 }
 
 function InfoRow({ label, value }: { label: string; value: string }) {
+  const theme = useTheme();
   return (
     <Box>
       {/* A fixed, non-shrinking label column: a long value would otherwise make
           Yoga shrink this cell and swallow the padding that aligns the rows. */}
       <Box width={10} flexShrink={0}>
-        <Text color={COLORS.muted}>{label}</Text>
+        <Text color={theme.muted}>{label}</Text>
       </Box>
-      <Text wrap="truncate-start">{value}</Text>
+      <Text color={theme.text} wrap="truncate-start">{value}</Text>
     </Box>
   );
 }
@@ -209,39 +206,40 @@ function StatusBar({
   contextLimit: number;
   tasks: TaskDescriptor[];
 }) {
+  const theme = useTheme();
   const ratio = contextLimit > 0 ? contextTokens / contextLimit : 0;
   const contextTone =
-    ratio >= 0.9 ? COLORS.bad : ratio >= 0.7 ? COLORS.warn : COLORS.muted;
+    ratio >= 0.9 ? theme.bad : ratio >= 0.7 ? theme.warn : theme.muted;
   const active = tasks.filter((task) => task.state === "running").length;
   return (
     <Box
       borderStyle="round"
-      borderColor={COLORS.panel}
+      borderColor={theme.border}
       height={3}
       overflow="hidden"
       paddingX={1}
     >
-      <Text color={COLORS.muted} wrap="truncate-start">
+      <Text color={theme.muted} wrap="truncate-start">
         {tildePath(cwd)}
       </Text>
-      <Text color={COLORS.muted}>{"  ·  "}</Text>
-      <Text color={COLORS.brand}>
+      <Text color={theme.faint}>{"  ·  "}</Text>
+      <Text color={theme.brand}>
         {provider}/{model}
       </Text>
-      <Text color={COLORS.muted}>{"  ·  "}</Text>
+      <Text color={theme.faint}>{"  ·  "}</Text>
       {contextLimit > 0 ? (
         <Text color={contextTone}>
           ctx {compactCount(contextTokens)}/{compactCount(contextLimit)}{" "}
           {(ratio * 100).toFixed(1)}%
         </Text>
       ) : (
-        <Text color={COLORS.muted}>ctx —</Text>
+        <Text color={theme.muted}>ctx —</Text>
       )}
       {/* The task graph earns bar space only once there is a graph to show. */}
       {tasks.length > 0 && (
         <>
-          <Text color={COLORS.muted}>{"  ·  "}</Text>
-          <Text color={active > 0 ? COLORS.warn : COLORS.good}>
+          <Text color={theme.faint}>{"  ·  "}</Text>
+          <Text color={active > 0 ? theme.warn : theme.good}>
             tasks {tasks.length}
             {active > 0 ? ` (${active} running)` : ""}
           </Text>
@@ -253,61 +251,63 @@ function StatusBar({
 
 /** Pending approvals, with the ids the /approve and /deny commands need. */
 function ApprovalPanel({ approvals }: { approvals: ApprovalDescriptor[] }) {
+  const theme = useTheme();
   const approval = approvals[0];
   if (approval === undefined) return null;
   const sandbox = approvalSandbox(approval);
   return (
     <Box
       borderStyle="round"
-      borderColor={COLORS.warn}
+      borderColor={theme.warn}
       flexDirection="column"
       height={10}
       overflow="hidden"
       paddingX={1}
     >
-      <Text bold color={COLORS.warn}>
+      <Text bold color={theme.warn}>
         APPROVAL REQUIRED ({approvals.length})
       </Text>
-      <Text>
-        <Text color={COLORS.accent}>{approval.approval_id}</Text>{" "}
+      <Text color={theme.text}>
+        <Text color={theme.accent}>{approval.approval_id}</Text>{" "}
         <Text bold>{approval.tool_name ?? approval.scope}</Text>
       </Text>
-      <Text color={COLORS.muted}>[y] run · [o] once · [n] deny</Text>
-      <Text wrap="truncate">{approvalInput(approval).replace(/\s+/g, " ")}</Text>
+      <Text color={theme.muted}>[y] run · [o] once · [n] deny</Text>
+      <Text color={theme.text} wrap="truncate">{approvalInput(approval).replace(/\s+/g, " ")}</Text>
       {approval.reason !== undefined && (
-        <Text color={COLORS.muted} wrap="truncate">reason · {approval.reason}</Text>
+        <Text color={theme.muted} wrap="truncate">reason · {approval.reason}</Text>
       )}
       {approval.required_capabilities !== undefined && approval.required_capabilities.length > 0 && (
-        <Text color={COLORS.muted}>capabilities · {approval.required_capabilities.join(", ")}</Text>
+        <Text color={theme.muted}>capabilities · {approval.required_capabilities.join(", ")}</Text>
       )}
-      {sandbox !== undefined && <Text color={COLORS.muted} wrap="truncate">sandbox · {sandbox}</Text>}
+      {sandbox !== undefined && <Text color={theme.muted} wrap="truncate">sandbox · {sandbox}</Text>}
     </Box>
   );
 }
 
 function HostConsentPanel({ cwd, root }: { cwd: string; root: string }) {
+  const theme = useTheme();
   return (
-    <Box borderStyle="round" borderColor={COLORS.warn} flexDirection="column" paddingX={1}>
-      <Text bold color={COLORS.warn}>TRUST THIS WORKSPACE?</Text>
-      <Text wrap="wrap">
+    <Box borderStyle="round" borderColor={theme.warn} flexDirection="column" paddingX={1}>
+      <Text bold color={theme.warn}>TRUST THIS WORKSPACE?</Text>
+      <Text color={theme.text} wrap="wrap">
         Host mode is not an isolation boundary. AIHI tools can read and modify files and run
         commands as your local user inside this execution root:
       </Text>
-      <Text color={COLORS.accent}>{root}</Text>
-      {root !== cwd && <Text color={COLORS.muted}>workspace · {cwd}</Text>}
-      <Text color={COLORS.muted}>[y] trust this workspace · [n] exit</Text>
+      <Text bold color={theme.accent}>{root}</Text>
+      {root !== cwd && <Text color={theme.muted}>workspace · {cwd}</Text>}
+      <Text color={theme.muted}>[y] trust this workspace · [n] exit</Text>
     </Box>
   );
 }
 
-function transcriptTone(tone: TranscriptLineTone): UiColor | undefined {
-  if (tone === "user") return COLORS.accent;
-  if (tone === "assistant") return COLORS.brand;
-  if (tone === "muted") return COLORS.muted;
-  if (tone === "good") return COLORS.good;
-  if (tone === "warn") return COLORS.warn;
-  if (tone === "bad") return COLORS.bad;
-  return undefined;
+function transcriptTone(theme: Theme, tone: TranscriptLineTone): UiColor | undefined {
+  if (tone === "user") return theme.accent;
+  if (tone === "assistant") return theme.brand;
+  if (tone === "muted") return theme.muted;
+  if (tone === "good") return theme.good;
+  if (tone === "warn") return theme.warn;
+  if (tone === "bad") return theme.bad;
+  return theme.text;
 }
 
 /** A line-bounded viewport over the event-derived transcript. */
@@ -320,33 +320,34 @@ function TranscriptPanel({
   streamText: string;
   rowBudget: number;
 }) {
+  const theme = useTheme();
   return (
     <Box
       borderStyle="round"
-      borderColor={streamText ? COLORS.accent : COLORS.panel}
+      borderColor={streamText ? theme.accent : theme.border}
       flexDirection="column"
       height={rowBudget + 3}
       overflow="hidden"
       paddingX={1}
     >
       <Box justifyContent="space-between">
-        <Text bold color={COLORS.brand}>
+        <Text bold color={theme.brand}>
           CONVERSATION{streamText ? " · streaming" : ""}
         </Text>
-        <Text color={viewport.followingTail ? COLORS.muted : COLORS.warn}>
+        <Text color={viewport.followingTail ? theme.faint : theme.warn}>
           {viewport.followingTail ? "follow" : "paused"}
         </Text>
       </Box>
       {viewport.hiddenAbove > 0 && (
-        <Text color={COLORS.muted}>↑ {viewport.hiddenAbove} earlier lines</Text>
+        <Text color={theme.faint}>↑ {viewport.hiddenAbove} earlier lines</Text>
       )}
       {viewport.lines.map((line) => (
-        <Text key={line.id} bold={line.bold} color={transcriptTone(line.tone)}>
+        <Text key={line.id} bold={line.bold} color={transcriptTone(theme, line.tone)}>
           {line.text || " "}
         </Text>
       ))}
       {viewport.hiddenBelow > 0 && (
-        <Text color={COLORS.warn}>↓ {viewport.hiddenBelow} newer lines · Ctrl-E to follow</Text>
+        <Text color={theme.warn}>↓ {viewport.hiddenBelow} newer lines · Ctrl-E to follow</Text>
       )}
     </Box>
   );
@@ -368,6 +369,9 @@ export function TuiApp({
 }: TuiAppProps) {
   const { exit } = useApp();
   const { stdout } = useStdout();
+  // Resolved once: the terminal's colour scheme does not change under us, and
+  // a new palette object per render would re-paint the whole tree.
+  const theme = useMemo<Theme>(() => createTheme(resolveThemeName()), []);
   const [sessions, setSessions] = useState<SessionDescriptor[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string | undefined>(sessionId);
   const [selectedSession, setSelectedSession] = useState<SessionDescriptor>();
@@ -402,7 +406,7 @@ export function TuiApp({
   const [approvals, setApprovals] = useState<ApprovalDescriptor[]>([]);
   // Kept apart from `status`: a notice must survive the event traffic that
   // follows it, which is exactly what the old status heartbeat destroyed.
-  const [notice, setNotice] = useState<{ text: string; tone: UiColor }>();
+  const [notice, setNotice] = useState<{ text: string; tone: NoticeTone }>();
   const [hostConsentPending, setHostConsentPending] = useState(hostConsentRequired);
 
   useEffect(() => {
@@ -526,7 +530,7 @@ export function TuiApp({
       setActiveRunId(undefined);
       setNotice({
         text: `Run ${shortId(error.run_id)} failed to start: ${error.message}`,
-        tone: COLORS.bad,
+        tone: "bad",
       });
     });
   }, [client, selectedSessionId]);
@@ -552,9 +556,9 @@ export function TuiApp({
           setTranscript(nextTranscript);
         } catch (error) {
           if (error instanceof TranscriptGapError) {
-            setNotice({ text: `${error.message} · replaying session`, tone: COLORS.warn });
+            setNotice({ text: `${error.message} · replaying session`, tone: "warn" });
             void loadSession(event.session_id).catch((loadError) => {
-              setNotice({ text: `Replay failed: ${errorMessage(loadError)}`, tone: COLORS.bad });
+              setNotice({ text: `Replay failed: ${errorMessage(loadError)}`, tone: "bad" });
             });
           } else {
             throw error;
@@ -594,13 +598,13 @@ export function TuiApp({
         void client.listApprovals(event.session_id).then(setApprovals).catch(() => undefined);
       }
       if (eventType === "approval.requested") {
-        setNotice({ text: "Approval required · /approvals to list", tone: COLORS.warn });
+        setNotice({ text: "Approval required · /approvals to list", tone: "warn" });
       }
       if (eventType === "run.failed" || eventType === "run.interrupted") {
         const detail = eventData.error;
         setNotice({
           text: `Run ${eventType.slice(4)}: ${typeof detail === "string" ? detail : "no detail"}`,
-          tone: COLORS.bad,
+          tone: "bad",
         });
       }
       // The sequence number belongs in the header, not in the message line it
@@ -906,7 +910,7 @@ export function TuiApp({
       if (submittedRunId !== undefined) {
         setActiveRunId((current) => current === submittedRunId ? undefined : current);
       }
-      setNotice({ text: `Error: ${errorMessage(error)}`, tone: COLORS.bad });
+      setNotice({ text: `Error: ${errorMessage(error)}`, tone: "bad" });
     } finally {
       commandInFlightRef.current = false;
       setBusy(false);
@@ -935,7 +939,7 @@ export function TuiApp({
       try {
         await resolvePendingApproval(approval.approval_id, approved, oneShot);
       } catch (error) {
-        setNotice({ text: `Error: ${errorMessage(error)}`, tone: COLORS.bad });
+        setNotice({ text: `Error: ${errorMessage(error)}`, tone: "bad" });
       } finally {
         setBusy(false);
       }
@@ -961,7 +965,7 @@ export function TuiApp({
         setStatus(runStatus(result as RunResult));
       }
     } catch (error) {
-      setNotice({ text: `Interrupt failed: ${errorMessage(error)}`, tone: COLORS.bad });
+      setNotice({ text: `Interrupt failed: ${errorMessage(error)}`, tone: "bad" });
     }
   }, [activeRunId, client, selectedSessionId]);
 
@@ -977,7 +981,7 @@ export function TuiApp({
       setHostConsentPending(false);
       setStatus("Workspace trusted for Host execution");
     } catch (error) {
-      setNotice({ text: `Trust failed: ${errorMessage(error)}`, tone: COLORS.bad });
+      setNotice({ text: `Trust failed: ${errorMessage(error)}`, tone: "bad" });
     } finally {
       setBusy(false);
     }
@@ -1075,6 +1079,7 @@ export function TuiApp({
   );
 
   return (
+    <ThemeProvider value={theme}>
     <Box flexDirection="column" minHeight={18} paddingX={1}>
       {splashVisible ? (
         <Splash
@@ -1088,25 +1093,25 @@ export function TuiApp({
         <>
           <Box justifyContent="space-between">
             <Box>
-              <Text bold color={COLORS.accent}>✦ </Text>
+              <Text bold color={theme.accent}>✦ </Text>
               <GradientText bold>AI-HI!</GradientText>
             </Box>
-            <Text color={COLORS.muted}>{sessionTitle}</Text>
-            <Text color={running ? COLORS.warn : COLORS.good}>
+            <Text color={theme.muted}>{sessionTitle}</Text>
+            <Text color={running ? theme.warn : theme.good}>
               {running ? "● busy" : "● ready"}
             </Text>
           </Box>
           <Box>
-            <Text color={COLORS.muted}>session  </Text>
+            <Text color={theme.muted}>session  </Text>
             {selectedSessionId ? (
-              <Text>{selectedSessionId}</Text>
+              <Text color={theme.text}>{selectedSessionId}</Text>
             ) : (
-              <Text color={COLORS.muted}>none · use /new</Text>
+              <Text color={theme.muted}>none · use /new</Text>
             )}
             {transcript.headSeq > 0 && (
-              <Text color={COLORS.muted}>  seq {transcript.headSeq}</Text>
+              <Text color={theme.faint}>  seq {transcript.headSeq}</Text>
             )}
-            {activeRunId !== undefined && <Text color={COLORS.muted}>  run  {activeRunId}</Text>}
+            {activeRunId !== undefined && <Text color={theme.faint}>  run  {activeRunId}</Text>}
           </Box>
           {approvals.length > 0 && <ApprovalPanel approvals={approvals} />}
           <Box flexDirection="column" flexGrow={1} marginTop={1}>
@@ -1120,27 +1125,31 @@ export function TuiApp({
       )}
       {hostConsentPending && <HostConsentPanel cwd={cwd} root={hostExecutionRoot} />}
       <Box marginTop={1}>
-        <Text color={COLORS.muted} wrap="truncate">{status}</Text>
+        <Text color={theme.muted} wrap="truncate">{status}</Text>
       </Box>
       {notice !== undefined && (
         <Box>
-          <Text bold color={notice.tone} wrap="truncate">
+          <Text
+            bold
+            color={notice.tone === "bad" ? theme.bad : theme.warn}
+            wrap="truncate"
+          >
             {notice.text}
           </Text>
         </Box>
       )}
       {hostConsentPending ? null : awaitingApproval ? (
         <Box>
-          <Text bold color={COLORS.warn}>
+          <Text bold color={theme.warn}>
             ▸ {approvals[0]?.tool_name ?? approvals[0]?.scope}
           </Text>
-          <Text color={COLORS.muted}>
+          <Text color={theme.muted}>
             {"  "}[y] allow  [o] allow once  [n] deny
           </Text>
         </Box>
       ) : activeRunId !== undefined ? (
         <Box>
-          <Text color={COLORS.warn}>Run in progress · Ctrl-C to interrupt</Text>
+          <Text color={theme.warn}>Run in progress · Ctrl-C to interrupt</Text>
         </Box>
       ) : (
         <ComposerInput
@@ -1159,7 +1168,8 @@ export function TuiApp({
         contextLimit={context.limit}
         tasks={tasks}
       />
-      <Text color={COLORS.muted} wrap="truncate">PgUp/PgDn scroll · Ctrl-E follow · Ctrl-O tool output · ↑/↓ history · Tab slash · Ctrl-J newline · Ctrl-C interrupt/exit</Text>
+      <Text color={theme.faint} wrap="truncate">PgUp/PgDn scroll · Ctrl-E follow · Ctrl-O tool output · ↑/↓ history · Tab slash · Ctrl-W/Ctrl-U erase · Ctrl-J newline · Ctrl-C interrupt/exit</Text>
     </Box>
+    </ThemeProvider>
   );
 }

@@ -145,6 +145,18 @@ The composer supports pasted or `Ctrl-J`-inserted multiline prompts, local
 command history with `Up`/`Down`, and slash-command suggestions completed with
 `Tab` or `Shift-Tab`. `Enter` submits the full draft; command history remains
 process-local and is not another durable Session store.
+Editing follows readline: `Backspace` erases the previous character,
+`Ctrl-W` or `Option`/`Alt`-`Backspace` the previous word, `Ctrl-U` back to the
+start of the current line, `Ctrl-D` the character ahead of the cursor, and
+`Esc` the whole draft. Terminals report `Backspace` as the DEL byte, which Ink
+cannot distinguish from the forward-delete key, so that key also erases
+backwards.
+The palette is chosen for contrast rather than the terminal's own 16-colour
+names, whose "gray" and "blue" are frequently unreadable on a dark background:
+text tones hold at least 4.5:1 and chrome at least 3:1 against the backgrounds
+of their scheme. The scheme is taken from `COLORFGBG` when the terminal
+publishes it and assumed dark otherwise; `AIHI_THEME=light` or
+`AIHI_THEME=dark` overrides the detection.
 The default Coding tool set also includes read-only `git_status` and `git_diff`;
 they never stage or modify changes and remain subject to the same Tool policy
 chain.
