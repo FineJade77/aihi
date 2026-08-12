@@ -49,6 +49,11 @@ unsafe = false
 # project config to keep a workspace's artifacts inside that workspace.
 path = "artifacts"
 
+[audit]
+# Redacted, append-only JSONL event audit. Also relative to this file.
+enabled = true
+path = "audit.jsonl"
+
 [agent]
 # Permission modes: default, accept_edits, plan, or bypass.
 permission_mode = "default"
@@ -153,6 +158,7 @@ class CodeAgentConfig:
     skill_load_tool: bool = True
     mcp_servers: tuple[McpServerSettings, ...] = ()
     artifact_path: Path | None = None
+    audit_path: Path | None = None
     compact_model: str | None = None
     context_window: int | None = None
     subagents: SubagentSettings = SubagentSettings()
@@ -169,6 +175,7 @@ class CodeAgentConfig:
             provider_profiles={provider.name: provider},
             sandbox=SandboxSettings(root=base_dir),
             artifact_path=base_dir / ".aihi" / "artifacts",
+            audit_path=base_dir / ".aihi" / "audit.jsonl",
         )
 
     @classmethod
@@ -189,6 +196,7 @@ class CodeAgentConfig:
         skills_map = _section(value, "skills")
         mcp_map = _section(value, "mcp")
         artifacts_map = _section(value, "artifacts")
+        audit_map = _section(value, "audit")
         subagents_map = _section(value, "subagents")
         if "api_key" in provider_map:
             raise CodeAgentConfigError(
@@ -290,6 +298,20 @@ class CodeAgentConfig:
             if _boolean(artifacts_map.get("enabled", True), "artifacts.enabled")
             else None
         )
+        audit_path = None
+        if _boolean(audit_map.get("enabled", True), "audit.enabled"):
+            if "path" in audit_map:
+                audit_path = _resolve_path(audit_map["path"], root, "audit.path")
+            else:
+                # A config file already under .aihi should keep an omitted
+                # path beside itself; a legacy/root config follows the
+                # workspace convention instead of creating .aihi/.aihi.
+                audit_base = (
+                    root
+                    if root.name == _PROJECT_CONFIG_DIRNAME
+                    else workspace / _PROJECT_CONFIG_DIRNAME
+                )
+                audit_path = (audit_base / "audit.jsonl").resolve()
         subagents = _parse_subagents(subagents_map)
         return cls(
             base_dir=root,
@@ -305,6 +327,7 @@ class CodeAgentConfig:
             skill_load_tool=skill_load_tool,
             mcp_servers=mcp_servers,
             artifact_path=artifact_path,
+            audit_path=audit_path,
             compact_model=compact_model,
             context_window=context_window,
             subagents=subagents,
@@ -368,6 +391,10 @@ class CodeAgentConfig:
             "artifacts": {
                 "enabled": self.artifact_path is not None,
                 "path": str(self.artifact_path) if self.artifact_path else None,
+            },
+            "audit": {
+                "enabled": self.audit_path is not None,
+                "path": str(self.audit_path) if self.audit_path else None,
             },
             "compact_model": self.compact_model,
             "context_window": self.context_window,
@@ -605,6 +632,7 @@ def _anchor_layer_paths(value: Mapping[str, Any], base_dir: Path) -> dict[str, A
 
     anchor(anchored.get("sandbox"), "root")
     anchor(anchored.get("artifacts"), "path")
+    anchor(anchored.get("audit"), "path")
     skills = anchored.get("skills")
     anchor(skills, "trust_lockfile")
     if isinstance(skills, dict):

@@ -37,6 +37,14 @@ compaction, and governed subagents; subagents require a Worker Session store
 and inherit a read-only capability ceiling unless explicitly narrowed or
 expanded by application configuration.
 
+Each run writes redacted, bounded event observations to `audit.jsonl` by
+default. The path is relative to the declaring TOML file (the generated user
+config therefore uses `~/.aihi/audit.jsonl`; a project config uses
+`<workspace>/.aihi/audit.jsonl`). Disable it with `[audit] enabled = false`, or
+set `[audit] path = "..."` to choose another file. The file is append-only and
+contains no raw credentials; the underlying Agent Telemetry redactor bounds
+and sanitizes event payloads before writing.
+
 ## 行为变更（RFC-0003 领域层）
 
 - **提示词由应用拥有，不可配置**。`agent.system_prompt` 与 `agent.system_prompt_mode`

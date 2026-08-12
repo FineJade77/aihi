@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 
 import pytest
-from aihi.agent import InMemoryEventStore, ToolContext, UnsafeHostNotAcknowledged
+from aihi.agent import InMemoryEventStore, Session, ToolContext, UnsafeHostNotAcknowledged
 from aihi.agent.policy import PermissionMode
 from aihi.code_agent.config import (
     acknowledge_host_execution,
@@ -79,6 +79,7 @@ allowed_tools = ["search"]
     assert config.compact_model == "compact-demo"
     assert config.context_window == 4096
     assert config.artifact_path == (tmp_path / ".aihi/artifacts").resolve()
+    assert config.audit_path == (tmp_path / ".aihi/audit.jsonl").resolve()
     assert config.subagents.enabled is True
     assert config.subagents.model == "subagent-demo"
 
@@ -106,6 +107,7 @@ unsafe = true
 
     assert config.base_dir == config_path.parent.resolve()
     assert config.sandbox.root == workspace.resolve()
+    assert config.audit_path == (workspace / ".aihi" / "audit.jsonl").resolve()
 
 
 def test_config_rejects_unknown_permission_mode(tmp_path) -> None:
@@ -277,6 +279,43 @@ capabilities = ["filesystem.read"]
     finally:
         await runtime.close()
         server.close()
+
+
+@pytest.mark.asyncio
+async def test_runtime_writes_redacted_audit_jsonl_and_closes_it(tmp_path) -> None:
+    config_path = tmp_path / "aihi-code.toml"
+    config_path.write_text(
+        """[provider]
+name = "fake"
+model = "demo"
+
+[sandbox]
+backend = "host"
+root = "."
+unsafe = true
+
+[audit]
+enabled = true
+path = "audit.jsonl"
+""",
+        encoding="utf-8",
+    )
+    config = load_config(config_path, cwd=tmp_path)
+    store = InMemoryEventStore()
+    session = Session.create(store, cwd=tmp_path, provider="fake", model="demo")
+    runtime = await CodeAgentRuntime.create(config, store=store)
+    try:
+        result = await runtime.run(session, user_message="record this turn")
+        assert result.response is not None
+        assert runtime.runtime.telemetry is not None
+    finally:
+        await runtime.close()
+
+    audit_path = tmp_path / "audit.jsonl"
+    records = [json.loads(line) for line in audit_path.read_text(encoding="utf-8").splitlines()]
+    assert records
+    assert any(record["name"] == "run.started" for record in records)
+    assert any(record["name"] == "run.completed" for record in records)
 
 
 def test_worker_run_start_executes_the_configured_agent_loop(tmp_path) -> None:
@@ -626,3 +665,4 @@ def test_ensure_user_config_seeds_a_loadable_default(tmp_path, monkeypatch) -> N
     assert config.sandbox.root == workspace.resolve()
     # Artifacts are pinned so they never land in a doubled ~/.aihi/.aihi path.
     assert config.artifact_path == home / ".aihi" / "artifacts"
+    assert config.audit_path == home / ".aihi" / "audit.jsonl"

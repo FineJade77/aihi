@@ -11,6 +11,7 @@ build/
 .ruff_cache/
 .mypy_cache/
 .aihi/settings.local.json
+.aihi/audit.jsonl
 .DS_Store
 
 # Local legacy SQLite compatibility fixture and SQLite WAL sidecars.

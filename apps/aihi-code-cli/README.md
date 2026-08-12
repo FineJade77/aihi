@@ -94,6 +94,11 @@ unsafe = true
 enabled = true
 path = "artifacts"
 
+[audit]
+# Redacted event audit, relative to this config file.
+enabled = true
+path = "audit.jsonl"
+
 [agent]
 permission_mode = "default"
 compact_model = "deepseek-chat"

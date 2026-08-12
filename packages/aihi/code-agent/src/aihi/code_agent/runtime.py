@@ -115,6 +115,8 @@ class CodeAgentRuntime:
             builder = builder.with_skills(skill_discovery, load_tool_name="load_skill")
         if config.artifact_path is not None:
             builder = builder.with_artifacts(config.artifact_path)
+        if config.audit_path is not None:
+            builder = builder.with_telemetry(config.audit_path)
         if config.compact_model is not None:
             builder = builder.with_compaction(provider=provider, model=config.compact_model)
         if config.context_window is not None:
@@ -150,6 +152,8 @@ class CodeAgentRuntime:
         except BaseException:
             for client in reversed(clients):
                 await client.disconnect()
+            if runtime.telemetry is not None:
+                runtime.telemetry.close()
             await _close_provider(provider)
             raise
         return cls(config=config, runtime=runtime, mcp_clients=tuple(clients))
@@ -272,9 +276,15 @@ class CodeAgentRuntime:
         return final
 
     async def close(self) -> None:
-        for client in reversed(self.mcp_clients):
-            await client.disconnect()
-        await _close_provider(self.runtime.provider)
+        try:
+            for client in reversed(self.mcp_clients):
+                await client.disconnect()
+        finally:
+            try:
+                await _close_provider(self.runtime.provider)
+            finally:
+                if self.runtime.telemetry is not None:
+                    self.runtime.telemetry.close()
 
 
 def _build_agent_types(config: CodeAgentConfig) -> dict[str, SubagentTypeSpec]:

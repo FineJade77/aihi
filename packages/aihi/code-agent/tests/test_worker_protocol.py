@@ -239,6 +239,8 @@ allowed_tools = ["search"]
     assert {item["name"] for item in descriptor["providers"]} == {"fake", "openai"}
     assert descriptor["providers"][1]["api_key_env"] == "OPENAI_API_KEY"
     assert descriptor["source_paths"] == [str(config_path.resolve())]
+    assert descriptor["audit"]["enabled"] is True
+    assert descriptor["audit"]["path"] == str((tmp_path / ".aihi" / "audit.jsonl").resolve())
     created = server.handle(
         {
             "jsonrpc": "2.0",
