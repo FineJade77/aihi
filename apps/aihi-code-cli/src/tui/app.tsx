@@ -162,7 +162,7 @@ function statusReport({
   };
 }
 
-function configReport(config: ConfigDescriptor, sessionId?: string): CommandReport {
+function configReport(config: ConfigDescriptor): CommandReport {
   return {
     title: "DOCTOR",
     lines: [
@@ -171,7 +171,6 @@ function configReport(config: ConfigDescriptor, sessionId?: string): CommandRepo
       `✓ permissions · ${config.permission_mode}`,
       `✓ sandbox · ${config.sandbox.backend}${config.sandbox.unsafe ? " · unsafe host opt-in" : ""}`,
       `✓ tools · ${config.tools.length}`,
-      `! session-scoped checks ${sessionId ? "pending" : "skipped · no session"}`,
     ],
   };
 }
@@ -847,7 +846,7 @@ export function TuiApp({
       }
       if (name === "doctor") {
         const config = await client.getConfig(cwd);
-        const reportLines = configReport(config, selectedSessionId).lines;
+        const reportLines = configReport(config).lines;
         if (selectedSessionId) {
           const checks = await Promise.allSettled([
             client.listTools(selectedSessionId),
@@ -860,6 +859,8 @@ export function TuiApp({
             mcp.status === "fulfilled" ? `✓ MCP registry · ${mcp.value.length} configured` : `! MCP registry · ${errorMessage(mcp.reason)}`,
             skills.status === "fulfilled" ? `✓ skill registry · ${skills.value.length} discovered` : `! skill registry · ${errorMessage(skills.reason)}`,
           );
+        } else {
+          reportLines.push("! session-scoped checks skipped · no session");
         }
         setReport({ title: "DOCTOR", lines: reportLines });
         setStatus("Diagnostics complete");
