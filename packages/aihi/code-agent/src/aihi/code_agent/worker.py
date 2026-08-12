@@ -225,6 +225,8 @@ class WorkerServer:
             return {"session": self._session_descriptor(self._load_session(params))}
         if method == "session.events":
             return self._session_events(params)
+        if method == "session.usage":
+            return self._session_usage(params)
         if method == "task.create":
             return self._task_create(params)
         if method == "task.spawn":
@@ -370,6 +372,49 @@ class WorkerServer:
             "head_seq": self._ensure_store().get(session.id).head_seq,
             "next_after_seq": next_after_seq,
             "has_more": len(events) > len(selected),
+        }
+
+    def _session_usage(self, params: JsonObject) -> JsonObject:
+        """Total what this session has spent, and how full its context last was.
+
+        Replayed from the log rather than accumulated in memory, so the answer
+        survives a Worker restart and matches what actually happened.
+        """
+
+        session = self._load_session(params)
+        totals = {"input_tokens": 0, "output_tokens": 0, "cached_input_tokens": 0}
+        cost_usd: float | None = None
+        calls = 0
+        context_tokens = 0
+        context_limit = 0
+        model = ""
+        for event in self._ensure_store().read(session.id, after_seq=0):
+            if event.type != "model.usage":
+                continue
+            calls += 1
+            data = event.data
+            for key in totals:
+                value = data.get(key, 0)
+                totals[key] += int(value) if isinstance(value, int) else 0
+            raw_cost = data.get("cost_usd")
+            if isinstance(raw_cost, int | float):
+                cost_usd = (cost_usd or 0.0) + float(raw_cost)
+            # The most recent call is the one describing the live context.
+            context_tokens = int(data.get("context_tokens", context_tokens) or 0)
+            context_limit = int(data.get("context_limit", context_limit) or 0)
+            model = str(data.get("model", model))
+        return {
+            "session_id": session.id,
+            "model_calls": calls,
+            "model": model,
+            "cost_usd": cost_usd,
+            "context_tokens": context_tokens,
+            "context_limit": context_limit,
+            "context_used_ratio": (
+                round(context_tokens / context_limit, 4) if context_limit else 0.0
+            ),
+            **totals,
+            "total_tokens": totals["input_tokens"] + totals["output_tokens"],
         }
 
     def _task_create(self, params: JsonObject) -> JsonObject:

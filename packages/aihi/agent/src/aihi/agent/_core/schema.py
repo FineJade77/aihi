@@ -45,6 +45,7 @@ DURABLE_EVENT_TYPES: frozenset[str] = frozenset(
         "run.cancelled",
         "user.message",
         "assistant.message",
+        "model.usage",
         "system.message",
         "tool.result",
         "tool.requested",

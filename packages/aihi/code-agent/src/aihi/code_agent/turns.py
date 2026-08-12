@@ -78,6 +78,18 @@ class SubagentCompleted(TurnEvent):
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class UsageReported(TurnEvent):
+    """What one model call cost, and how full the context was when it ran."""
+
+    model: str
+    input_tokens: int
+    output_tokens: int
+    cached_input_tokens: int
+    context_tokens: int
+    context_limit: int
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class TurnFinished(TurnEvent):
     result: RunResult
 
@@ -175,6 +187,17 @@ def map_event(event: Event) -> TurnEvent | None:
             tool_name=tool_name if isinstance(tool_name, str) else None,
             scope=str(approval.get("scope", "")),
         )
+    if event.type == "model.usage":
+        return UsageReported(
+            seq=seq,
+            run_id=run_id,
+            model=str(data.get("model", "")),
+            input_tokens=int(data.get("input_tokens", 0)),
+            output_tokens=int(data.get("output_tokens", 0)),
+            cached_input_tokens=int(data.get("cached_input_tokens", 0)),
+            context_tokens=int(data.get("context_tokens", 0)),
+            context_limit=int(data.get("context_limit", 0)),
+        )
     if event.type == "run.state_changed":
         return RunStateChanged(seq=seq, run_id=run_id, state=str(data.get("state", "")))
     if event.type == "subagent.spawned":
@@ -250,6 +273,7 @@ __all__ = [
     "TurnEvent",
     "TurnEventPump",
     "TurnFinished",
+    "UsageReported",
     "drive_turn",
     "map_event",
     "message_text",

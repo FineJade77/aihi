@@ -594,3 +594,67 @@ def test_run_commands_reject_a_client_supplied_system_prompt(tmp_path) -> None:
         assert response["error"]["code"] == INVALID_PARAMS  # type: ignore[index]
         assert "owns its prompt" in response["error"]["message"]  # type: ignore[index]
     server.close()
+
+
+def test_session_usage_totals_what_the_run_spent(tmp_path) -> None:
+    config_path = tmp_path / "aihi-code.toml"
+    config_path.write_text(
+        '[provider]\nname = "fake"\nmodel = "demo"\n\n'
+        '[sandbox]\nbackend = "host"\nunsafe = true\n',
+        encoding="utf-8",
+    )
+    server = WorkerServer(config_path=config_path)
+    server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {"protocol_version": PROTOCOL_VERSION, "client_name": "test"},
+        }
+    )
+    server.handle({"jsonrpc": "2.0", "method": "initialized"})
+    created = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "session.create",
+            "params": {"cwd": str(tmp_path)},
+        }
+    )
+    assert created is not None
+    session_id = created["result"]["session"]["session_id"]  # type: ignore[index]
+
+    empty = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "session.usage",
+            "params": {"session_id": session_id},
+        }
+    )
+    assert empty is not None
+    assert empty["result"]["model_calls"] == 0  # type: ignore[index]
+
+    server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 4,
+            "method": "run.start",
+            "params": {"session_id": session_id, "user_message": "hi"},
+        }
+    )
+    used = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 5,
+            "method": "session.usage",
+            "params": {"session_id": session_id},
+        }
+    )
+    assert used is not None
+    usage = used["result"]  # type: ignore[index]
+    assert usage["model_calls"] >= 1
+    assert usage["total_tokens"] == usage["input_tokens"] + usage["output_tokens"]
+    assert usage["context_limit"] > 0
+    assert 0.0 < usage["context_used_ratio"] <= 1.0
+    server.close()

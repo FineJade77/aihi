@@ -565,7 +565,14 @@ class RunCoordinator:
                 )
                 self._persist_compiled_context(session, run_id, retry_compiled, recorded_artifacts)
                 continue
-            session.add_message(response.message, run_id=run_id)
+            # One transaction, not two: the write-amplification budget is a
+            # deliberate invariant, and usage is metadata about this very message.
+            session.append_many(
+                [
+                    self._usage_event(session, run_id, request.model, response, compiled),
+                    session.message_event(response.message, run_id=run_id),
+                ]
+            )
             if not response.message.tool_calls:
                 return response
             self._transition(session, run_id, machine, RunState.WAITING_TOOL)
@@ -1199,6 +1206,38 @@ class RunCoordinator:
             },
         )
         return response
+
+    def _usage_event(
+        self,
+        session: Session,
+        run_id: str,
+        model: str,
+        response: ModelResponse,
+        compiled: CompiledContext,
+    ) -> Event:
+        """Persist what this model call cost and how full the context was.
+
+        Usage previously reached only the `model.after` hook, so nothing about
+        spend survived in the log and a session total could not be replayed.
+        """
+
+        usage = response.usage
+        return Event(
+            type="model.usage",
+            session_id=session.id,
+            run_id=run_id,
+            data={
+                "provider": self.provider.name,
+                "model": model,
+                "input_tokens": usage.input_tokens,
+                "output_tokens": usage.output_tokens,
+                "cached_input_tokens": usage.cached_input_tokens,
+                "cost_usd": usage.cost_usd,
+                "context_tokens": compiled.estimated_tokens,
+                "context_limit": compiled.budget.usable_input,
+                "context_window": compiled.budget.context_window,
+            },
+        )
 
     async def _append_tool_event(
         self, session: Session, run_id: str, event_type: str, data: dict[str, Any]

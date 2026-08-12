@@ -11,6 +11,7 @@ placeholders; everything a reader could depend on is compared verbatim.
 
 from __future__ import annotations
 
+import copy
 import re
 from pathlib import Path
 from typing import Any
@@ -319,3 +320,48 @@ def _looks_like_timestamp(value: str) -> bool:
 
 
 __all__ = ["FIXED_TIME", "build_corpus", "normalize"]
+
+
+def without_additive_v1_fields(payload: object) -> object:
+    """Reduce a fresh corpus to the frozen v1 writer shape.
+
+    The frozen corpus is deliberately legacy: it predates several additive
+    fields. Both the compatibility test and `generate_corpus.py` normalize
+    through here, so regenerating cannot silently turn an additive field into
+    a corpus change.
+    """
+
+    normalized = copy.deepcopy(payload)
+    if not isinstance(normalized, dict):
+        return normalized
+    sessions = normalized.get("sessions", [])
+    if not isinstance(sessions, list):
+        return normalized
+    for session in sessions:
+        if not isinstance(session, dict):
+            continue
+        for event in session.get("events", []):
+            if not isinstance(event, dict):
+                continue
+            data = event.get("data")
+            if isinstance(data, dict):
+                if event.get("type") == "model.usage":
+                    # Token counts scale with the workspace path baked into the
+                    # system prompt, so they differ per machine. The corpus
+                    # freezes the payload's shape, not the arithmetic.
+                    for volatile in ("input_tokens", "context_tokens"):
+                        if volatile in data:
+                            data[volatile] = 0
+                data.pop("message_schema_version", None)
+                data.pop("summary_message_schema_version", None)
+                if event.get("type") in {"run.started", "run.resumed"}:
+                    data.pop("max_output_tokens", None)
+                    data.pop("system_prompt_sha256", None)
+                    data.pop("workspace_root", None)
+                    descriptor = data.get("sandbox_descriptor")
+                    if (
+                        isinstance(descriptor, dict)
+                        and descriptor.get("mount_scope") == "/workspace"
+                    ):
+                        descriptor["mount_scope"] = None
+    return normalized

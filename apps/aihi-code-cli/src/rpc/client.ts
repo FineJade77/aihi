@@ -11,6 +11,7 @@ import type {
   JsonRpcRequest,
   SessionDescriptor,
   SessionEventsResult,
+  SessionUsage,
   SkillDescriptor,
   McpServerDescriptor,
   ToolDescriptor,
@@ -283,6 +284,11 @@ export class RpcClient {
       after_seq: afterSeq,
       limit,
     });
+  }
+
+  /** Totals this session's spend and how full its context last was. */
+  public async getSessionUsage(sessionId: string): Promise<SessionUsage> {
+    return this.request<SessionUsage>("session.usage", { session_id: sessionId });
   }
 
   public async createTask(params: TaskCreateParams): Promise<TaskDescriptor> {

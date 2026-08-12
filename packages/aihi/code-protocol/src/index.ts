@@ -62,6 +62,20 @@ export interface SessionDescriptor {
   parent_session_id: string | null;
 }
 
+export interface SessionUsage {
+  session_id: string;
+  model: string;
+  model_calls: number;
+  input_tokens: number;
+  output_tokens: number;
+  cached_input_tokens: number;
+  total_tokens: number;
+  cost_usd: number | null;
+  context_tokens: number;
+  context_limit: number;
+  context_used_ratio: number;
+}
+
 export interface SessionEventsResult {
   session_id: string;
   events: EventRecord[];

@@ -109,6 +109,27 @@
         {
           "created_at": "2026-01-01T00:00:00+00:00",
           "data": {
+            "cached_input_tokens": 0,
+            "context_limit": 123454,
+            "context_tokens": 0,
+            "context_window": 128000,
+            "cost_usd": null,
+            "input_tokens": 0,
+            "model": "fake-model",
+            "output_tokens": 8,
+            "provider": "fake"
+          },
+          "ephemeral": false,
+          "id": "evt-6",
+          "run_id": "run-1",
+          "schema_version": 1,
+          "seq": 6,
+          "session_id": "ses-golden-a",
+          "type": "model.usage"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
             "message": {
               "content": [
                 {
@@ -129,10 +150,10 @@
             }
           },
           "ephemeral": false,
-          "id": "evt-6",
+          "id": "evt-7",
           "run_id": "run-1",
           "schema_version": 1,
-          "seq": 6,
+          "seq": 7,
           "session_id": "ses-golden-a",
           "type": "assistant.message"
         },
@@ -142,10 +163,10 @@
             "state": "waiting_tool"
           },
           "ephemeral": false,
-          "id": "evt-7",
+          "id": "evt-8",
           "run_id": "run-1",
           "schema_version": 1,
-          "seq": 7,
+          "seq": 8,
           "session_id": "ses-golden-a",
           "type": "run.state_changed"
         },
@@ -160,10 +181,10 @@
             "tool_name": "write_file"
           },
           "ephemeral": false,
-          "id": "evt-8",
+          "id": "evt-9",
           "run_id": "run-1",
           "schema_version": 1,
-          "seq": 8,
+          "seq": 9,
           "session_id": "ses-golden-a",
           "type": "tool.requested"
         },
@@ -177,10 +198,10 @@
             "tool_name": "write_file"
           },
           "ephemeral": false,
-          "id": "evt-9",
+          "id": "evt-10",
           "run_id": "run-1",
           "schema_version": 1,
-          "seq": 9,
+          "seq": 10,
           "session_id": "ses-golden-a",
           "type": "policy.decided"
         },
@@ -202,10 +223,10 @@
             "tool_name": "write_file"
           },
           "ephemeral": false,
-          "id": "evt-10",
+          "id": "evt-11",
           "run_id": "run-1",
           "schema_version": 1,
-          "seq": 10,
+          "seq": 11,
           "session_id": "ses-golden-a",
           "type": "approval.requested"
         },
@@ -215,10 +236,10 @@
             "state": "waiting_approval"
           },
           "ephemeral": false,
-          "id": "evt-11",
+          "id": "evt-12",
           "run_id": "run-1",
           "schema_version": 1,
-          "seq": 11,
+          "seq": 12,
           "session_id": "ses-golden-a",
           "type": "run.state_changed"
         },
@@ -239,10 +260,10 @@
             "status": "granted"
           },
           "ephemeral": false,
-          "id": "evt-12",
+          "id": "evt-13",
           "run_id": "run-1",
           "schema_version": 1,
-          "seq": 12,
+          "seq": 13,
           "session_id": "ses-golden-a",
           "type": "approval.resolved"
         },
@@ -252,10 +273,10 @@
             "state": "waiting_tool"
           },
           "ephemeral": false,
-          "id": "evt-13",
+          "id": "evt-14",
           "run_id": "run-1",
           "schema_version": 1,
-          "seq": 13,
+          "seq": 14,
           "session_id": "ses-golden-a",
           "type": "run.state_changed"
         },
@@ -273,10 +294,10 @@
             }
           },
           "ephemeral": false,
-          "id": "evt-14",
+          "id": "evt-15",
           "run_id": "run-1",
           "schema_version": 1,
-          "seq": 14,
+          "seq": 15,
           "session_id": "ses-golden-a",
           "type": "capability.lease.issued"
         },
@@ -291,10 +312,10 @@
             "tool_name": "write_file"
           },
           "ephemeral": false,
-          "id": "evt-15",
+          "id": "evt-16",
           "run_id": "run-1",
           "schema_version": 1,
-          "seq": 15,
+          "seq": 16,
           "session_id": "ses-golden-a",
           "type": "tool.requested"
         },
@@ -308,10 +329,10 @@
             "tool_name": "write_file"
           },
           "ephemeral": false,
-          "id": "evt-16",
+          "id": "evt-17",
           "run_id": "run-1",
           "schema_version": 1,
-          "seq": 16,
+          "seq": 17,
           "session_id": "ses-golden-a",
           "type": "policy.decided"
         },
@@ -336,10 +357,10 @@
             "unsafe": true
           },
           "ephemeral": false,
-          "id": "evt-17",
+          "id": "evt-18",
           "run_id": "run-1",
           "schema_version": 1,
-          "seq": 17,
+          "seq": 18,
           "session_id": "ses-golden-a",
           "type": "tool.started"
         },
@@ -355,10 +376,10 @@
             "tool_name": "write_file"
           },
           "ephemeral": false,
-          "id": "evt-18",
+          "id": "evt-19",
           "run_id": "run-1",
           "schema_version": 1,
-          "seq": 18,
+          "seq": 19,
           "session_id": "ses-golden-a",
           "type": "tool.completed"
         },
@@ -385,10 +406,10 @@
             }
           },
           "ephemeral": false,
-          "id": "evt-19",
+          "id": "evt-20",
           "run_id": "run-1",
           "schema_version": 1,
-          "seq": 19,
+          "seq": 20,
           "session_id": "ses-golden-a",
           "type": "tool.result"
         },
@@ -398,12 +419,33 @@
             "state": "running"
           },
           "ephemeral": false,
-          "id": "evt-20",
+          "id": "evt-21",
           "run_id": "run-1",
           "schema_version": 1,
-          "seq": 20,
+          "seq": 21,
           "session_id": "ses-golden-a",
           "type": "run.state_changed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "cached_input_tokens": 0,
+            "context_limit": 123454,
+            "context_tokens": 0,
+            "context_window": 128000,
+            "cost_usd": null,
+            "input_tokens": 0,
+            "model": "fake-model",
+            "output_tokens": 2,
+            "provider": "fake"
+          },
+          "ephemeral": false,
+          "id": "evt-22",
+          "run_id": "run-1",
+          "schema_version": 1,
+          "seq": 22,
+          "session_id": "ses-golden-a",
+          "type": "model.usage"
         },
         {
           "created_at": "2026-01-01T00:00:00+00:00",
@@ -424,10 +466,10 @@
             }
           },
           "ephemeral": false,
-          "id": "evt-21",
+          "id": "evt-23",
           "run_id": "run-1",
           "schema_version": 1,
-          "seq": 21,
+          "seq": 23,
           "session_id": "ses-golden-a",
           "type": "assistant.message"
         },
@@ -437,10 +479,10 @@
             "state": "completed"
           },
           "ephemeral": false,
-          "id": "evt-22",
+          "id": "evt-24",
           "run_id": "run-1",
           "schema_version": 1,
-          "seq": 22,
+          "seq": 24,
           "session_id": "ses-golden-a",
           "type": "run.state_changed"
         },
@@ -450,10 +492,10 @@
             "state": "completed"
           },
           "ephemeral": false,
-          "id": "evt-23",
+          "id": "evt-25",
           "run_id": "run-1",
           "schema_version": 1,
-          "seq": 23,
+          "seq": 25,
           "session_id": "ses-golden-a",
           "type": "run.completed"
         },
@@ -464,10 +506,10 @@
             "revoked_by": "runtime"
           },
           "ephemeral": false,
-          "id": "evt-24",
+          "id": "evt-26",
           "run_id": "run-1",
           "schema_version": 1,
-          "seq": 24,
+          "seq": 26,
           "session_id": "ses-golden-a",
           "type": "capability.lease.revoked"
         },
@@ -488,10 +530,10 @@
             }
           },
           "ephemeral": false,
-          "id": "evt-25",
+          "id": "evt-27",
           "run_id": "run-2",
           "schema_version": 1,
-          "seq": 25,
+          "seq": 27,
           "session_id": "ses-golden-a",
           "type": "user.message"
         },
@@ -518,10 +560,10 @@
             "unsafe": true
           },
           "ephemeral": false,
-          "id": "evt-26",
+          "id": "evt-28",
           "run_id": "run-2",
           "schema_version": 1,
-          "seq": 26,
+          "seq": 28,
           "session_id": "ses-golden-a",
           "type": "run.started"
         },
@@ -531,12 +573,33 @@
             "state": "running"
           },
           "ephemeral": false,
-          "id": "evt-27",
+          "id": "evt-29",
           "run_id": "run-2",
           "schema_version": 1,
-          "seq": 27,
+          "seq": 29,
           "session_id": "ses-golden-a",
           "type": "run.state_changed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "cached_input_tokens": 0,
+            "context_limit": 123454,
+            "context_tokens": 0,
+            "context_window": 128000,
+            "cost_usd": null,
+            "input_tokens": 0,
+            "model": "fake-model",
+            "output_tokens": 8,
+            "provider": "fake"
+          },
+          "ephemeral": false,
+          "id": "evt-30",
+          "run_id": "run-2",
+          "schema_version": 1,
+          "seq": 30,
+          "session_id": "ses-golden-a",
+          "type": "model.usage"
         },
         {
           "created_at": "2026-01-01T00:00:00+00:00",
@@ -561,10 +624,10 @@
             }
           },
           "ephemeral": false,
-          "id": "evt-28",
+          "id": "evt-31",
           "run_id": "run-2",
           "schema_version": 1,
-          "seq": 28,
+          "seq": 31,
           "session_id": "ses-golden-a",
           "type": "assistant.message"
         },
@@ -574,10 +637,10 @@
             "state": "waiting_tool"
           },
           "ephemeral": false,
-          "id": "evt-29",
+          "id": "evt-32",
           "run_id": "run-2",
           "schema_version": 1,
-          "seq": 29,
+          "seq": 32,
           "session_id": "ses-golden-a",
           "type": "run.state_changed"
         },
@@ -592,10 +655,10 @@
             "tool_name": "write_file"
           },
           "ephemeral": false,
-          "id": "evt-30",
+          "id": "evt-33",
           "run_id": "run-2",
           "schema_version": 1,
-          "seq": 30,
+          "seq": 33,
           "session_id": "ses-golden-a",
           "type": "tool.requested"
         },
@@ -609,10 +672,10 @@
             "tool_name": "write_file"
           },
           "ephemeral": false,
-          "id": "evt-31",
+          "id": "evt-34",
           "run_id": "run-2",
           "schema_version": 1,
-          "seq": 31,
+          "seq": 34,
           "session_id": "ses-golden-a",
           "type": "policy.decided"
         },
@@ -634,10 +697,10 @@
             "tool_name": "write_file"
           },
           "ephemeral": false,
-          "id": "evt-32",
+          "id": "evt-35",
           "run_id": "run-2",
           "schema_version": 1,
-          "seq": 32,
+          "seq": 35,
           "session_id": "ses-golden-a",
           "type": "approval.requested"
         },
@@ -647,10 +710,10 @@
             "state": "waiting_approval"
           },
           "ephemeral": false,
-          "id": "evt-33",
+          "id": "evt-36",
           "run_id": "run-2",
           "schema_version": 1,
-          "seq": 33,
+          "seq": 36,
           "session_id": "ses-golden-a",
           "type": "run.state_changed"
         },
@@ -665,10 +728,10 @@
             "state": "waiting_approval"
           },
           "ephemeral": false,
-          "id": "evt-34",
+          "id": "evt-37",
           "run_id": "run-2",
           "schema_version": 1,
-          "seq": 34,
+          "seq": 37,
           "session_id": "ses-golden-a",
           "type": "run.suspended"
         },
@@ -689,10 +752,10 @@
             "status": "granted"
           },
           "ephemeral": false,
-          "id": "evt-35",
+          "id": "evt-38",
           "run_id": "run-2",
           "schema_version": 1,
-          "seq": 35,
+          "seq": 38,
           "session_id": "ses-golden-a",
           "type": "approval.resolved"
         },
@@ -719,10 +782,10 @@
             "unsafe": true
           },
           "ephemeral": false,
-          "id": "evt-36",
+          "id": "evt-39",
           "run_id": "run-2",
           "schema_version": 1,
-          "seq": 36,
+          "seq": 39,
           "session_id": "ses-golden-a",
           "type": "run.resumed"
         },
@@ -732,10 +795,10 @@
             "state": "running"
           },
           "ephemeral": false,
-          "id": "evt-37",
+          "id": "evt-40",
           "run_id": "run-2",
           "schema_version": 1,
-          "seq": 37,
+          "seq": 40,
           "session_id": "ses-golden-a",
           "type": "run.state_changed"
         },
@@ -745,10 +808,10 @@
             "state": "waiting_tool"
           },
           "ephemeral": false,
-          "id": "evt-38",
+          "id": "evt-41",
           "run_id": "run-2",
           "schema_version": 1,
-          "seq": 38,
+          "seq": 41,
           "session_id": "ses-golden-a",
           "type": "run.state_changed"
         },
@@ -763,10 +826,10 @@
             "tool_name": "write_file"
           },
           "ephemeral": false,
-          "id": "evt-39",
+          "id": "evt-42",
           "run_id": "run-2",
           "schema_version": 1,
-          "seq": 39,
+          "seq": 42,
           "session_id": "ses-golden-a",
           "type": "tool.requested"
         },
@@ -780,10 +843,10 @@
             "tool_name": "write_file"
           },
           "ephemeral": false,
-          "id": "evt-40",
+          "id": "evt-43",
           "run_id": "run-2",
           "schema_version": 1,
-          "seq": 40,
+          "seq": 43,
           "session_id": "ses-golden-a",
           "type": "policy.decided"
         },
@@ -808,10 +871,10 @@
             "unsafe": true
           },
           "ephemeral": false,
-          "id": "evt-41",
+          "id": "evt-44",
           "run_id": "run-2",
           "schema_version": 1,
-          "seq": 41,
+          "seq": 44,
           "session_id": "ses-golden-a",
           "type": "tool.started"
         },
@@ -827,10 +890,10 @@
             "tool_name": "write_file"
           },
           "ephemeral": false,
-          "id": "evt-42",
+          "id": "evt-45",
           "run_id": "run-2",
           "schema_version": 1,
-          "seq": 42,
+          "seq": 45,
           "session_id": "ses-golden-a",
           "type": "tool.completed"
         },
@@ -841,10 +904,10 @@
             "scope": "write_file"
           },
           "ephemeral": false,
-          "id": "evt-43",
+          "id": "evt-46",
           "run_id": "run-2",
           "schema_version": 1,
-          "seq": 43,
+          "seq": 46,
           "session_id": "ses-golden-a",
           "type": "approval.consumed"
         },
@@ -871,10 +934,10 @@
             }
           },
           "ephemeral": false,
-          "id": "evt-44",
+          "id": "evt-47",
           "run_id": "run-2",
           "schema_version": 1,
-          "seq": 44,
+          "seq": 47,
           "session_id": "ses-golden-a",
           "type": "tool.result"
         },
@@ -884,12 +947,33 @@
             "state": "running"
           },
           "ephemeral": false,
-          "id": "evt-45",
+          "id": "evt-48",
           "run_id": "run-2",
           "schema_version": 1,
-          "seq": 45,
+          "seq": 48,
           "session_id": "ses-golden-a",
           "type": "run.state_changed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "cached_input_tokens": 0,
+            "context_limit": 123454,
+            "context_tokens": 0,
+            "context_window": 128000,
+            "cost_usd": null,
+            "input_tokens": 0,
+            "model": "fake-model",
+            "output_tokens": 2,
+            "provider": "fake"
+          },
+          "ephemeral": false,
+          "id": "evt-49",
+          "run_id": "run-2",
+          "schema_version": 1,
+          "seq": 49,
+          "session_id": "ses-golden-a",
+          "type": "model.usage"
         },
         {
           "created_at": "2026-01-01T00:00:00+00:00",
@@ -910,10 +994,10 @@
             }
           },
           "ephemeral": false,
-          "id": "evt-46",
+          "id": "evt-50",
           "run_id": "run-2",
           "schema_version": 1,
-          "seq": 46,
+          "seq": 50,
           "session_id": "ses-golden-a",
           "type": "assistant.message"
         },
@@ -923,10 +1007,10 @@
             "state": "completed"
           },
           "ephemeral": false,
-          "id": "evt-47",
+          "id": "evt-51",
           "run_id": "run-2",
           "schema_version": 1,
-          "seq": 47,
+          "seq": 51,
           "session_id": "ses-golden-a",
           "type": "run.state_changed"
         },
@@ -936,10 +1020,10 @@
             "state": "completed"
           },
           "ephemeral": false,
-          "id": "evt-48",
+          "id": "evt-52",
           "run_id": "run-2",
           "schema_version": 1,
-          "seq": 48,
+          "seq": 52,
           "session_id": "ses-golden-a",
           "type": "run.completed"
         },
@@ -963,10 +1047,10 @@
             "purpose": "context"
           },
           "ephemeral": false,
-          "id": "evt-49",
+          "id": "evt-53",
           "run_id": "run-2",
           "schema_version": 1,
-          "seq": 49,
+          "seq": 53,
           "session_id": "ses-golden-a",
           "type": "artifact.created"
         },
@@ -990,10 +1074,10 @@
             "reason": "requested"
           },
           "ephemeral": false,
-          "id": "evt-50",
+          "id": "evt-54",
           "run_id": "run-2",
           "schema_version": 1,
-          "seq": 50,
+          "seq": 54,
           "session_id": "ses-golden-a",
           "type": "artifact.deleted"
         },
@@ -1016,10 +1100,10 @@
             }
           },
           "ephemeral": false,
-          "id": "evt-51",
+          "id": "evt-55",
           "run_id": "run-2",
           "schema_version": 1,
-          "seq": 51,
+          "seq": 55,
           "session_id": "ses-golden-a",
           "type": "memory.candidate"
         },
@@ -1047,10 +1131,10 @@
             }
           },
           "ephemeral": false,
-          "id": "evt-52",
+          "id": "evt-56",
           "run_id": "run-2",
           "schema_version": 1,
-          "seq": 52,
+          "seq": 56,
           "session_id": "ses-golden-a",
           "type": "memory.written"
         },
@@ -1064,10 +1148,10 @@
             "scope_id": "ses-golden-a"
           },
           "ephemeral": false,
-          "id": "evt-53",
+          "id": "evt-57",
           "run_id": "run-2",
           "schema_version": 1,
-          "seq": 53,
+          "seq": 57,
           "session_id": "ses-golden-a",
           "type": "memory.deleted"
         },
@@ -1104,10 +1188,10 @@
             }
           },
           "ephemeral": false,
-          "id": "evt-54",
+          "id": "evt-58",
           "run_id": "run-3",
           "schema_version": 1,
-          "seq": 54,
+          "seq": 58,
           "session_id": "ses-golden-a",
           "type": "subagent.spawned"
         }
@@ -1129,7 +1213,7 @@
             "task_id": "task-2"
           },
           "ephemeral": false,
-          "id": "evt-55",
+          "id": "evt-59",
           "run_id": null,
           "schema_version": 1,
           "seq": 1,
@@ -1156,7 +1240,7 @@
             "task_id": "task-2"
           },
           "ephemeral": false,
-          "id": "evt-56",
+          "id": "evt-60",
           "run_id": null,
           "schema_version": 1,
           "seq": 2,
@@ -1180,7 +1264,7 @@
             }
           },
           "ephemeral": false,
-          "id": "evt-57",
+          "id": "evt-61",
           "run_id": "run-5",
           "schema_version": 1,
           "seq": 3,
@@ -1210,7 +1294,7 @@
             "unsafe": true
           },
           "ephemeral": false,
-          "id": "evt-58",
+          "id": "evt-62",
           "run_id": "run-5",
           "schema_version": 1,
           "seq": 4,
@@ -1223,12 +1307,33 @@
             "state": "running"
           },
           "ephemeral": false,
-          "id": "evt-59",
+          "id": "evt-63",
           "run_id": "run-5",
           "schema_version": 1,
           "seq": 5,
           "session_id": "ses-1",
           "type": "run.state_changed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "cached_input_tokens": 0,
+            "context_limit": 127138,
+            "context_tokens": 0,
+            "context_window": 128000,
+            "cost_usd": null,
+            "input_tokens": 0,
+            "model": "fake-model",
+            "output_tokens": 6,
+            "provider": "fake"
+          },
+          "ephemeral": false,
+          "id": "evt-64",
+          "run_id": "run-5",
+          "schema_version": 1,
+          "seq": 6,
+          "session_id": "ses-1",
+          "type": "model.usage"
         },
         {
           "created_at": "2026-01-01T00:00:00+00:00",
@@ -1249,10 +1354,10 @@
             }
           },
           "ephemeral": false,
-          "id": "evt-60",
+          "id": "evt-65",
           "run_id": "run-5",
           "schema_version": 1,
-          "seq": 6,
+          "seq": 7,
           "session_id": "ses-1",
           "type": "assistant.message"
         },
@@ -1262,10 +1367,10 @@
             "state": "completed"
           },
           "ephemeral": false,
-          "id": "evt-61",
+          "id": "evt-66",
           "run_id": "run-5",
           "schema_version": 1,
-          "seq": 7,
+          "seq": 8,
           "session_id": "ses-1",
           "type": "run.state_changed"
         },
@@ -1275,10 +1380,10 @@
             "state": "completed"
           },
           "ephemeral": false,
-          "id": "evt-62",
+          "id": "evt-67",
           "run_id": "run-5",
           "schema_version": 1,
-          "seq": 8,
+          "seq": 9,
           "session_id": "ses-1",
           "type": "run.completed"
         },
@@ -1302,10 +1407,10 @@
             "task_id": "task-2"
           },
           "ephemeral": false,
-          "id": "evt-63",
+          "id": "evt-68",
           "run_id": null,
           "schema_version": 1,
-          "seq": 9,
+          "seq": 10,
           "session_id": "ses-1",
           "type": "subagent.completed"
         }
@@ -1323,7 +1428,7 @@
             "provider": "fake"
           },
           "ephemeral": false,
-          "id": "evt-64",
+          "id": "evt-69",
           "run_id": null,
           "schema_version": 1,
           "seq": 1,
@@ -1347,7 +1452,7 @@
             }
           },
           "ephemeral": false,
-          "id": "evt-65",
+          "id": "evt-70",
           "run_id": null,
           "schema_version": 1,
           "seq": 2,
@@ -1371,7 +1476,7 @@
             }
           },
           "ephemeral": false,
-          "id": "evt-66",
+          "id": "evt-71",
           "run_id": null,
           "schema_version": 1,
           "seq": 3,
@@ -1395,7 +1500,7 @@
             }
           },
           "ephemeral": false,
-          "id": "evt-67",
+          "id": "evt-72",
           "run_id": null,
           "schema_version": 1,
           "seq": 4,
@@ -1419,7 +1524,7 @@
             }
           },
           "ephemeral": false,
-          "id": "evt-68",
+          "id": "evt-73",
           "run_id": null,
           "schema_version": 1,
           "seq": 5,
@@ -1443,7 +1548,7 @@
             }
           },
           "ephemeral": false,
-          "id": "evt-69",
+          "id": "evt-74",
           "run_id": null,
           "schema_version": 1,
           "seq": 6,
@@ -1467,7 +1572,7 @@
             }
           },
           "ephemeral": false,
-          "id": "evt-70",
+          "id": "evt-75",
           "run_id": null,
           "schema_version": 1,
           "seq": 7,
@@ -1491,7 +1596,7 @@
             }
           },
           "ephemeral": false,
-          "id": "evt-71",
+          "id": "evt-76",
           "run_id": null,
           "schema_version": 1,
           "seq": 8,
@@ -1515,7 +1620,7 @@
             }
           },
           "ephemeral": false,
-          "id": "evt-72",
+          "id": "evt-77",
           "run_id": null,
           "schema_version": 1,
           "seq": 9,
@@ -1539,7 +1644,7 @@
             }
           },
           "ephemeral": false,
-          "id": "evt-73",
+          "id": "evt-78",
           "run_id": null,
           "schema_version": 1,
           "seq": 10,
@@ -1563,7 +1668,7 @@
             }
           },
           "ephemeral": false,
-          "id": "evt-74",
+          "id": "evt-79",
           "run_id": null,
           "schema_version": 1,
           "seq": 11,
@@ -1587,7 +1692,7 @@
             }
           },
           "ephemeral": false,
-          "id": "evt-75",
+          "id": "evt-80",
           "run_id": null,
           "schema_version": 1,
           "seq": 12,
@@ -1611,7 +1716,7 @@
             }
           },
           "ephemeral": false,
-          "id": "evt-76",
+          "id": "evt-81",
           "run_id": null,
           "schema_version": 1,
           "seq": 13,
@@ -1641,7 +1746,7 @@
             "unsafe": true
           },
           "ephemeral": false,
-          "id": "evt-77",
+          "id": "evt-82",
           "run_id": "run-6",
           "schema_version": 1,
           "seq": 14,
@@ -1654,7 +1759,7 @@
             "state": "running"
           },
           "ephemeral": false,
-          "id": "evt-78",
+          "id": "evt-83",
           "run_id": "run-6",
           "schema_version": 1,
           "seq": 15,
@@ -1701,12 +1806,33 @@
             "version": 1
           },
           "ephemeral": false,
-          "id": "evt-79",
+          "id": "evt-84",
           "run_id": "run-6",
           "schema_version": 1,
           "seq": 16,
           "session_id": "ses-golden-b",
           "type": "compaction.created"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "cached_input_tokens": 0,
+            "context_limit": 442,
+            "context_tokens": 0,
+            "context_window": 700,
+            "cost_usd": null,
+            "input_tokens": 0,
+            "model": "fake-model",
+            "output_tokens": 8,
+            "provider": "fake"
+          },
+          "ephemeral": false,
+          "id": "evt-85",
+          "run_id": "run-6",
+          "schema_version": 1,
+          "seq": 17,
+          "session_id": "ses-golden-b",
+          "type": "model.usage"
         },
         {
           "created_at": "2026-01-01T00:00:00+00:00",
@@ -1728,10 +1854,10 @@
             }
           },
           "ephemeral": false,
-          "id": "evt-80",
+          "id": "evt-86",
           "run_id": "run-6",
           "schema_version": 1,
-          "seq": 17,
+          "seq": 18,
           "session_id": "ses-golden-b",
           "type": "assistant.message"
         },
@@ -1741,10 +1867,10 @@
             "state": "waiting_tool"
           },
           "ephemeral": false,
-          "id": "evt-81",
+          "id": "evt-87",
           "run_id": "run-6",
           "schema_version": 1,
-          "seq": 18,
+          "seq": 19,
           "session_id": "ses-golden-b",
           "type": "run.state_changed"
         },
@@ -1756,10 +1882,10 @@
             "tool_name": "missing_tool"
           },
           "ephemeral": false,
-          "id": "evt-82",
+          "id": "evt-88",
           "run_id": "run-6",
           "schema_version": 1,
-          "seq": 19,
+          "seq": 20,
           "session_id": "ses-golden-b",
           "type": "tool.requested"
         },
@@ -1771,10 +1897,10 @@
             "tool_name": "missing_tool"
           },
           "ephemeral": false,
-          "id": "evt-83",
+          "id": "evt-89",
           "run_id": "run-6",
           "schema_version": 1,
-          "seq": 20,
+          "seq": 21,
           "session_id": "ses-golden-b",
           "type": "tool.rejected"
         },
@@ -1800,10 +1926,10 @@
             }
           },
           "ephemeral": false,
-          "id": "evt-84",
+          "id": "evt-90",
           "run_id": "run-6",
           "schema_version": 1,
-          "seq": 21,
+          "seq": 22,
           "session_id": "ses-golden-b",
           "type": "tool.result"
         },
@@ -1813,10 +1939,10 @@
             "state": "running"
           },
           "ephemeral": false,
-          "id": "evt-85",
+          "id": "evt-91",
           "run_id": "run-6",
           "schema_version": 1,
-          "seq": 22,
+          "seq": 23,
           "session_id": "ses-golden-b",
           "type": "run.state_changed"
         },
@@ -1852,10 +1978,10 @@
             "version": 1
           },
           "ephemeral": false,
-          "id": "evt-86",
+          "id": "evt-92",
           "run_id": "run-6",
           "schema_version": 1,
-          "seq": 23,
+          "seq": 24,
           "session_id": "ses-golden-b",
           "type": "compaction.created"
         },
@@ -1865,10 +1991,10 @@
             "state": "failed"
           },
           "ephemeral": false,
-          "id": "evt-87",
+          "id": "evt-93",
           "run_id": "run-6",
           "schema_version": 1,
-          "seq": 24,
+          "seq": 25,
           "session_id": "ses-golden-b",
           "type": "run.state_changed"
         },
@@ -1879,10 +2005,10 @@
             "state": "failed"
           },
           "ephemeral": false,
-          "id": "evt-88",
+          "id": "evt-94",
           "run_id": "run-6",
           "schema_version": 1,
-          "seq": 25,
+          "seq": 26,
           "session_id": "ses-golden-b",
           "type": "run.failed"
         },
@@ -1903,10 +2029,10 @@
             }
           },
           "ephemeral": false,
-          "id": "evt-89",
+          "id": "evt-95",
           "run_id": "run-7",
           "schema_version": 1,
-          "seq": 26,
+          "seq": 27,
           "session_id": "ses-golden-b",
           "type": "user.message"
         },
@@ -1933,10 +2059,10 @@
             "unsafe": true
           },
           "ephemeral": false,
-          "id": "evt-90",
+          "id": "evt-96",
           "run_id": "run-7",
           "schema_version": 1,
-          "seq": 27,
+          "seq": 28,
           "session_id": "ses-golden-b",
           "type": "run.started"
         },
@@ -1946,20 +2072,7 @@
             "state": "running"
           },
           "ephemeral": false,
-          "id": "evt-91",
-          "run_id": "run-7",
-          "schema_version": 1,
-          "seq": 28,
-          "session_id": "ses-golden-b",
-          "type": "run.state_changed"
-        },
-        {
-          "created_at": "2026-01-01T00:00:00+00:00",
-          "data": {
-            "state": "interrupted"
-          },
-          "ephemeral": false,
-          "id": "evt-92",
+          "id": "evt-97",
           "run_id": "run-7",
           "schema_version": 1,
           "seq": 29,
@@ -1972,10 +2085,23 @@
             "state": "interrupted"
           },
           "ephemeral": false,
-          "id": "evt-93",
+          "id": "evt-98",
           "run_id": "run-7",
           "schema_version": 1,
           "seq": 30,
+          "session_id": "ses-golden-b",
+          "type": "run.state_changed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "state": "interrupted"
+          },
+          "ephemeral": false,
+          "id": "evt-99",
+          "run_id": "run-7",
+          "schema_version": 1,
+          "seq": 31,
           "session_id": "ses-golden-b",
           "type": "run.interrupted"
         },
@@ -1996,10 +2122,10 @@
             }
           },
           "ephemeral": false,
-          "id": "evt-94",
+          "id": "evt-100",
           "run_id": "run-8",
           "schema_version": 1,
-          "seq": 31,
+          "seq": 32,
           "session_id": "ses-golden-b",
           "type": "user.message"
         },
@@ -2026,10 +2152,10 @@
             "unsafe": true
           },
           "ephemeral": false,
-          "id": "evt-95",
+          "id": "evt-101",
           "run_id": "run-8",
           "schema_version": 1,
-          "seq": 32,
+          "seq": 33,
           "session_id": "ses-golden-b",
           "type": "run.started"
         },
@@ -2039,12 +2165,33 @@
             "state": "running"
           },
           "ephemeral": false,
-          "id": "evt-96",
+          "id": "evt-102",
           "run_id": "run-8",
           "schema_version": 1,
-          "seq": 33,
+          "seq": 34,
           "session_id": "ses-golden-b",
           "type": "run.state_changed"
+        },
+        {
+          "created_at": "2026-01-01T00:00:00+00:00",
+          "data": {
+            "cached_input_tokens": 0,
+            "context_limit": 123454,
+            "context_tokens": 0,
+            "context_window": 128000,
+            "cost_usd": null,
+            "input_tokens": 0,
+            "model": "fake-model",
+            "output_tokens": 8,
+            "provider": "fake"
+          },
+          "ephemeral": false,
+          "id": "evt-103",
+          "run_id": "run-8",
+          "schema_version": 1,
+          "seq": 35,
+          "session_id": "ses-golden-b",
+          "type": "model.usage"
         },
         {
           "created_at": "2026-01-01T00:00:00+00:00",
@@ -2069,10 +2216,10 @@
             }
           },
           "ephemeral": false,
-          "id": "evt-97",
+          "id": "evt-104",
           "run_id": "run-8",
           "schema_version": 1,
-          "seq": 34,
+          "seq": 36,
           "session_id": "ses-golden-b",
           "type": "assistant.message"
         },
@@ -2082,10 +2229,10 @@
             "state": "waiting_tool"
           },
           "ephemeral": false,
-          "id": "evt-98",
+          "id": "evt-105",
           "run_id": "run-8",
           "schema_version": 1,
-          "seq": 35,
+          "seq": 37,
           "session_id": "ses-golden-b",
           "type": "run.state_changed"
         },
@@ -2100,10 +2247,10 @@
             "tool_name": "write_file"
           },
           "ephemeral": false,
-          "id": "evt-99",
+          "id": "evt-106",
           "run_id": "run-8",
           "schema_version": 1,
-          "seq": 36,
+          "seq": 38,
           "session_id": "ses-golden-b",
           "type": "tool.requested"
         },
@@ -2117,10 +2264,10 @@
             "tool_name": "write_file"
           },
           "ephemeral": false,
-          "id": "evt-100",
+          "id": "evt-107",
           "run_id": "run-8",
           "schema_version": 1,
-          "seq": 37,
+          "seq": 39,
           "session_id": "ses-golden-b",
           "type": "policy.decided"
         },
@@ -2142,10 +2289,10 @@
             "tool_name": "write_file"
           },
           "ephemeral": false,
-          "id": "evt-101",
+          "id": "evt-108",
           "run_id": "run-8",
           "schema_version": 1,
-          "seq": 38,
+          "seq": 40,
           "session_id": "ses-golden-b",
           "type": "approval.requested"
         },
@@ -2155,10 +2302,10 @@
             "state": "waiting_approval"
           },
           "ephemeral": false,
-          "id": "evt-102",
+          "id": "evt-109",
           "run_id": "run-8",
           "schema_version": 1,
-          "seq": 39,
+          "seq": 41,
           "session_id": "ses-golden-b",
           "type": "run.state_changed"
         },
@@ -2173,10 +2320,10 @@
             "state": "waiting_approval"
           },
           "ephemeral": false,
-          "id": "evt-103",
+          "id": "evt-110",
           "run_id": "run-8",
           "schema_version": 1,
-          "seq": 40,
+          "seq": 42,
           "session_id": "ses-golden-b",
           "type": "run.suspended"
         },
@@ -2188,10 +2335,10 @@
             ]
           },
           "ephemeral": false,
-          "id": "evt-104",
+          "id": "evt-111",
           "run_id": "run-8",
           "schema_version": 1,
-          "seq": 41,
+          "seq": 43,
           "session_id": "ses-golden-b",
           "type": "session.repaired"
         },
@@ -2218,10 +2365,10 @@
             }
           },
           "ephemeral": false,
-          "id": "evt-105",
+          "id": "evt-112",
           "run_id": "run-8",
           "schema_version": 1,
-          "seq": 42,
+          "seq": 44,
           "session_id": "ses-golden-b",
           "type": "tool.result"
         },
@@ -2231,10 +2378,10 @@
             "state": "cancelled"
           },
           "ephemeral": false,
-          "id": "evt-106",
+          "id": "evt-113",
           "run_id": "run-8",
           "schema_version": 1,
-          "seq": 43,
+          "seq": 45,
           "session_id": "ses-golden-b",
           "type": "run.state_changed"
         },
@@ -2245,10 +2392,10 @@
             "state": "cancelled"
           },
           "ephemeral": false,
-          "id": "evt-107",
+          "id": "evt-114",
           "run_id": "run-8",
           "schema_version": 1,
-          "seq": 44,
+          "seq": 46,
           "session_id": "ses-golden-b",
           "type": "run.cancelled"
         }
@@ -2268,7 +2415,7 @@
             "provider": "fake"
           },
           "ephemeral": false,
-          "id": "evt-108",
+          "id": "evt-115",
           "run_id": null,
           "schema_version": 1,
           "seq": 1,
@@ -2283,7 +2430,7 @@
             "parent_session_id": "ses-golden-a"
           },
           "ephemeral": false,
-          "id": "evt-109",
+          "id": "evt-116",
           "run_id": null,
           "schema_version": 1,
           "seq": 2,
@@ -2303,7 +2450,7 @@
             }
           },
           "ephemeral": false,
-          "id": "evt-110",
+          "id": "evt-117",
           "run_id": null,
           "schema_version": 1,
           "seq": 3,
@@ -2327,7 +2474,7 @@
             }
           },
           "ephemeral": false,
-          "id": "evt-111",
+          "id": "evt-118",
           "run_id": "run-1",
           "schema_version": 1,
           "seq": 4,
@@ -2357,7 +2504,7 @@
             "unsafe": true
           },
           "ephemeral": false,
-          "id": "evt-112",
+          "id": "evt-119",
           "run_id": "run-1",
           "schema_version": 1,
           "seq": 5,
