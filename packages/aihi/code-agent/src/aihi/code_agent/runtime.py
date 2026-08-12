@@ -48,7 +48,7 @@ from .config import (
     McpServerSettings,
     resolve_env_mapping,
 )
-from .prompts import compose_subagent_prompt, compose_system_prompt
+from .prompts import build_subagent_prompt, build_system_prompt
 from .skills import builtin_skill_root
 from .subagents import CODING_SUBAGENTS
 from .tools import ToolBuildContext, build_tools
@@ -171,7 +171,7 @@ class CodeAgentRuntime:
                 permission_mode=self.config.permission_mode,
                 require_capability_lease=self.config.require_capability_lease,
                 system_prompt=(
-                    compose_system_prompt(self.config, workspace=Path(session.cwd))
+                    build_system_prompt(self.config, workspace=Path(session.cwd))
                     if system_prompt is None
                     else system_prompt
                 ),
@@ -230,7 +230,9 @@ class CodeAgentRuntime:
             permission_mode=self.config.permission_mode,
             require_capability_lease=self.config.require_capability_lease,
             system_prompt=(
-                self.config.system_prompt if system_prompt is None else system_prompt
+                build_system_prompt(self.config, workspace=Path(session.cwd))
+                if system_prompt is None
+                else system_prompt
             ),
             max_output_tokens=max_output_tokens,
             cancel_event=cancel_event,
@@ -252,7 +254,7 @@ def _build_agent_types(config: CodeAgentConfig) -> dict[str, SubagentTypeSpec]:
             continue
         model = (override.model if override is not None else None) or definition.model
         declared[definition.name] = SubagentTypeSpec(
-            system_prompt=compose_subagent_prompt(
+            system_prompt=build_subagent_prompt(
                 config, workspace=config.sandbox.root, role=definition.prompt()
             ),
             model=model,

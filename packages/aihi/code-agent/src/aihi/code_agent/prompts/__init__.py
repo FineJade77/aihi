@@ -1,8 +1,12 @@
 """The layered system prompt for the Coding Agent.
 
-The effective prompt is the packaged coding prompt, plus what is true about
-this environment, plus the workspace's own conventions, plus whatever the user
-configured — in that order.
+The application owns this prompt outright — there is no user-configurable
+override. Refining agent behaviour means editing `coding.md`; project-specific
+rules belong in the workspace's own `AGENTS.md`, which is picked up here.
+
+Named `build_*` rather than `compose_*`: `aihi.agent.context` already exports a
+`compose_system_prompt(system_prompt, sections)` that joins a base prompt with
+contributed sections, and two functions with one name would be a trap.
 """
 
 from __future__ import annotations
@@ -24,16 +28,18 @@ def load_builtin_prompt() -> str:
 
 
 def _environment_section(config: CodeAgentConfig, workspace: Path) -> str:
-    tools = ", ".join(config.tools) or "none"
+    """State what is true about this run's surroundings.
+
+    The tool set is deliberately absent: the model already receives every tool
+    as a native schema on `ModelRequest.tools`, and the registry a child run
+    sees is narrower than the configured allowlist — listing names here would
+    duplicate that channel and, for a subagent, contradict it.
+    """
+
     sandbox = config.sandbox.backend
     if config.sandbox.unsafe:
         sandbox = f"{sandbox} (unsandboxed host access)"
-    return (
-        "## Environment\n\n"
-        f"- workspace: {workspace}\n"
-        f"- sandbox: {sandbox}\n"
-        f"- tools: {tools}"
-    )
+    return f"## Environment\n\n- workspace: {workspace}\n- sandbox: {sandbox}"
 
 
 def _conventions_section(workspace: Path) -> str:
@@ -53,29 +59,22 @@ def _conventions_section(workspace: Path) -> str:
     return ""
 
 
-def compose_system_prompt(config: CodeAgentConfig, *, workspace: Path) -> str:
-    """Compose the effective system prompt for a run in `workspace`."""
+def build_system_prompt(config: CodeAgentConfig, *, workspace: Path) -> str:
+    """Build the effective system prompt for a run in `workspace`."""
 
-    if config.system_prompt_mode == "replace":
-        return config.system_prompt
     sections = (
         load_builtin_prompt(),
         _environment_section(config, workspace),
         _conventions_section(workspace),
-        config.system_prompt.strip(),
     )
     return "\n\n".join(section for section in sections if section)
 
 
-def compose_subagent_prompt(
-    config: CodeAgentConfig, *, workspace: Path, role: str
-) -> str:
-    """Compose one Subagent type's prompt: its role, plus the same project context.
+def build_subagent_prompt(config: CodeAgentConfig, *, workspace: Path, role: str) -> str:
+    """Build one Subagent type's prompt: its role, plus the same project context.
 
-    The top-level coding prompt is left out — the role replaces it — and so is
-    `agent.system_prompt`, which instructs the main agent and in `replace` mode
-    is meant to be a whole prompt of its own. Workspace conventions do carry
-    over: they describe the repository, not the role.
+    The top-level coding prompt is left out — the role replaces it. Workspace
+    conventions do carry over: they describe the repository, not the role.
     """
 
     sections = (
@@ -86,4 +85,4 @@ def compose_subagent_prompt(
     return "\n\n".join(section for section in sections if section)
 
 
-__all__ = ["compose_subagent_prompt", "compose_system_prompt", "load_builtin_prompt"]
+__all__ = ["build_subagent_prompt", "build_system_prompt", "load_builtin_prompt"]
