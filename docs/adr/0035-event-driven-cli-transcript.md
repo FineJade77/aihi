@@ -29,5 +29,5 @@ Transcript 是可丢弃投影，不新增 Worker command、不改变 Event Schem
 ## 后果
 
 - 重连后的界面与实时运行展示同一条用户/助手/Tool 时间线，并可恢复正在执行的 Run ID；
-- 当前视图只渲染最近 12 个展示项，Transcript 投影仍由完整 replay 构建，事实保留在 Event Store；
-- 若未来需要完整滚动、搜索或折叠，应在该投影之上实现 viewport，不得创建第二套消息状态模型。
+- Transcript 投影仍由完整 replay 构建，事实保留在 Event Store；
+- 完整滚动与折叠由 ADR-0036 定义的 viewport 在该投影之上实现，没有创建第二套消息状态模型。

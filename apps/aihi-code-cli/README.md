@@ -133,10 +133,18 @@ cancellation of an active run or closes a suspended/recoverable run. Model
 chunks are delivered as ephemeral Worker notifications and rendered while the
 run is in progress. The canonical `assistant.message` replaces that temporary
 stream display; ephemeral chunks are never inserted into the durable transcript.
+The transcript viewport follows the newest line by default. `PageUp`/`PageDown`
+scroll it without changing the underlying Event projection, `Ctrl-E` resumes
+tail following, and `Ctrl-O` expands or collapses Tool result details. Its line
+budget tracks terminal resize events instead of keeping a fixed entry count.
 Only one foreground Run may own a Session. While it is active the composer is
 disabled; `Ctrl-C` requests interruption of that Run, while `Ctrl-C` with no
 active Run exits the CLI. Different Sessions may still run concurrently in the
 Worker.
+The composer supports pasted or `Ctrl-J`-inserted multiline prompts, local
+command history with `Up`/`Down`, and slash-command suggestions completed with
+`Tab` or `Shift-Tab`. `Enter` submits the full draft; command history remains
+process-local and is not another durable Session store.
 The default Coding tool set also includes read-only `git_status` and `git_diff`;
 they never stage or modify changes and remain subject to the same Tool policy
 chain.

@@ -211,6 +211,10 @@ stream buffer，canonical `assistant.message` 到达后替换它。Tool Call、T
 与 Tool Result 通过稳定 ID 合并为同一展示项；Tool input 只允许显示显式白名单字段，不能把任意
 输入复制进终端记录，白名单文本中的 credential pattern 仍须脱敏（ADR-0035）。
 
+Transcript viewport 与 composer 是纯应用层状态：viewport 根据终端行列预算从完整投影选择可见行，
+滚动只暂停自动跟随而不复制或修改 Transcript；Tool 结果折叠只影响展示。Composer 的多行草稿、
+slash 补全与进程内历史不写 Event Store，只有提交后的用户消息由 Worker 成为事实（ADR-0036）。
+
 ## 4. Runtime 与 Agent Loop
 
 一次用户请求对应一个 `Run`，一次会话可以有多个 Run。Runtime 是可恢复状态机：

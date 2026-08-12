@@ -1,6 +1,5 @@
 import { homedir } from "node:os";
-import { Box, Text, useApp, useInput } from "ink";
-import TextInput from "ink-text-input";
+import { Box, Text, useApp, useInput, useStdout } from "ink";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   ApprovalDescriptor,
@@ -17,11 +16,28 @@ import {
   mergeTranscriptEvents,
   projectTranscript,
   transcriptEventFromNotification,
-  type TranscriptEntry,
   type TranscriptEvent,
   type TranscriptProjection,
 } from "../transcript.js";
 import { Banner, GradientText } from "./banner.js";
+import {
+  createComposerState,
+  slashSuggestions,
+  type ComposerState,
+} from "./composer.js";
+import { ComposerInput } from "./composer-view.js";
+import { commandHelpSummary, SLASH_COMMANDS } from "./commands.js";
+import {
+  buildTranscriptLines,
+  createViewportState,
+  followTranscriptTail,
+  scrollTranscriptViewport,
+  selectTranscriptViewport,
+  toggleToolDetails,
+  type TranscriptLineTone,
+  type TranscriptViewport,
+  type TranscriptViewportState,
+} from "./viewport.js";
 
 const COLORS = {
   brand: "cyan",
@@ -112,7 +128,10 @@ function approvalInput(approval: ApprovalDescriptor): string {
     const newText = typeof input.new_text === "string" ? input.new_text : "";
     return `${path}\n- ${truncate(oldText, 240)}\n+ ${truncate(newText, 240)}`;
   }
-  return truncate(JSON.stringify(input, null, 2));
+  if (path !== undefined) return `${approval.tool_name ?? approval.scope} · ${path}`;
+  const pattern = typeof input.pattern === "string" ? input.pattern : undefined;
+  if (pattern !== undefined) return `${approval.tool_name ?? approval.scope} · ${pattern}`;
+  return approval.tool_name ?? approval.scope;
 }
 
 function approvalSandbox(approval: ApprovalDescriptor): string | undefined {
@@ -195,7 +214,13 @@ function StatusBar({
     ratio >= 0.9 ? COLORS.bad : ratio >= 0.7 ? COLORS.warn : COLORS.muted;
   const active = tasks.filter((task) => task.state === "running").length;
   return (
-    <Box borderStyle="round" borderColor={COLORS.panel} paddingX={1}>
+    <Box
+      borderStyle="round"
+      borderColor={COLORS.panel}
+      height={3}
+      overflow="hidden"
+      paddingX={1}
+    >
       <Text color={COLORS.muted} wrap="truncate-start">
         {tildePath(cwd)}
       </Text>
@@ -232,7 +257,14 @@ function ApprovalPanel({ approvals }: { approvals: ApprovalDescriptor[] }) {
   if (approval === undefined) return null;
   const sandbox = approvalSandbox(approval);
   return (
-    <Box borderStyle="round" borderColor={COLORS.warn} flexDirection="column" paddingX={1}>
+    <Box
+      borderStyle="round"
+      borderColor={COLORS.warn}
+      flexDirection="column"
+      height={10}
+      overflow="hidden"
+      paddingX={1}
+    >
       <Text bold color={COLORS.warn}>
         APPROVAL REQUIRED ({approvals.length})
       </Text>
@@ -240,15 +272,15 @@ function ApprovalPanel({ approvals }: { approvals: ApprovalDescriptor[] }) {
         <Text color={COLORS.accent}>{approval.approval_id}</Text>{" "}
         <Text bold>{approval.tool_name ?? approval.scope}</Text>
       </Text>
-      <Text wrap="wrap">{approvalInput(approval)}</Text>
+      <Text color={COLORS.muted}>[y] run · [o] once · [n] deny</Text>
+      <Text wrap="truncate">{approvalInput(approval).replace(/\s+/g, " ")}</Text>
       {approval.reason !== undefined && (
-        <Text color={COLORS.muted} wrap="wrap">reason · {approval.reason}</Text>
+        <Text color={COLORS.muted} wrap="truncate">reason · {approval.reason}</Text>
       )}
       {approval.required_capabilities !== undefined && approval.required_capabilities.length > 0 && (
         <Text color={COLORS.muted}>capabilities · {approval.required_capabilities.join(", ")}</Text>
       )}
-      {sandbox !== undefined && <Text color={COLORS.muted}>sandbox · {sandbox}</Text>}
-      <Text color={COLORS.muted}>[y] allow for run · [o] allow once · [n] deny</Text>
+      {sandbox !== undefined && <Text color={COLORS.muted} wrap="truncate">sandbox · {sandbox}</Text>}
     </Box>
   );
 }
@@ -268,76 +300,53 @@ function HostConsentPanel({ cwd, root }: { cwd: string; root: string }) {
   );
 }
 
-function TranscriptRow({ entry }: { entry: TranscriptEntry }) {
-  if (entry.kind === "tool") {
-    const tone = entry.isError
-      ? COLORS.bad
-      : entry.status === "succeeded"
-        ? COLORS.good
-        : entry.status === "waiting_approval"
-          ? COLORS.warn
-          : COLORS.muted;
-    return (
-      <Box flexDirection="column">
-        <Text color={tone}>
-          ↳ {entry.toolName ?? "tool"} · {entry.status ?? "requested"}
-        </Text>
-        <Text color={COLORS.muted} wrap="wrap">  {entry.text}</Text>
-        {entry.detail !== undefined && entry.detail.length > 0 && (
-          <Text color={entry.isError ? COLORS.bad : COLORS.muted} wrap="wrap">
-            {"  "}{entry.detail}
-          </Text>
-        )}
-      </Box>
-    );
-  }
-  if (entry.kind === "status") {
-    return (
-      <Text color={entry.isError ? COLORS.bad : COLORS.muted} wrap="wrap">
-        {entry.text}{entry.detail ? ` · ${entry.detail}` : ""}
-      </Text>
-    );
-  }
-  return (
-    <Box flexDirection="column">
-      <Text bold color={entry.kind === "user" ? COLORS.accent : COLORS.brand}>
-        {entry.kind === "user" ? "YOU" : "AIHI"}
-      </Text>
-      <Text wrap="wrap">{entry.text}</Text>
-    </Box>
-  );
+function transcriptTone(tone: TranscriptLineTone): UiColor | undefined {
+  if (tone === "user") return COLORS.accent;
+  if (tone === "assistant") return COLORS.brand;
+  if (tone === "muted") return COLORS.muted;
+  if (tone === "good") return COLORS.good;
+  if (tone === "warn") return COLORS.warn;
+  if (tone === "bad") return COLORS.bad;
+  return undefined;
 }
 
-/** A bounded, event-derived conversation view; the Event Store remains canonical. */
+/** A line-bounded viewport over the event-derived transcript. */
 function TranscriptPanel({
-  entries,
+  viewport,
   streamText,
+  rowBudget,
 }: {
-  entries: TranscriptEntry[];
+  viewport: TranscriptViewport;
   streamText: string;
+  rowBudget: number;
 }) {
-  const visible = entries.slice(-12);
-  const hidden = entries.length - visible.length;
   return (
     <Box
       borderStyle="round"
       borderColor={streamText ? COLORS.accent : COLORS.panel}
       flexDirection="column"
+      height={rowBudget + 3}
+      overflow="hidden"
       paddingX={1}
     >
-      <Text bold color={COLORS.brand}>
-        CONVERSATION{streamText ? " · streaming" : ""}
-      </Text>
-      {hidden > 0 && <Text color={COLORS.muted}>… {hidden} earlier entries</Text>}
-      {visible.map((entry) => <TranscriptRow key={entry.id} entry={entry} />)}
-      {streamText && (
-        <Box flexDirection="column">
-          <Text bold color={COLORS.brand}>AIHI</Text>
-          <Text wrap="wrap">{streamText.length > 1_200 ? `…${streamText.slice(-1_200)}` : streamText}</Text>
-        </Box>
+      <Box justifyContent="space-between">
+        <Text bold color={COLORS.brand}>
+          CONVERSATION{streamText ? " · streaming" : ""}
+        </Text>
+        <Text color={viewport.followingTail ? COLORS.muted : COLORS.warn}>
+          {viewport.followingTail ? "follow" : "paused"}
+        </Text>
+      </Box>
+      {viewport.hiddenAbove > 0 && (
+        <Text color={COLORS.muted}>↑ {viewport.hiddenAbove} earlier lines</Text>
       )}
-      {visible.length === 0 && !streamText && (
-        <Text color={COLORS.muted}>No conversation yet</Text>
+      {viewport.lines.map((line) => (
+        <Text key={line.id} bold={line.bold} color={transcriptTone(line.tone)}>
+          {line.text || " "}
+        </Text>
+      ))}
+      {viewport.hiddenBelow > 0 && (
+        <Text color={COLORS.warn}>↓ {viewport.hiddenBelow} newer lines · Ctrl-E to follow</Text>
       )}
     </Box>
   );
@@ -358,11 +367,19 @@ export function TuiApp({
   onSessionOpened,
 }: TuiAppProps) {
   const { exit } = useApp();
+  const { stdout } = useStdout();
   const [sessions, setSessions] = useState<SessionDescriptor[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string | undefined>(sessionId);
   const [selectedSession, setSelectedSession] = useState<SessionDescriptor>();
   const [tasks, setTasks] = useState<TaskDescriptor[]>([]);
-  const [command, setCommand] = useState("");
+  const [composer, setComposer] = useState<ComposerState>(createComposerState);
+  const [viewportState, setViewportState] = useState<TranscriptViewportState>(
+    createViewportState,
+  );
+  const [terminal, setTerminal] = useState(() => ({
+    columns: stdout.columns ?? 80,
+    rows: stdout.rows ?? 24,
+  }));
   const [status, setStatus] = useState("Connecting to Worker…");
   const [busy, setBusy] = useState(false);
   const [activeProvider, setActiveProvider] = useState(provider);
@@ -378,6 +395,7 @@ export function TuiApp({
   const loadingTranscriptSessionsRef = useRef(new Map<string, number>());
   const bufferedTranscriptEventsRef = useRef(new Map<string, TranscriptEvent[]>());
   const sessionLoadGenerationRef = useRef(0);
+  const commandInFlightRef = useRef(false);
   const [splashVisible, setSplashVisible] = useState(true);
   const [context, setContext] = useState({ tokens: 0, limit: 0 });
   const [promptSent, setPromptSent] = useState(false);
@@ -386,6 +404,18 @@ export function TuiApp({
   // follows it, which is exactly what the old status heartbeat destroyed.
   const [notice, setNotice] = useState<{ text: string; tone: UiColor }>();
   const [hostConsentPending, setHostConsentPending] = useState(hostConsentRequired);
+
+  useEffect(() => {
+    const updateTerminal = () => setTerminal({
+      columns: stdout.columns ?? 80,
+      rows: stdout.rows ?? 24,
+    });
+    updateTerminal();
+    stdout.on("resize", updateTerminal);
+    return () => {
+      stdout.off("resize", updateTerminal);
+    };
+  }, [stdout]);
 
   const loadSession = useCallback(async (sessionId: string) => {
     const generation = sessionLoadGenerationRef.current + 1;
@@ -449,6 +479,7 @@ export function TuiApp({
       setSelectedSession(session);
       setTasks(nextTasks);
       setStreamText("");
+      setViewportState(followTranscriptTail);
       setStatus(`Session ${shortId(session.session_id)} · seq ${selectedTranscript.headSeq}`);
     } finally {
       if (loadingTranscriptSessionsRef.current.get(sessionId) === generation) {
@@ -612,8 +643,8 @@ export function TuiApp({
 
   const runCommand = useCallback(async (rawCommand: string) => {
     const trimmed = rawCommand.trim();
-    setCommand("");
-    if (!trimmed) return;
+    if (!trimmed || commandInFlightRef.current) return;
+    commandInFlightRef.current = true;
     // The splash yields its rows to the panels as soon as there is real work.
     setSplashVisible(false);
     const parts = trimmed.split(/\s+/);
@@ -627,7 +658,7 @@ export function TuiApp({
         return;
       }
       if (name === "help" || name === "h") {
-        setStatus("message → run · /provider NAME · /model NAME · /config · /runs · /cancel RUN_ID · /history · /fork [SEQ] · /approvals · /approve ID [once] · /skills · /skill-trust NAME · /skill-disable NAME · /skill-untrust NAME · /mcp · /tools · /quit");
+        setStatus(`message → run · ${commandHelpSummary()}`);
         return;
       }
       if (name === "config") {
@@ -698,6 +729,7 @@ export function TuiApp({
         submittedRunId = runId;
         setActiveRunId(runId);
         setStreamText("");
+        setViewportState(followTranscriptTail);
         setStatus(`Running ${shortId(runId)}…`);
         const result = await client.startRun({
           session_id: selectedSessionId,
@@ -832,6 +864,7 @@ export function TuiApp({
         submittedRunId = runId;
         setActiveRunId(runId);
         setStreamText("");
+        setViewportState(followTranscriptTail);
         setStatus(`Running ${shortId(runId)}…`);
         const result = await client.startRun({
           session_id: selectedSessionId,
@@ -875,6 +908,7 @@ export function TuiApp({
       }
       setNotice({ text: `Error: ${errorMessage(error)}`, tone: COLORS.bad });
     } finally {
+      commandInFlightRef.current = false;
       setBusy(false);
     }
   }, [activeModel, activeProvider, activeRunId, cwd, loadSession, model, provider, quit, refreshSessions, resolvePendingApproval, selectedSessionId]);
@@ -949,12 +983,39 @@ export function TuiApp({
     }
   }, [client, cwd, quit]);
 
+  const transcriptColumns = Math.max(20, terminal.columns - 6);
+  const composerLines = composer.value.split("\n").length;
+  const suggestionRows = slashSuggestions(composer, SLASH_COMMANDS).length;
+  const transcriptRowBudget = Math.max(4, terminal.rows - (
+    13 +
+    (notice === undefined ? 0 : 1) +
+    (approvals.length > 0 ? 10 : 0) +
+    (composerLines > 1 ? Math.min(3, composerLines) : 0) +
+    (suggestionRows > 0 ? suggestionRows + 1 : 0)
+  ));
+  const transcriptLines = useMemo(
+    () => buildTranscriptLines(
+      transcript.entries,
+      streamText,
+      transcriptColumns,
+      viewportState.expandedToolDetails,
+    ),
+    [streamText, transcript.entries, transcriptColumns, viewportState.expandedToolDetails],
+  );
+  const transcriptViewport = useMemo(
+    () => selectTranscriptViewport(transcriptLines, viewportState, transcriptRowBudget),
+    [transcriptLines, transcriptRowBudget, viewportState],
+  );
   useInput((input, key) => {
     if (hostConsentPending) {
       if (key.ctrl && input === "c") void quit();
       if (busy) return;
-      if (input.toLowerCase() === "y") void resolveHostConsent(true);
-      if (input.toLowerCase() === "n") void resolveHostConsent(false);
+      if (!key.ctrl && !key.meta && input.toLowerCase() === "y") {
+        void resolveHostConsent(true);
+      }
+      if (!key.ctrl && !key.meta && input.toLowerCase() === "n") {
+        void resolveHostConsent(false);
+      }
       return;
     }
     if (key.ctrl && input === "c") {
@@ -962,17 +1023,45 @@ export function TuiApp({
       else void quit();
       return;
     }
-    if (!awaitingApproval) {
-      if (key.escape) setCommand("");
+    if (key.pageUp || (key.ctrl && key.upArrow)) {
+      setSplashVisible(false);
+      setViewportState((current) => scrollTranscriptViewport(
+        current,
+        transcriptLines,
+        transcriptRowBudget,
+        "up",
+      ));
       return;
     }
-    if (busy) return;
-    // While an approval is pending the prompt owns the keyboard, so a stray
-    // keystroke cannot be typed into a command line that is not being shown.
-    const choice = input.toLowerCase();
-    if (choice === "y") void resolveOldestApproval(true);
-    if (choice === "o") void resolveOldestApproval(true, true);
-    if (choice === "n") void resolveOldestApproval(false);
+    if (key.pageDown || (key.ctrl && key.downArrow)) {
+      setViewportState((current) => scrollTranscriptViewport(
+        current,
+        transcriptLines,
+        transcriptRowBudget,
+        "down",
+      ));
+      return;
+    }
+    if (key.ctrl && input === "e") {
+      setViewportState(followTranscriptTail);
+      return;
+    }
+    if (key.ctrl && input === "o") {
+      setSplashVisible(false);
+      setViewportState(toggleToolDetails);
+      return;
+    }
+    if (awaitingApproval) {
+      if (busy || key.ctrl || key.meta) return;
+      // While an approval is pending the prompt owns unmodified y/o/n, so a
+      // stray keystroke cannot enter a hidden composer or grant by accident.
+      const choice = input.toLowerCase();
+      if (choice === "y") void resolveOldestApproval(true);
+      if (choice === "o") void resolveOldestApproval(true, true);
+      if (choice === "n") void resolveOldestApproval(false);
+      return;
+    }
+    // The composer owns all remaining editing keys in its own useInput hook.
   });
 
   // A run outlives the request that started it, so "busy" must follow the run.
@@ -1021,17 +1110,21 @@ export function TuiApp({
           </Box>
           {approvals.length > 0 && <ApprovalPanel approvals={approvals} />}
           <Box flexDirection="column" flexGrow={1} marginTop={1}>
-            <TranscriptPanel entries={transcript.entries} streamText={streamText} />
+            <TranscriptPanel
+              viewport={transcriptViewport}
+              streamText={streamText}
+              rowBudget={transcriptRowBudget}
+            />
           </Box>
         </>
       )}
       {hostConsentPending && <HostConsentPanel cwd={cwd} root={hostExecutionRoot} />}
       <Box marginTop={1}>
-        <Text color={COLORS.muted}>{status}</Text>
+        <Text color={COLORS.muted} wrap="truncate">{status}</Text>
       </Box>
       {notice !== undefined && (
         <Box>
-          <Text bold color={notice.tone} wrap="wrap">
+          <Text bold color={notice.tone} wrap="truncate">
             {notice.text}
           </Text>
         </Box>
@@ -1050,15 +1143,13 @@ export function TuiApp({
           <Text color={COLORS.warn}>Run in progress · Ctrl-C to interrupt</Text>
         </Box>
       ) : (
-        <Box>
-          <Text color={COLORS.accent}>› </Text>
-          <TextInput
-            value={command}
-            onChange={setCommand}
-            onSubmit={(value) => void runCommand(value)}
-            placeholder="Type /help for commands"
-          />
-        </Box>
+        <ComposerInput
+          state={composer}
+          commands={SLASH_COMMANDS}
+          active={!busy}
+          onChange={setComposer}
+          onSubmit={(value) => void runCommand(value)}
+        />
       )}
       <StatusBar
         cwd={cwd}
@@ -1068,7 +1159,7 @@ export function TuiApp({
         contextLimit={context.limit}
         tasks={tasks}
       />
-      <Text color={COLORS.muted}>message  /provider  /model  /config  /runs  /cancel  /history  /fork  /approvals  /approve  /skills  /skill-trust  /skill-disable  /skill-untrust  /mcp  /tools  /resume  /quit · Ctrl-C interrupts/exits</Text>
+      <Text color={COLORS.muted} wrap="truncate">PgUp/PgDn scroll · Ctrl-E follow · Ctrl-O tool output · ↑/↓ history · Tab slash · Ctrl-J newline · Ctrl-C interrupt/exit</Text>
     </Box>
   );
 }
