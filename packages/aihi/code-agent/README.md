@@ -25,8 +25,9 @@ expanded by application configuration.
 ## 行为变更（RFC-0003 领域层）
 
 - **提示词由应用拥有，不可配置**。`agent.system_prompt` 与 `agent.system_prompt_mode`
-  已移除，配置里出现会直接报错。调整 Agent 行为请改
-  `aihi/code_agent/prompts/coding.md`；项目特有规则写进工作区的 `AGENTS.md`（自动注入）。
+  已移除，配置里出现会直接报错。`run.start` / `run.resume` 也不再接受 `system_prompt` 参数。
+  调整 Agent 行为请改 `aihi/code_agent/prompts/coding.md`；项目特有规则写进工作区的
+  `AGENTS.md`（自动注入）。
 - `BUILTIN` 作用域的 Skill 随包发布并隐式受信，不需要 trust lockfile。
   `USER` / `PROJECT` / `WORKSPACE` 作用域的显式信任要求不变。
 - 新增命名 Subagent 类型（`explore`、`code_review`、`test`、`general`），

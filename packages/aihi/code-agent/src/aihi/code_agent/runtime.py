@@ -152,7 +152,6 @@ class CodeAgentRuntime:
         user_message: str,
         run_id: str | None = None,
         model: str | None = None,
-        system_prompt: str | None = None,
         max_output_tokens: int | None = None,
         cancel_event: asyncio.Event | None = None,
     ) -> AsyncIterator[TurnEvent]:
@@ -170,11 +169,7 @@ class CodeAgentRuntime:
                 run_id=run_id,
                 permission_mode=self.config.permission_mode,
                 require_capability_lease=self.config.require_capability_lease,
-                system_prompt=(
-                    build_system_prompt(self.config, workspace=Path(session.cwd))
-                    if system_prompt is None
-                    else system_prompt
-                ),
+                system_prompt=build_system_prompt(self.config, workspace=Path(session.cwd)),
                 max_output_tokens=max_output_tokens or self.config.max_output_tokens,
                 cancel_event=cancel_event,
             )
@@ -188,7 +183,6 @@ class CodeAgentRuntime:
         user_message: str,
         run_id: str | None = None,
         model: str | None = None,
-        system_prompt: str | None = None,
         max_output_tokens: int | None = None,
         cancel_event: asyncio.Event | None = None,
     ) -> RunResult:
@@ -203,7 +197,6 @@ class CodeAgentRuntime:
             user_message=user_message,
             run_id=run_id,
             model=model,
-            system_prompt=system_prompt,
             max_output_tokens=max_output_tokens,
             cancel_event=cancel_event,
         ):
@@ -219,7 +212,6 @@ class CodeAgentRuntime:
         *,
         run_id: str,
         model: str | None = None,
-        system_prompt: str | None = None,
         max_output_tokens: int | None = None,
         cancel_event: asyncio.Event | None = None,
     ) -> RunResult:
@@ -229,11 +221,7 @@ class CodeAgentRuntime:
             model=model,
             permission_mode=self.config.permission_mode,
             require_capability_lease=self.config.require_capability_lease,
-            system_prompt=(
-                build_system_prompt(self.config, workspace=Path(session.cwd))
-                if system_prompt is None
-                else system_prompt
-            ),
+            system_prompt=build_system_prompt(self.config, workspace=Path(session.cwd)),
             max_output_tokens=max_output_tokens,
             cancel_event=cancel_event,
         )

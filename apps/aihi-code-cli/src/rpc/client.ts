@@ -94,7 +94,6 @@ export interface RunStartParams {
   run_id?: string;
   provider?: string;
   model?: string;
-  system_prompt?: string;
   max_output_tokens?: number;
 }
 
@@ -102,7 +101,6 @@ export interface RunResumeParams {
   session_id: string;
   run_id: string;
   model?: string;
-  system_prompt?: string;
   max_output_tokens?: number;
 }
 

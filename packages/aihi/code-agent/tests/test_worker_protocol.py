@@ -560,3 +560,37 @@ def test_config_init_never_overwrites_an_existing_file(tmp_path, monkeypatch) ->
     assert response is not None
     assert response["result"]["created"] is False  # type: ignore[index]
     assert 'model = "kept"' in existing.read_text(encoding="utf-8")
+
+
+def test_run_commands_reject_a_client_supplied_system_prompt(tmp_path) -> None:
+    server = _initialized_server()
+    created = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "session.create",
+            "params": {"cwd": str(tmp_path)},
+        }
+    )
+    assert created is not None
+    session_id = created["result"]["session"]["session_id"]  # type: ignore[index]
+    for method, extra in (
+        ("run.start", {"user_message": "hi"}),
+        ("run.resume", {"run_id": "run_x"}),
+    ):
+        response = server.handle(
+            {
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": method,
+                "params": {
+                    "session_id": session_id,
+                    "system_prompt": "override me",
+                    **extra,
+                },
+            }
+        )
+        assert response is not None
+        assert response["error"]["code"] == INVALID_PARAMS  # type: ignore[index]
+        assert "owns its prompt" in response["error"]["message"]  # type: ignore[index]
+    server.close()

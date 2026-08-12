@@ -469,9 +469,11 @@ class WorkerServer:
         user_message = self._required_text(params, "user_message", max_length=100_000)
         provider = self._optional_text_value(params.get("provider"), "provider", max_length=256)
         model = self._optional_text_value(params.get("model"), "model", max_length=256)
-        system_prompt = self._optional_text_value(
-            params.get("system_prompt"), "system_prompt", max_length=100_000
-        )
+        if "system_prompt" in params:
+            raise RpcValidationError(
+                "system_prompt is not accepted; the Coding Agent owns its prompt",
+                code=INVALID_PARAMS,
+            )
         max_output_tokens = self._optional_positive_int(
             params.get("max_output_tokens"), "max_output_tokens"
         )
@@ -485,7 +487,6 @@ class WorkerServer:
                 user_message=user_message,
                 run_id=run_id,
                 model=model,
-                system_prompt=system_prompt,
                 max_output_tokens=max_output_tokens,
                 cancel_signal=cancel_signal,
             )
@@ -511,9 +512,11 @@ class WorkerServer:
         session = self._load_session(params)
         run_id = self._required_text(params, "run_id", max_length=256)
         model = self._optional_text_value(params.get("model"), "model", max_length=256)
-        system_prompt = self._optional_text_value(
-            params.get("system_prompt"), "system_prompt", max_length=100_000
-        )
+        if "system_prompt" in params:
+            raise RpcValidationError(
+                "system_prompt is not accepted; the Coding Agent owns its prompt",
+                code=INVALID_PARAMS,
+            )
         max_output_tokens = self._optional_positive_int(
             params.get("max_output_tokens"), "max_output_tokens"
         )
@@ -524,7 +527,6 @@ class WorkerServer:
                 session,
                 run_id=run_id,
                 model=model,
-                system_prompt=system_prompt,
                 max_output_tokens=max_output_tokens,
                 cancel_signal=cancel_signal,
             )
@@ -603,7 +605,6 @@ class WorkerServer:
         user_message: str,
         run_id: str | None,
         model: str | None,
-        system_prompt: str | None,
         max_output_tokens: int | None,
         cancel_signal: threading.Event | None = None,
     ) -> JsonObject:
@@ -615,7 +616,6 @@ class WorkerServer:
                 user_message=user_message,
                 run_id=run_id,
                 model=model,
-                system_prompt=system_prompt,
                 max_output_tokens=max_output_tokens,
                 cancel_event=cancel_event,
             )
@@ -632,7 +632,6 @@ class WorkerServer:
         *,
         run_id: str,
         model: str | None,
-        system_prompt: str | None,
         max_output_tokens: int | None,
         cancel_signal: threading.Event | None = None,
     ) -> JsonObject:
@@ -643,7 +642,6 @@ class WorkerServer:
                 session,
                 run_id=run_id,
                 model=model,
-                system_prompt=system_prompt,
                 max_output_tokens=max_output_tokens,
                 cancel_event=cancel_event,
             )
