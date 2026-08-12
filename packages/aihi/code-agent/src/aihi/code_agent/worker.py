@@ -1235,13 +1235,34 @@ def serve_stdio(
         for run_id, item in list(pending.items()):
             if not item.future.done():
                 continue
+            failure: str | None = None
             try:
-                item.future.result()
+                response = item.future.result()
+                # handle_background reports failures by *returning* an error
+                # response, and its id was already spent on the acknowledgement.
+                if isinstance(response, dict) and isinstance(response.get("error"), dict):
+                    failure = str(response["error"].get("message", "run failed"))
             except Exception as error:  # noqa: BLE001 - protocol boundary must stay alive.
-                # The request was acknowledged long ago; a late error can only be
-                # reported out of band. The run's own terminal event is the
-                # client-visible outcome.
+                # The request was acknowledged before the run began, so a failure
+                # to even start it has no response to travel back on. Without
+                # this notification such a run would fail in total silence: it
+                # never reaches a terminal event either.
                 print(f"aihi-code-agent worker internal error: {error}", file=error_stream)
+                failure = str(error)
+            if failure is not None:
+                # A run that never started reaches no terminal event, so this
+                # notification is the only report the client will ever get.
+                write_frame(
+                    stdout,
+                    _notification(
+                        "run.error",
+                        {
+                            "protocol_version": PROTOCOL_VERSION,
+                            "run_id": item.run_id,
+                            "message": failure,
+                        },
+                    ),
+                )
             pending.pop(run_id, None)
             emit_notifications()
 

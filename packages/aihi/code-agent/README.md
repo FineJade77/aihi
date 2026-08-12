@@ -42,3 +42,10 @@ expanded by application configuration.
 
 这样客户端的请求超时只覆盖真正快速的命令，不会再压在模型的思考时间上——此前一次超过
 客户端超时的编码运行会让请求失败，而 Worker 仍在后台执行。
+
+若一个 Run 在开始前就失败（例如 resume 一个不存在的 run），它不会产生任何终态事件，
+Worker 会发出 `run.error` 通知携带 `run_id` 与原因；这是此类失败唯一的客户端可见信号。
+
+TUI 在有待审批项时由审批提示接管输入行，`y` / `o`（仅此次）/ `n` 单键解决。批准后 CLI
+会紧接着调用 `run.resume`——Worker 的「resolve 从不自动 resume」不变式没有改变，是客户端
+把这两步合成一次按键。

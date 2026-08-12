@@ -31,6 +31,7 @@ export interface RpcClientOptions extends WorkerLaunchOptions {
   storePath?: string;
   configPath?: string;
   onEvent?: (event: AgentEvent) => void;
+  onRunError?: (runId: string, message: string) => void;
   onLog?: (chunk: string) => void;
   onExit?: (code: number | null, signal: NodeJS.Signals | null) => void;
 }
@@ -134,9 +135,11 @@ export class RpcClient {
   private readonly storePath?: string;
   private readonly configPath?: string;
   private readonly onEventCallback?: (event: AgentEvent) => void;
+  private readonly onRunErrorCallback?: (runId: string, message: string) => void;
   private readonly onLogCallback?: (chunk: string) => void;
   private readonly onExitCallback?: (code: number | null, signal: NodeJS.Signals | null) => void;
   private readonly eventListeners = new Set<(event: AgentEvent) => void>();
+  private readonly runErrorListeners = new Set<(runId: string, message: string) => void>();
   private nextId = 1;
   private closed = false;
   private initialized = false;
@@ -156,6 +159,7 @@ export class RpcClient {
     this.storePath = options.storePath;
     this.configPath = options.configPath;
     this.onEventCallback = options.onEvent;
+    this.onRunErrorCallback = options.onRunError;
     this.onLogCallback = options.onLog;
     this.onExitCallback = options.onExit;
     this.exitPromise = new Promise<void>((resolve) => {
@@ -184,6 +188,14 @@ export class RpcClient {
   }
 
   /** Subscribe to Worker event notifications; returns an idempotent unsubscribe. */
+  /** Subscribe to runs that failed before producing any terminal event. */
+  public subscribeRunErrors(
+    listener: (runId: string, message: string) => void,
+  ): () => void {
+    this.runErrorListeners.add(listener);
+    return () => this.runErrorListeners.delete(listener);
+  }
+
   public subscribeEvents(listener: (event: AgentEvent) => void): () => void {
     this.eventListeners.add(listener);
     return () => this.eventListeners.delete(listener);
@@ -497,6 +509,17 @@ export class RpcClient {
     }
     if (message.method === "event" && !Object.prototype.hasOwnProperty.call(message, "id")) {
       this.handleEvent(message);
+      return;
+    }
+    // A run acknowledged but never started reaches no terminal event, so this
+    // notification is its only report.
+    if (message.method === "run.error" && !Object.prototype.hasOwnProperty.call(message, "id")) {
+      const params = message.params as { run_id?: unknown; message?: unknown } | undefined;
+      const runId = typeof params?.run_id === "string" ? params.run_id : "";
+      const detail =
+        typeof params?.message === "string" ? params.message : "run failed to start";
+      this.onRunErrorCallback?.(runId, detail);
+      for (const listener of this.runErrorListeners) listener(runId, detail);
       return;
     }
     if (!Object.prototype.hasOwnProperty.call(message, "id")) {

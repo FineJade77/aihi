@@ -363,6 +363,16 @@ export function TuiApp({
   }, [client]);
 
   useEffect(() => {
+    return client.subscribeRunErrors((runId, message) => {
+      setActiveRunId(undefined);
+      setNotice({
+        text: `Run ${runId ? shortId(runId) : ""} failed to start: ${message}`,
+        tone: COLORS.bad,
+      });
+    });
+  }, [client]);
+
+  useEffect(() => {
     const unsubscribe = client.subscribeEvents((event) => {
       if (event.session_id !== selectedSessionId) return;
       const nextEvent = eventFromNotification(event);
@@ -684,9 +694,59 @@ export function TuiApp({
     }
   }, [activeModel, activeProvider, activeRunId, cwd, loadSession, model, provider, quit, refreshSessions, selectedSessionId]);
 
+  /** Resolve the oldest pending approval, then continue its run.
+   *
+   * The Worker deliberately never auto-resumes: resolving is a projection
+   * update, not an execution decision. Chaining the two here is the client
+   * making that decision once, so the user does not have to copy an id.
+   */
+  const resolveOldestApproval = useCallback(
+    async (approved: boolean, oneShot = false) => {
+      const approval = approvals[0];
+      if (!approval || !selectedSessionId) return;
+      setBusy(true);
+      try {
+        await client.resolveApproval({
+          session_id: selectedSessionId,
+          approval_id: approval.approval_id,
+          approved,
+          one_shot: oneShot,
+          resolved_by: "tui",
+        });
+        setApprovals(await client.listApprovals(selectedSessionId));
+        if (approved && approval.run_id) {
+          await client.resumeRun({
+            session_id: selectedSessionId,
+            run_id: approval.run_id,
+          });
+          setActiveRunId(approval.run_id);
+          setStatus(`Approved ${shortId(approval.approval_id)} · resuming`);
+        } else {
+          setStatus(`${approved ? "Approved" : "Denied"} ${shortId(approval.approval_id)}`);
+        }
+      } catch (error) {
+        setNotice({ text: `Error: ${errorMessage(error)}`, tone: COLORS.bad });
+      } finally {
+        setBusy(false);
+      }
+    },
+    [approvals, client, selectedSessionId],
+  );
+
+  const awaitingApproval = approvals.length > 0;
+
   useInput((input, key) => {
     if (key.ctrl && input === "c") void quit();
-    if (key.escape) setCommand("");
+    if (!awaitingApproval) {
+      if (key.escape) setCommand("");
+      return;
+    }
+    // While an approval is pending the prompt owns the keyboard, so a stray
+    // keystroke cannot be typed into a command line that is not being shown.
+    const choice = input.toLowerCase();
+    if (choice === "y") void resolveOldestApproval(true);
+    if (choice === "o") void resolveOldestApproval(true, true);
+    if (choice === "n") void resolveOldestApproval(false);
   });
 
   // A run outlives the request that started it, so "busy" must follow the run.
@@ -751,15 +811,26 @@ export function TuiApp({
           </Text>
         </Box>
       )}
-      <Box>
-        <Text color={COLORS.accent}>› </Text>
-        <TextInput
-          value={command}
-          onChange={setCommand}
-          onSubmit={(value) => void runCommand(value)}
-          placeholder="Type /help for commands"
-        />
-      </Box>
+      {awaitingApproval ? (
+        <Box>
+          <Text bold color={COLORS.warn}>
+            ▸ {approvals[0]?.tool_name ?? approvals[0]?.scope}
+          </Text>
+          <Text color={COLORS.muted}>
+            {"  "}[y] allow  [o] allow once  [n] deny
+          </Text>
+        </Box>
+      ) : (
+        <Box>
+          <Text color={COLORS.accent}>› </Text>
+          <TextInput
+            value={command}
+            onChange={setCommand}
+            onSubmit={(value) => void runCommand(value)}
+            placeholder="Type /help for commands"
+          />
+        </Box>
+      )}
       <Text color={COLORS.muted}>message  /provider  /model  /config  /runs  /cancel  /history  /fork  /approvals  /approve  /skills  /skill-trust  /skill-disable  /skill-untrust  /mcp  /tools  /resume  /quit · Ctrl-C exits</Text>
     </Box>
   );
