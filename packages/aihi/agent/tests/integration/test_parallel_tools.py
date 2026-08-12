@@ -16,7 +16,7 @@ from aihi.agent import (
     ToolSpec,
 )
 from aihi.agent._core.ids import new_id
-from aihi.models import FakeProvider, FakeStep, Message, ToolCallBlock
+from aihi.models import Capabilities, FakeProvider, FakeStep, Message, ToolCallBlock
 
 
 class TracingTool:
@@ -94,6 +94,38 @@ async def test_read_only_calls_overlap(tmp_path: Path) -> None:
         message.tool_results[0].content for message in session.messages if message.tool_results
     ]
     assert contents == ["read_a", "read_b", "read_c"]
+
+
+@pytest.mark.asyncio
+async def test_provider_without_parallel_tool_capability_runs_reads_serially(
+    tmp_path: Path,
+) -> None:
+    tools = [
+        TracingTool("read_a", concurrency_safe=True, mutates=False),
+        TracingTool("read_b", concurrency_safe=True, mutates=False),
+    ]
+    shared: list[str] = []
+    for tool in tools:
+        tool.trace = shared
+    provider = FakeProvider(
+        [
+            FakeStep(
+                tool_calls=tuple(call(name) for name in ("read_a", "read_b")),
+                stop_reason="tool_use",
+            ),
+            FakeStep(text="done"),
+        ],
+        capabilities=Capabilities(parallel_tools=False),
+    )
+    session = session_for(tmp_path, "ses-provider-serial")
+    result = await RunCoordinator(
+        provider,
+        registry=ToolRegistry(tools),  # type: ignore[arg-type]
+        sandbox=HostBackend(tmp_path, unsafe=True),
+    ).run(session, model="fake-model", user_message=Message.text("user", "go"))
+
+    assert result.state == RunState.COMPLETED
+    assert shared == ["enter:read_a", "exit:read_a", "enter:read_b", "exit:read_b"]
 
 
 @pytest.mark.asyncio

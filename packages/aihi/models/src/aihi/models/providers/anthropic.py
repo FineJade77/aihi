@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
@@ -61,6 +62,13 @@ class AnthropicProvider:
     ) -> None:
         if not api_key:
             raise ValueError("Anthropic api_key must not be empty")
+        if (
+            isinstance(timeout_seconds, bool)
+            or not isinstance(timeout_seconds, (int, float))
+            or not math.isfinite(timeout_seconds)
+            or timeout_seconds <= 0
+        ):
+            raise ValueError("Anthropic timeout_seconds must be a finite positive number")
         self.config = AnthropicConfig(
             api_key, base_url.rstrip("/"), api_version, timeout_seconds
         )

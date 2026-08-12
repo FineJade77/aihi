@@ -47,6 +47,7 @@ from aihi.agent.memory.context import MemoryCandidateRecorder, MemoryContextCont
 from aihi.agent.observability import JsonlTelemetrySink, Telemetry
 from aihi.agent.policy import ApprovalResolver, DefaultPolicyEngine, PolicyEngine
 from aihi.agent.runtime import RunCoordinator, RuntimeExtensions
+from aihi.agent.runtime.coordinator import DEFAULT_MAX_TURNS
 from aihi.agent.sandbox import SandboxBackend
 from aihi.agent.sessions import EventStore
 from aihi.agent.skills import SkillDiscovery, SkillIndexContributor
@@ -88,6 +89,7 @@ class RuntimeBuilder:
     context_contributors: tuple[object, ...] = field(default=())
     run_recorders: tuple[object, ...] = field(default=())
     context_window: int | None = None
+    max_turns: int = DEFAULT_MAX_TURNS
     _subagents: _SubagentPlan | None = None
 
     def __post_init__(self) -> None:
@@ -98,6 +100,12 @@ class RuntimeBuilder:
                 "A runtime needs at least one tool; which tools a model may use is an "
                 "application decision the builder will not make for you."
             )
+        if (
+            isinstance(self.max_turns, bool)
+            or not isinstance(self.max_turns, int)
+            or self.max_turns <= 0
+        ):
+            raise ValueError("max_turns must be a positive integer")
 
     # --- plumbing, opt in ------------------------------------------------
 
@@ -125,6 +133,11 @@ class RuntimeBuilder:
 
     def with_context_window(self, tokens: int) -> RuntimeBuilder:
         return replace(self, context_window=tokens)
+
+    def with_max_turns(self, turns: int) -> RuntimeBuilder:
+        """Bound model/tool iterations for one persisted run."""
+
+        return replace(self, max_turns=turns)
 
     # --- capabilities, opt in --------------------------------------------
 
@@ -226,6 +239,7 @@ class RuntimeBuilder:
             extensions=extensions,
             approval_resolver=self.approval_resolver,
             context_window=self.context_window,
+            max_turns=self.max_turns,
         )
         return Runtime(
             coordinator=coordinator,

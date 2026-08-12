@@ -1,3 +1,4 @@
+import math
 from collections.abc import AsyncIterator
 
 import aihi.models.providers.anthropic as anthropic_adapter
@@ -168,6 +169,19 @@ def test_openai_compatible_provider_uses_configurable_endpoint() -> None:
         OpenAICompatibleProvider("secret")  # type: ignore[call-arg]
     with pytest.raises(ValueError, match="endpoint"):
         OpenAICompatibleProvider("secret", base_url="   ")
+
+
+def test_model_request_and_provider_timeouts_are_finite_and_positive() -> None:
+    with pytest.raises(ValueError, match="timeout_seconds"):
+        ModelRequest(model="test-model", messages=(), timeout_seconds=0)
+    with pytest.raises(ValueError, match="timeout_seconds"):
+        ModelRequest(model="test-model", messages=(), timeout_seconds=math.inf)
+    with pytest.raises(ValueError, match="timeout_seconds"):
+        OpenAIProvider("secret", timeout_seconds=0)
+    with pytest.raises(ValueError, match="timeout_seconds"):
+        AnthropicProvider("secret", timeout_seconds=math.nan)
+    with pytest.raises(ValueError, match="timeout_seconds"):
+        DeepSeekProvider("secret", timeout_seconds=math.inf)
 
 
 @pytest.mark.asyncio

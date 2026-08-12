@@ -29,6 +29,12 @@ class ContextWindowExceeded(AgentRuntimeError):
     code = "context_window_exceeded"
 
 
+class TurnLimitExceeded(AgentRuntimeError):
+    """The coordinator stopped a run before an unbounded tool loop could grow."""
+
+    code = "turn_limit_exceeded"
+
+
 class SessionNotFound(AgentRuntimeError):
     code = "session_not_found"
 

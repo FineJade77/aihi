@@ -89,6 +89,46 @@ async def test_fake_provider_completes_plain_response_and_streams_to_observers(
 
 
 @pytest.mark.asyncio
+async def test_runtime_stops_an_unbounded_tool_loop_at_max_turns(tmp_path: Path) -> None:
+    (tmp_path / "note.txt").write_text("hello", encoding="utf-8")
+    session = make_session(tmp_path, "ses-turn-limit")
+    provider = FakeProvider(
+        [
+            FakeStep.call_tool("read_file", {"path": "note.txt"}),
+            FakeStep.call_tool("read_file", {"path": "note.txt"}),
+            FakeStep(text="unreachable"),
+        ]
+    )
+    coordinator = RunCoordinator(
+        provider,
+        registry=ToolRegistry([ReadFileTool()]),
+        sandbox=HostBackend(tmp_path, unsafe=True),
+    )
+
+    result = await coordinator.run(
+        session,
+        model="fake-model",
+        user_message=Message.text("user", "keep reading"),
+        max_turns=2,
+    )
+
+    assert result.state == RunState.FAILED
+    assert "max_turns=2" in (result.error or "")
+    assert len(provider.requests) == 2
+    assert session.events[-1].type == "run.failed"
+
+
+def test_runtime_rejects_invalid_max_turns(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="max_turns"):
+        RunCoordinator(
+            FakeProvider(),
+            registry=ToolRegistry(),
+            sandbox=HostBackend(tmp_path, unsafe=True),
+            max_turns=0,
+        )
+
+
+@pytest.mark.asyncio
 async def test_runtime_projects_only_model_visible_tool_fields(
     session_tmp_path: Path,
 ) -> None:

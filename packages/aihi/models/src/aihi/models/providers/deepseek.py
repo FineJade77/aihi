@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 from aihi.models.providers.openai import OpenAIConfig
@@ -32,6 +33,13 @@ class DeepSeekProvider(OpenAICompatibleProvider):
     ) -> None:
         if not api_key:
             raise ValueError("DeepSeek api_key must not be empty")
+        if (
+            isinstance(timeout_seconds, bool)
+            or not isinstance(timeout_seconds, (int, float))
+            or not math.isfinite(timeout_seconds)
+            or timeout_seconds <= 0
+        ):
+            raise ValueError("DeepSeek timeout_seconds must be a finite positive number")
         self.config = DeepSeekConfig(api_key, base_url.rstrip("/"), timeout_seconds)
         self.transport = transport or HttpxTransport()
         if capabilities is not None and not isinstance(capabilities, Capabilities):

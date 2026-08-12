@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Any
 
 from aihi.agent._core.awaits import await_cancelable
-from aihi.agent._core.errors import ContextWindowExceeded
+from aihi.agent._core.errors import ContextWindowExceeded, TurnLimitExceeded
 from aihi.agent._core.events import Event
 from aihi.agent._core.ids import new_id
 from aihi.agent.artifacts import ArtifactAccess, ArtifactPolicy, ArtifactRef, ArtifactStore
@@ -84,6 +84,7 @@ _NON_RESUMABLE_RUN_EVENTS = frozenset(
 _TERMINAL_STATES = frozenset(
     {RunState.COMPLETED, RunState.FAILED, RunState.INTERRUPTED, RunState.CANCELLED}
 )
+DEFAULT_MAX_TURNS = 100
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,11 +129,13 @@ class RunCoordinator:
         capability_lease_ttl_seconds: float = 300.0,
         context_window: int | None = None,
         context_safety_margin: int = 256,
+        max_turns: int = DEFAULT_MAX_TURNS,
     ) -> None:
         if context_window is not None and context_window <= 0:
             raise ValueError("context_window must be positive")
         if context_safety_margin < 0:
             raise ValueError("context_safety_margin cannot be negative")
+        self._validate_max_turns(max_turns)
         self.provider = provider
         self.registry = registry
         self.sandbox = sandbox
@@ -157,6 +160,7 @@ class RunCoordinator:
         self.capability_lease_ttl_seconds = capability_lease_ttl_seconds
         self.context_window = context_window
         self.context_safety_margin = context_safety_margin
+        self.max_turns = max_turns
 
     async def run(
         self,
@@ -169,6 +173,7 @@ class RunCoordinator:
         require_capability_lease: bool = False,
         system_prompt: str = "",
         max_output_tokens: int = 4_096,
+        max_turns: int | None = None,
         cancel_event: asyncio.Event | None = None,
     ) -> RunResult:
         if (
@@ -177,6 +182,8 @@ class RunCoordinator:
             or max_output_tokens <= 0
         ):
             raise ValueError("max_output_tokens must be a positive integer")
+        resolved_max_turns = self.max_turns if max_turns is None else max_turns
+        self._validate_max_turns(resolved_max_turns)
         session.refresh()
         rid = run_id or new_id("run")
         if self.telemetry is not None:
@@ -194,6 +201,7 @@ class RunCoordinator:
             require_capability_lease=require_capability_lease,
             system_prompt=system_prompt,
             max_output_tokens=max_output_tokens,
+            max_turns=resolved_max_turns,
         )
         if already_started:
             started = self._run_started_event(session, rid)
@@ -233,6 +241,7 @@ class RunCoordinator:
                 require_capability_lease=require_capability_lease,
                 system_prompt=system_prompt,
                 max_output_tokens=max_output_tokens,
+                max_turns=resolved_max_turns,
                 cancel_event=cancel_event,
                 pending_tool_call_ids=suspended_calls,
             )
@@ -340,6 +349,7 @@ class RunCoordinator:
         require_capability_lease: bool,
         system_prompt: str,
         max_output_tokens: int,
+        max_turns: int,
     ) -> dict[str, Any]:
         descriptor = self.sandbox.descriptor
         return {
@@ -353,6 +363,7 @@ class RunCoordinator:
             "require_capability_lease": require_capability_lease,
             "system_prompt_sha256": self._system_prompt_sha256(system_prompt),
             "max_output_tokens": max_output_tokens,
+            "max_turns": max_turns,
         }
 
     @staticmethod
@@ -369,6 +380,7 @@ class RunCoordinator:
             "require_capability_lease",
             "system_prompt_sha256",
             "max_output_tokens",
+            "max_turns",
         )
         mismatches = [
             key
@@ -394,6 +406,7 @@ class RunCoordinator:
         require_capability_lease: bool | None = None,
         system_prompt: str | None = None,
         max_output_tokens: int | None = None,
+        max_turns: int | None = None,
         cancel_event: asyncio.Event | None = None,
     ) -> RunResult:
         """Continue an interrupted or approval-suspended run from persisted events."""
@@ -435,6 +448,10 @@ class RunCoordinator:
         resolved_max_output = (
             max_output_tokens if max_output_tokens is not None else persisted_max_output
         )
+        persisted_max_turns = persisted.get("max_turns", self.max_turns)
+        self._validate_max_turns(persisted_max_turns)
+        resolved_max_turns = max_turns if max_turns is not None else persisted_max_turns
+        self._validate_max_turns(resolved_max_turns)
         expected_prompt_hash = persisted.get("system_prompt_sha256")
         if system_prompt is None:
             if expected_prompt_hash is None:
@@ -457,6 +474,7 @@ class RunCoordinator:
             require_capability_lease=resolved_lease,
             system_prompt=resolved_system_prompt,
             max_output_tokens=resolved_max_output,
+            max_turns=resolved_max_turns,
             cancel_event=cancel_event,
         )
 
@@ -471,6 +489,7 @@ class RunCoordinator:
         require_capability_lease: bool,
         system_prompt: str,
         max_output_tokens: int,
+        max_turns: int,
         cancel_event: asyncio.Event | None,
         pending_tool_call_ids: tuple[str, ...] = (),
     ) -> ModelResponse:
@@ -479,8 +498,15 @@ class RunCoordinator:
         # model turn made a long run quadratic in its own history.
         recorded_artifacts = self._recorded_artifact_ids(session)
         pending_calls = self._pending_calls(session, pending_tool_call_ids)
+        # Count durable model usage events so a suspended/resumed run cannot
+        # reset the budget and bypass the loop guard.
+        turns = sum(
+            event.run_id == run_id and event.type == "model.usage"
+            for event in session.events
+        )
         while True:
             await self._check_cancel(cancel_event)
+            capabilities = self.provider.capabilities(model)
             if pending_calls:
                 # Resume path: finish the tool calls that were suspended before
                 # asking the model for anything new.
@@ -494,11 +520,16 @@ class RunCoordinator:
                     require_capability_lease=require_capability_lease,
                     cancel_event=cancel_event,
                     allow_inline_approval=False,
+                    allow_parallel_tools=capabilities.parallel_tools,
                 )
                 self._transition(session, run_id, machine, RunState.RUNNING)
                 pending_calls = ()
             session.refresh()
-            capabilities = self.provider.capabilities(model)
+            if turns >= max_turns and not pending_calls:
+                raise TurnLimitExceeded(
+                    f"Run exceeded max_turns={max_turns}",
+                    details={"max_turns": max_turns, "turns": turns},
+                )
             effective_output_tokens = min(max_output_tokens, capabilities.max_output)
             effective_context_window = min(
                 self.context_window or capabilities.max_context,
@@ -574,6 +605,7 @@ class RunCoordinator:
                     session.message_event(response.message, run_id=run_id),
                 ]
             )
+            turns += 1
             if not response.message.tool_calls:
                 return response
             self._transition(session, run_id, machine, RunState.WAITING_TOOL)
@@ -586,6 +618,7 @@ class RunCoordinator:
                 require_capability_lease=require_capability_lease,
                 cancel_event=cancel_event,
                 allow_inline_approval=True,
+                allow_parallel_tools=capabilities.parallel_tools,
             )
             self._transition(session, run_id, machine, RunState.RUNNING)
 
@@ -600,6 +633,7 @@ class RunCoordinator:
         require_capability_lease: bool,
         cancel_event: asyncio.Event | None,
         allow_inline_approval: bool,
+        allow_parallel_tools: bool = True,
     ) -> None:
         index = 0
         while index < len(calls):
@@ -609,6 +643,7 @@ class RunCoordinator:
                 calls,
                 index,
                 require_capability_lease=require_capability_lease,
+                allow_parallel_tools=allow_parallel_tools,
             )
             dispatch = [
                 self._dispatch_with_approval(
@@ -676,6 +711,7 @@ class RunCoordinator:
         start: int,
         *,
         require_capability_lease: bool,
+        allow_parallel_tools: bool,
     ) -> tuple[ToolCallBlock, ...]:
         """The run of calls that may execute together, starting at ``start``.
 
@@ -684,7 +720,7 @@ class RunCoordinator:
         wherever it can matter.
         """
 
-        if not self._is_parallelizable(
+        if not allow_parallel_tools or not self._is_parallelizable(
             calls[start], require_capability_lease=require_capability_lease
         ):
             return (calls[start],)
@@ -707,6 +743,15 @@ class RunCoordinator:
             and not spec.mutates
             and not (require_capability_lease and spec.required_capabilities)
         )
+
+    @staticmethod
+    def _validate_max_turns(max_turns: object) -> None:
+        if (
+            isinstance(max_turns, bool)
+            or not isinstance(max_turns, int)
+            or max_turns <= 0
+        ):
+            raise ValueError("max_turns must be a positive integer")
 
     async def _dispatch_with_approval(
         self,

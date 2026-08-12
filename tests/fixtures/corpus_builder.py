@@ -359,6 +359,7 @@ def without_additive_v1_fields(payload: object) -> object:
                         data.pop(additive, None)
                 if event.get("type") in {"run.started", "run.resumed"}:
                     data.pop("max_output_tokens", None)
+                    data.pop("max_turns", None)
                     data.pop("system_prompt_sha256", None)
                     data.pop("workspace_root", None)
                     descriptor = data.get("sandbox_descriptor")

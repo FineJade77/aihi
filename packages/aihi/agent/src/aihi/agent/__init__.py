@@ -25,6 +25,7 @@ from aihi.agent._core.errors import (
     SessionNotFound,
     ToolInputError,
     ToolNotFound,
+    TurnLimitExceeded,
     UnsafeHostNotAcknowledged,
 )
 from aihi.agent._core.events import Event
@@ -306,6 +307,7 @@ __all__ = [
     "ToolSpec",
     "TraceBundle",
     "TraceGraph",
+    "TurnLimitExceeded",
     "UnsafeHostNotAcknowledged",
     "WorkspaceScope",
     "WriteFileTool",
