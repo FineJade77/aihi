@@ -7,7 +7,7 @@ provider/sandbox/tool composition and the application-layer run entrypoints;
 the recoverable, provider-neutral Agent Runtime remains in `aihi-agent`.
 
 The TypeScript TUI communicates with this package through the versioned
-`aihi-code-protocol` RPC boundary. The Worker supports Session/Task lifecycle
+`aihi-code-protocol` 0.2 RPC boundary with an exact-version handshake. The Worker supports Session/Task lifecycle
 commands, `run.start`/`run.resume`, Worker-owned approval list/resolve commands,
 and Skill list/trust commands. TOML config can declare Skill roots and MCP
 stdio servers without putting credentials in the file. Skill body loading is
@@ -55,7 +55,8 @@ expanded by application configuration.
 客户端超时的编码运行会让请求失败，而 Worker 仍在后台执行。
 
 若一个 Run 在开始前就失败（例如 resume 一个不存在的 run），它不会产生任何终态事件，
-Worker 会发出 `run.error` 通知携带 `run_id` 与原因；这是此类失败唯一的客户端可见信号。
+Worker 会发出 `run.error` 通知携带 `session_id`、`run_id` 与原因；这是此类失败唯一的客户端
+可见信号。
 
 stdio transport 通过 `RunSupervisor` 保证同一个 Session 同时最多只有一个 foreground
 Run，不同 Session 仍可并行。取消信号按 `(session_id, run_id)` 路由，后台产生的事件通过

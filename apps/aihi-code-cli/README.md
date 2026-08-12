@@ -4,6 +4,10 @@ TypeScript-side transport and Ink TUI for the local AIHI Code Worker. It
 launches the Python worker, performs the versioned `initialize` handshake,
 receives `event` notifications, and exposes the Coding Agent run loop.
 
+The current local wire contract is protocol `0.2`. It requires an exact-version
+handshake: a `0.1` CLI and `0.2` Worker intentionally refuse to connect instead
+of guessing across incompatible Run acknowledgement shapes.
+
 The worker uses JSON-RPC 2.0 envelopes framed as:
 
 ```text

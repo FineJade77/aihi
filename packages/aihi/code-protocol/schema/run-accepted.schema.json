@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aihi.dev/schemas/code-protocol/run-accepted-0.2.json",
+  "title": "AIHI Code Worker Run acknowledgement",
+  "type": "object",
+  "required": ["run_id", "accepted"],
+  "properties": {
+    "run_id": { "type": "string", "minLength": 1 },
+    "accepted": { "const": true }
+  },
+  "additionalProperties": false
+}

@@ -1,14 +1,7 @@
-import type { RunAccepted } from "@aihi/code-protocol";
+import type { ApprovalResolution, RunAccepted } from "@aihi/code-protocol";
 import type { ApprovalResolveParams, RpcClient } from "./rpc/client.js";
 
 type ApprovalClient = Pick<RpcClient, "resolveApproval" | "resumeRun">;
-
-export interface ApprovalResolution {
-  approval_id: string;
-  run_id: string;
-  approved: boolean;
-  one_shot: boolean;
-}
 
 /** Resolve and resume as one UI action; denial must also reach the model as a ToolResult. */
 export async function resolveApprovalAndResume(

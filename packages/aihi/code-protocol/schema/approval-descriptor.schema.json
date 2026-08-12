@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aihi.dev/schemas/code-protocol/approval-descriptor-0.2.json",
+  "title": "AIHI Code Worker pending approval descriptor",
+  "type": "object",
+  "required": [
+    "approval_id",
+    "scope",
+    "granted_by",
+    "expires_at",
+    "run_id",
+    "one_shot"
+  ],
+  "properties": {
+    "approval_id": { "type": "string", "minLength": 1 },
+    "scope": { "type": "string", "minLength": 1 },
+    "granted_by": { "type": "string", "minLength": 1 },
+    "requested_by": { "type": "string", "minLength": 1 },
+    "expires_at": { "type": ["string", "null"] },
+    "run_id": { "type": ["string", "null"] },
+    "one_shot": { "type": "boolean" },
+    "tool_call_id": { "type": "string", "minLength": 1 },
+    "tool_name": { "type": "string", "minLength": 1 },
+    "tool_input": { "type": "object" },
+    "reason": { "type": "string" },
+    "rule_id": { "type": "string" },
+    "required_capabilities": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "sandbox": { "type": "object" }
+  },
+  "additionalProperties": true
+}

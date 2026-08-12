@@ -1,6 +1,6 @@
 # AIHI 实施任务
 
-状态：M0–M7、H-01 ~ H-17 与 P-01 已完成；Coding 应用层首个可用纵向链路已交付
+状态：M0–M7、H-01 ~ H-17、P-01 与 P-01.1 已完成；Coding 本地协议升级到 0.2
 架构基线：[ARCHITECTURE.md](ARCHITECTURE.md)
 
 项目名称已统一为 **AIHI**；历史章节中的旧 distribution、模块路径和协议标识均已按当前名称记录。
@@ -509,6 +509,7 @@ OpenAI-compatible 构造器契约以及完整 compile/test/lint/type 门禁全�
 | 编号 | 项 | 状态 | 说明 |
 |---|---|---|---|
 | P-01 | 应用层重建（TUI 前端） | Done | Worker RPC、Session/Task、Ink TUI、Provider profiles、Run 流式执行/取消/恢复、Approval/Skill/MCP/Tool 管理、Git 只读工具及 Artifact/Compaction/Subagent 配置均已接入 |
+| P-01.1 | 本地协议与恢复加固 | Done | Code Protocol 0.2 冻结非阻塞 Run、`run.error` 与 Approval DTO；共享 method map/runtime guards；TUI 完整分页 replay 长 Session |
 | P-02 | Cowork 形态所需的 Harness 缺口 | Planned | 先做现状评估再立项。只有 Provider-neutral、跨产品线可复用的缺口才进 Harness |
 | P-03 | 平台增强（H-03 ~ H-06） | Planned | 控制面、多 Worker、PostgreSQL、远程 OTel。只能是既有协议的新增适配器 |
 | P-04 | Web 前端 | 待办 | TUI 形态跑通前不开工 |

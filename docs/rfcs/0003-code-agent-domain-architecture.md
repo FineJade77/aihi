@@ -275,10 +275,9 @@ code_agent/
 消费 `stream()`，对外协议不变；新增的 Subagent 事件经既有 `event` 通知发布，Task Graph 面板
 无需改协议即可从轮询转为事件驱动。
 
-**下轮（协议层，本 RFC 非目标）**：`run.start` 由阻塞式请求改为非阻塞 `turn.submit`，
-事件流承载进度，终态由事件而非响应给出。该轮需同时修复
-`apps/aihi-code-cli/src/rpc/client.ts:151` 的 `requestTimeoutMs ?? 30_000`——它作用于每一个
-请求，包括阻塞式的 `run.start`，任何超过 30 秒的 Run 都会在客户端超时而 Worker 仍在执行。
+**协议层（已由 ADR-0034 交付）**：保留 `run.start` / `run.resume` 方法名，但改为立即返回带
+必填 `run_id` 的 acknowledgement；事件流承载进度和终态，避免 30 秒 RPC timeout 约束整个
+模型回合。协议 0.2 同时冻结 `run.error`、Approval DTO 和完整分页 replay。
 
 ## 风险
 

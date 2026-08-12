@@ -13,6 +13,7 @@ import type {
 } from "@aihi/code-protocol";
 import { RpcClient } from "../rpc/client.js";
 import { resolveApprovalAndResume } from "../approval.js";
+import { readSessionHistory } from "../history.js";
 import { Banner, GradientText } from "./banner.js";
 
 const COLORS = {
@@ -357,23 +358,23 @@ export function TuiApp({
   const [hostConsentPending, setHostConsentPending] = useState(hostConsentRequired);
 
   const loadSession = useCallback(async (sessionId: string) => {
-    const [session, page, nextTasks, nextApprovals] = await Promise.all([
+    const [session, historyPage, nextTasks, nextApprovals] = await Promise.all([
       client.getSession(sessionId),
-      client.getSessionEvents(sessionId, 0, 100),
+      readSessionHistory(client, sessionId),
       client.listTasks(sessionId),
       client.listApprovals(sessionId),
     ]);
     setApprovals(nextApprovals);
-    setHeadSeq(page.head_seq);
+    setHeadSeq(historyPage.headSeq);
     setSelectedSessionId(session.session_id);
     setSelectedSession(session);
-    const history = page.events.map(eventFromRecord);
+    const history = historyPage.events.map(eventFromRecord);
     setTasks(nextTasks);
     setStreamText("");
     // Reopening a session should still show its last answer, not an empty pane.
     const lastAnswer = [...history].reverse().find((item) => item.type === "assistant.message");
     setAnswerText(lastAnswer ? messageText(lastAnswer.data) : "");
-    setStatus(`Session ${shortId(session.session_id)} · seq ${page.head_seq}`);
+    setStatus(`Session ${shortId(session.session_id)} · seq ${historyPage.headSeq}`);
   }, [client]);
 
   const refreshSessions = useCallback(async () => {
@@ -405,14 +406,15 @@ export function TuiApp({
   }, [selectedSessionId, onSessionOpened]);
 
   useEffect(() => {
-    return client.subscribeRunErrors((runId, message) => {
+    return client.subscribeRunErrors((error) => {
+      if (error.session_id !== selectedSessionId) return;
       setActiveRunId(undefined);
       setNotice({
-        text: `Run ${runId ? shortId(runId) : ""} failed to start: ${message}`,
+        text: `Run ${shortId(error.run_id)} failed to start: ${error.message}`,
         tone: COLORS.bad,
       });
     });
-  }, [client]);
+  }, [client, selectedSessionId]);
 
   useEffect(() => {
     const unsubscribe = client.subscribeEvents((event) => {
@@ -481,7 +483,7 @@ export function TuiApp({
   ) => {
     if (!selectedSessionId) throw new Error("Create or open a session first");
     try {
-      const { resolution, run } = await resolveApprovalAndResume(client, {
+      const { run } = await resolveApprovalAndResume(client, {
         session_id: selectedSessionId,
         approval_id: approvalId,
         approved,
@@ -489,7 +491,7 @@ export function TuiApp({
         resolved_by: "tui",
       });
       setApprovals(await client.listApprovals(selectedSessionId));
-      setActiveRunId(run.run_id ?? resolution.run_id);
+      setActiveRunId(run.run_id);
       setStatus(`${approved ? "Approved" : "Denied"} ${shortId(approvalId)} · resuming`);
     } catch (error) {
       // Resolution may have persisted before resume failed. Unlock the composer
@@ -598,7 +600,7 @@ export function TuiApp({
         // The Worker acknowledges immediately; run.completed / run.failed and
         // the approval events drive the rest, so the UI never waits on a
         // request that lasts as long as the model takes to think.
-        setStatus(`Run ${shortId(result.run_id ?? runId)} accepted`);
+        setStatus(`Run ${shortId(result.run_id)} accepted`);
         return;
       }
       if (name === "resume") {
@@ -609,7 +611,7 @@ export function TuiApp({
           session_id: selectedSessionId,
           run_id: runId,
         });
-        setActiveRunId(result.run_id ?? runId);
+        setActiveRunId(result.run_id);
         setStatus(`Resume of ${shortId(runId)} accepted`);
         return;
       }
@@ -633,8 +635,8 @@ export function TuiApp({
       }
       if (name === "history") {
         if (!selectedSessionId) throw new Error("Create or open a session first");
-        const page = await client.getSessionEvents(selectedSessionId, 0, 100);
-        setStatus(`Session history · ${page.events.length} events · head ${page.head_seq}`);
+        const history = await readSessionHistory(client, selectedSessionId);
+        setStatus(`Session history · ${history.events.length} events · head ${history.headSeq}`);
         return;
       }
       if (name === "fork") {
@@ -732,7 +734,7 @@ export function TuiApp({
         // The Worker acknowledges immediately; run.completed / run.failed and
         // the approval events drive the rest, so the UI never waits on a
         // request that lasts as long as the model takes to think.
-        setStatus(`Run ${shortId(result.run_id ?? runId)} accepted`);
+        setStatus(`Run ${shortId(result.run_id)} accepted`);
         return;
       }
       if (name === "task") {

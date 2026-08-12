@@ -24,3 +24,5 @@ export {
 export type { WorkerLaunchOptions } from "./worker/launcher.js";
 export { runTui, TuiApp } from "./tui/index.js";
 export type { TuiAppProps } from "./tui/index.js";
+export { readSessionHistory } from "./history.js";
+export type { SessionHistory } from "./history.js";

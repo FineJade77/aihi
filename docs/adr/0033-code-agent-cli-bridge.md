@@ -3,6 +3,9 @@
 - 状态：Accepted
 - 日期：2026-08-11
 
+> 后续修订：非阻塞 Run、`run.error` 和完整 Session replay 已由
+> [ADR-0034](0034-code-protocol-0.2-and-replay.md) 冻结为协议 0.2。
+
 ## 决策
 
 `aihi-code-agent` 以 Python Worker 运行，`apps/aihi-code-cli` 以 TypeScript

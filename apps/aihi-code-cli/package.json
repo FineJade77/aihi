@@ -13,7 +13,7 @@
     "react": "^18.3.1"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p ../../packages/aihi/code-protocol/tsconfig.json && tsc -p tsconfig.build.json",
     "start": "node dist/main.js",
     "test": "pnpm run build && node --test tests/*.test.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"

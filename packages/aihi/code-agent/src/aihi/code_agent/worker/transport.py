@@ -95,14 +95,16 @@ def serve_stdio(
                 # handle_background reports failures by *returning* an error
                 # response, and its id was already spent on the acknowledgement.
                 if isinstance(response, dict) and isinstance(response.get("error"), dict):
-                    failure = str(response["error"].get("message", "run failed"))
+                    failure = str(response["error"].get("message", "")).strip() or (
+                        "run failed to start"
+                    )
             except Exception as error:  # noqa: BLE001 - protocol boundary must stay alive.
                 # The request was acknowledged before the run began, so a failure
                 # to even start it has no response to travel back on. Without
                 # this notification such a run would fail in total silence: it
                 # never reaches a terminal event either.
                 print(f"aihi-code-agent worker internal error: {error}", file=error_stream)
-                failure = str(error)
+                failure = str(error).strip() or type(error).__name__
             if failure is not None:
                 # A run that never started reaches no terminal event, so this
                 # notification is the only report the client will ever get.
@@ -112,6 +114,7 @@ def serve_stdio(
                         "run.error",
                         {
                             "protocol_version": PROTOCOL_VERSION,
+                            "session_id": item.session_id,
                             "run_id": item.run_id,
                             "message": failure,
                         },

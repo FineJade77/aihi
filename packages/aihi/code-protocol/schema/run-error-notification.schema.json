@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aihi.dev/schemas/code-protocol/run-error-notification-0.2.json",
+  "title": "AIHI Code Worker pre-start Run error notification",
+  "type": "object",
+  "required": ["jsonrpc", "method", "params"],
+  "properties": {
+    "jsonrpc": { "const": "2.0" },
+    "method": { "const": "run.error" },
+    "params": {
+      "type": "object",
+      "required": ["protocol_version", "session_id", "run_id", "message"],
+      "properties": {
+        "protocol_version": { "const": "0.2" },
+        "session_id": { "type": "string", "minLength": 1 },
+        "run_id": { "type": "string", "minLength": 1 },
+        "message": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

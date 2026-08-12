@@ -75,6 +75,29 @@ def test_worker_rejects_unsupported_protocol_and_notification_is_silent() -> Non
     assert server.handle({"jsonrpc": "2.0", "method": "missing"}) is None
 
 
+def test_protocol_02_rejects_the_legacy_01_handshake() -> None:
+    server = WorkerServer()
+
+    response = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {"protocol_version": "0.1"},
+        }
+    )
+
+    assert response is not None
+    assert response["error"]["code"] == INVALID_PARAMS  # type: ignore[index]
+    assert "Unsupported protocol_version" in response["error"]["message"]  # type: ignore[index]
+
+    missing = WorkerServer().handle(
+        {"jsonrpc": "2.0", "id": 2, "method": "initialize", "params": {}}
+    )
+    assert missing is not None
+    assert missing["error"]["code"] == INVALID_PARAMS  # type: ignore[index]
+
+
 def test_worker_rejects_configuration_path_override() -> None:
     server = WorkerServer()
 
@@ -436,6 +459,54 @@ def test_stdio_rejects_a_second_foreground_run_for_the_same_session() -> None:
     assert by_id[2]["result"] == {"run_id": "run_first", "accepted": True}
     assert "Session already has an active Run" in by_id[3]["error"]["message"]
     assert by_id[4]["result"] == {"ok": True}
+
+
+def test_stdio_reports_pre_start_run_errors_with_session_identity() -> None:
+    class FailingWorker(WorkerServer):
+        def handle_background(self, message, *, cancel_signal):  # type: ignore[no-untyped-def]
+            return {
+                "jsonrpc": "2.0",
+                "id": message.get("id"),
+                "error": {"code": INVALID_PARAMS, "message": "cannot start"},
+            }
+
+    incoming = io.BytesIO()
+    for message in (
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {"protocol_version": PROTOCOL_VERSION},
+        },
+        {"jsonrpc": "2.0", "method": "initialized"},
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "run.start",
+            "params": {
+                "session_id": "ses_failed",
+                "run_id": "run_failed",
+                "user_message": "fail",
+            },
+        },
+    ):
+        write_frame(incoming, message)
+    incoming.seek(0)
+    outgoing = io.BytesIO()
+
+    assert serve_stdio(incoming, outgoing, stderr=io.StringIO(), server=FailingWorker()) == 0
+
+    outgoing.seek(0)
+    messages = []
+    while (raw := read_frame(outgoing)) is not None:
+        messages.append(json.loads(raw))
+    run_error = next(message for message in messages if message.get("method") == "run.error")
+    assert run_error["params"] == {
+        "protocol_version": PROTOCOL_VERSION,
+        "session_id": "ses_failed",
+        "run_id": "run_failed",
+        "message": "cannot start",
+    }
 
 
 def _write_worker_config(tmp_path):

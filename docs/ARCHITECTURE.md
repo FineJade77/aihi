@@ -195,6 +195,16 @@ aihi.agent`、禁止跨 distribution 内部 import，并在应用重建时禁止
 Context 和 Tool 执行层共同使用；`tools.base`、Registry、Dispatcher 位于其上。`tools` 包根对
 Policy-aware Dispatcher 使用延迟导入，避免低层契约导入执行层形成循环。
 
+### 3.2 Coding 本地进程协议
+
+Python `aihi-code-agent` Worker 与 TypeScript `aihi-code-cli` 使用 Code Protocol 0.2：JSON-RPC
+2.0 + `Content-Length` framing、exact-version initialize handshake。Run 请求只返回带必填
+`run_id` 的接收确认；进度与终态由版本化 Event notification 给出，启动前失败由带
+`session_id + run_id` 的 `run.error` 给出。共享 DTO、RPC method map、关键 runtime guards 与
+JSON Schema 归 `packages/aihi/code-protocol`；Worker 是 Session/Event Store 的唯一写入端。
+重连方必须通过 `session.events(after_seq)` 完整分页 replay 后再依赖实时通知，不能把首屏缓存或
+TUI 内存当作事实源（ADR-0033、ADR-0034）。
+
 ## 4. Runtime 与 Agent Loop
 
 一次用户请求对应一个 `Run`，一次会话可以有多个 Run。Runtime 是可恢复状态机：

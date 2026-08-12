@@ -1125,7 +1125,7 @@ class WorkerServer:
         params: JsonObject,
         is_notification: bool,
     ) -> JsonObject | None:
-        raw_version = params.get("protocol_version", PROTOCOL_VERSION)
+        raw_version = params.get("protocol_version")
         if raw_version != PROTOCOL_VERSION:
             return self._maybe_error(
                 is_notification,
