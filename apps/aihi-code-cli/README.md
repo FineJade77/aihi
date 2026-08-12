@@ -36,8 +36,20 @@ with:
 
 ```bash
 npm run build
-npm start -- --store ~/.aihi/code-agent/events.sqlite3
+aihi-code --store ~/.aihi/code-agent/events.sqlite3
 ```
+
+Launching always starts a **new** session. Any bare words after the options are
+the first turn, so a one-shot run is just:
+
+```bash
+aihi-code --store ~/.aihi/code-agent/events.sqlite3 summarize the auth module
+```
+
+On exit the CLI prints the closed session's id and the command that reopens it
+(`aihi-code --session SESSION_ID`). Without `--store` the session lives only in
+the Worker process, so the hint says so rather than offering a resume that
+cannot work.
 
 `--workspace PATH` selects the project workspace and is an alias for `--cwd PATH`.
 When `sandbox.root` is omitted, the Worker uses this workspace as the sandbox root;

@@ -8,6 +8,8 @@ interface CliOptions {
   sessionId?: string;
   provider: string;
   model: string;
+  /** Free-form words after the flags: the first turn to run on startup. */
+  prompt?: string;
 }
 
 function parseArgs(argv: string[]): CliOptions {
@@ -17,6 +19,7 @@ function parseArgs(argv: string[]): CliOptions {
     provider: process.env.AIHI_CODE_AGENT_PROVIDER ?? "fake",
     model: process.env.AIHI_CODE_AGENT_MODEL ?? "demo",
   };
+  const prompt: string[] = [];
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === "--cwd" || argument === "--workspace" || argument === "--store" || argument === "--provider" || argument === "--model" || argument === "--session") {
@@ -32,12 +35,26 @@ function parseArgs(argv: string[]): CliOptions {
     }
     if (argument === "--help" || argument === "-h") {
       process.stdout.write(
-        "Usage: aihi-code [--workspace PATH] [--cwd PATH] [--store PATH] [--provider NAME] [--model NAME] [--session SESSION_ID]\n",
+        "Usage: aihi-code [OPTIONS] [PROMPT...]\n\n" +
+          "Starts a new session. With PROMPT, runs it as the first turn.\n\n" +
+          "  --workspace PATH   Workspace to operate in (default: cwd)\n" +
+          "  --cwd PATH         Alias for --workspace\n" +
+          "  --store PATH       SQLite event store (default: in-memory)\n" +
+          "  --provider NAME    Provider profile to use\n" +
+          "  --model NAME       Model to use\n" +
+          "  --session ID       Resume an existing session instead of starting one\n",
       );
       process.exit(0);
     }
-    throw new Error(`Unknown argument: ${argument}`);
+    if (argument.startsWith("-")) {
+      throw new Error(`Unknown argument: ${argument}`);
+    }
+    // Everything from the first bare word on is the prompt, so a quoted or
+    // unquoted sentence both work.
+    prompt.push(...argv.slice(index));
+    break;
   }
+  if (prompt.length > 0) options.prompt = prompt.join(" ");
   return options;
 }
 
@@ -52,8 +69,13 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
     if (config.created) {
       process.stderr.write(`aihi-code: wrote default configuration to ${config.path}\n`);
     }
+    let lastSessionId: string | undefined;
     await runTui({
       client,
+      prompt: options.prompt,
+      onSessionOpened: (id) => {
+        lastSessionId = id;
+      },
       cwd: options.cwd,
       provider: options.provider,
       model: options.model,
@@ -61,6 +83,13 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
       storePath: options.storePath,
       configPath: config.path,
     });
+    if (lastSessionId !== undefined) {
+      const store = options.storePath ? "" : "  (needs --store to persist)";
+      process.stderr.write(
+        `\naihi-code: session ${lastSessionId} closed.\n` +
+          `  Resume it with: aihi-code --session ${lastSessionId}${store}\n`,
+      );
+    }
   } finally {
     await client.close();
   }

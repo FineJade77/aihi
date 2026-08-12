@@ -40,6 +40,9 @@ export interface TuiAppProps {
   sessionId?: string;
   storePath?: string;
   configPath?: string;
+  /** First turn to run once the session is up. */
+  prompt?: string;
+  onSessionOpened?: (sessionId: string) => void;
 }
 
 function eventFromRecord(event: EventRecord): UiEvent {
@@ -265,6 +268,8 @@ export function TuiApp({
   sessionId,
   storePath,
   configPath,
+  prompt,
+  onSessionOpened,
 }: TuiAppProps) {
   const { exit } = useApp();
   const [sessions, setSessions] = useState<SessionDescriptor[]>([]);
@@ -282,6 +287,7 @@ export function TuiApp({
   const [splashVisible, setSplashVisible] = useState(true);
   const [headSeq, setHeadSeq] = useState<number>();
   const [context, setContext] = useState({ tokens: 0, limit: 0 });
+  const [promptSent, setPromptSent] = useState(false);
   const [approvals, setApprovals] = useState<ApprovalDescriptor[]>([]);
   // Kept apart from `status`: a notice must survive the event traffic that
   // follows it, which is exactly what the old status heartbeat destroyed.
@@ -330,10 +336,30 @@ export function TuiApp({
   }, [client, cwd]);
 
   useEffect(() => {
-    void refreshSessions().catch((error) => setStatus(`Load failed: ${errorMessage(error)}`));
-  // Initial Worker/session discovery is intentionally run once per Worker.
+    // Starting up means starting work: create a session rather than silently
+    // adopting whichever one happens to be newest in the store. `--session`
+    // is the explicit way to continue an old one.
+    const bootstrap = async () => {
+      if (sessionId) {
+        await loadSession(sessionId);
+      } else {
+        const created = await client.createSession({
+          cwd,
+          provider: activeProvider,
+          model: activeModel,
+        });
+        await loadSession(created.session_id);
+      }
+      await client.listSessions().then(setSessions).catch(() => undefined);
+    };
+    void bootstrap().catch((error) => setStatus(`Load failed: ${errorMessage(error)}`));
+  // Session bootstrap is intentionally run once per Worker.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client]);
+
+  useEffect(() => {
+    if (selectedSessionId) onSessionOpened?.(selectedSessionId);
+  }, [selectedSessionId, onSessionOpened]);
 
   useEffect(() => {
     return client.subscribeRunErrors((runId, message) => {
@@ -671,6 +697,14 @@ export function TuiApp({
       setBusy(false);
     }
   }, [activeModel, activeProvider, activeRunId, cwd, loadSession, model, provider, quit, refreshSessions, selectedSessionId]);
+
+  useEffect(() => {
+    // Fires once, after the session exists — a prompt on the command line is
+    // the first turn, not a queued command waiting for the user to press enter.
+    if (!prompt || promptSent || !selectedSessionId) return;
+    setPromptSent(true);
+    void runCommand(prompt);
+  }, [prompt, promptSent, selectedSessionId, runCommand]);
 
   /** Resolve the oldest pending approval, then continue its run.
    *
