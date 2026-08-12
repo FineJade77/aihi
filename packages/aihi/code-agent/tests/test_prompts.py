@@ -65,3 +65,31 @@ def test_an_invalid_prompt_mode_is_rejected(tmp_path) -> None:
     )
     with pytest.raises(CodeAgentConfigError, match="system_prompt_mode"):
         load_config(path, cwd=tmp_path)
+
+
+def test_subagent_prompt_keeps_its_role_and_gains_project_context(tmp_path) -> None:
+    from aihi.code_agent.prompts import compose_subagent_prompt
+
+    (tmp_path / "AGENTS.md").write_text("禁止裸 except。\n", encoding="utf-8")
+    config = load_config(cwd=tmp_path)
+    composed = compose_subagent_prompt(config, workspace=tmp_path, role="ROLE TEXT")
+
+    assert composed.startswith("ROLE TEXT")
+    assert "禁止裸 except。" in composed
+    assert str(tmp_path) in composed
+    # A subagent has its own role: the top-level coding prompt must not leak in.
+    assert load_builtin_prompt() not in composed
+
+
+def test_subagent_prompt_excludes_the_main_agent_instruction(tmp_path) -> None:
+    from aihi.code_agent.prompts import compose_subagent_prompt
+
+    path = tmp_path / "aihi-code.toml"
+    path.write_text(
+        '[provider]\nname = "fake"\nmodel = "demo"\n\n'
+        '[agent]\nsystem_prompt = "MAIN AGENT ONLY"\n',
+        encoding="utf-8",
+    )
+    config = load_config(path, cwd=tmp_path)
+    composed = compose_subagent_prompt(config, workspace=tmp_path, role="ROLE")
+    assert "MAIN AGENT ONLY" not in composed

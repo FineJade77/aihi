@@ -67,4 +67,23 @@ def compose_system_prompt(config: CodeAgentConfig, *, workspace: Path) -> str:
     return "\n\n".join(section for section in sections if section)
 
 
-__all__ = ["compose_system_prompt", "load_builtin_prompt"]
+def compose_subagent_prompt(
+    config: CodeAgentConfig, *, workspace: Path, role: str
+) -> str:
+    """Compose one Subagent type's prompt: its role, plus the same project context.
+
+    The top-level coding prompt is left out — the role replaces it — and so is
+    `agent.system_prompt`, which instructs the main agent and in `replace` mode
+    is meant to be a whole prompt of its own. Workspace conventions do carry
+    over: they describe the repository, not the role.
+    """
+
+    sections = (
+        role.strip(),
+        _environment_section(config, workspace),
+        _conventions_section(workspace),
+    )
+    return "\n\n".join(section for section in sections if section)
+
+
+__all__ = ["compose_subagent_prompt", "compose_system_prompt", "load_builtin_prompt"]
