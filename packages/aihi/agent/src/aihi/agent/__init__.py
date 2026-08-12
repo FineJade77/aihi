@@ -167,6 +167,7 @@ from aihi.agent.tools.builtin import (
     GlobTool,
     GrepTool,
     ReadFileTool,
+    ReadLedger,
     WriteFileTool,
 )
 from aihi.agent.tools.builtin.bash import resolve_bash
@@ -253,6 +254,7 @@ __all__ = [
     "PluginTrustManager",
     "PolicyEngine",
     "ReadFileTool",
+    "ReadLedger",
     "ReplayEngine",
     "ReplayInvariantViolation",
     "ReplayResult",

@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from aihi.agent.tools.base import ToolContext, ToolExecutionResult
+from aihi.agent.tools.builtin.ledger import ReadLedger
 from aihi.agent.tools.spec import ToolSpec
 
 
@@ -28,8 +29,11 @@ class ReadFileTool:
         timeout_seconds=10.0,
     )
 
-    def __init__(self, *, max_chars: int = 64_000) -> None:
+    def __init__(
+        self, *, max_chars: int = 64_000, ledger: ReadLedger | None = None
+    ) -> None:
         self.max_chars = max_chars
+        self.ledger = ledger
 
     async def run(self, input: dict[str, Any], context: ToolContext) -> ToolExecutionResult:
         path = str(input["path"])
@@ -48,10 +52,13 @@ class ReadFileTool:
                 "\n\n[Output truncated. Read another range with offset/limit; "
                 f"source remains at {path}.]"
             )
+        resolved = context.sandbox.resolve_path(path)
+        if self.ledger is not None:
+            self.ledger.record(context.run_id, resolved)
         return ToolExecutionResult(
             content=content,
             metadata={
-                "path": str(context.sandbox.resolve_path(path)),
+                "path": str(resolved),
                 "offset": offset,
                 "line_count": len(selected),
                 "truncated": truncated,

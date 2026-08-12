@@ -6,6 +6,7 @@ import hashlib
 from typing import Any
 
 from aihi.agent.tools.base import ToolContext, ToolExecutionResult
+from aihi.agent.tools.builtin.ledger import ReadLedger
 from aihi.agent.tools.spec import ToolSpec
 
 
@@ -29,8 +30,33 @@ class WriteFileTool:
         timeout_seconds=30.0,
     )
 
+    def __init__(self, *, ledger: ReadLedger | None = None) -> None:
+        self.ledger = ledger
+
+    def _unread(self, path: str, context: ToolContext) -> ToolExecutionResult | None:
+        """Refuse to modify a file this run has not read."""
+
+        if self.ledger is None:
+            return None
+        resolved = context.sandbox.resolve_path(path)
+        if self.ledger.has_read(context.run_id, resolved):
+            return None
+        return ToolExecutionResult(
+            content=(
+                f"Read {path} before modifying it: this run has not read it, so an "
+                "edit would be written blind."
+            ),
+            is_error=True,
+            metadata={"error_code": "file_not_read"},
+        )
+
     async def run(self, input: dict[str, Any], context: ToolContext) -> ToolExecutionResult:
         path = str(input["path"])
+        # Creating a file needs no prior read; there is nothing to overwrite.
+        if context.sandbox.resolve_path(path).exists():
+            refusal = self._unread(path, context)
+            if refusal is not None:
+                return refusal
         content = str(input["content"])
         expected_sha256 = input.get("expected_sha256")
         if expected_sha256 is not None and not isinstance(expected_sha256, str):

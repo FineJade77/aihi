@@ -24,13 +24,13 @@ def _load_skill(context: ToolBuildContext) -> Tool:
 
 
 CODING_TOOLSET: tuple[ToolDefinition, ...] = (
-    ToolDefinition("read_file", lambda _: ReadFileTool()),
+    ToolDefinition("read_file", lambda ctx: ReadFileTool(ledger=ctx.ledger)),
     ToolDefinition("glob", lambda _: GlobTool()),
     ToolDefinition("grep", lambda _: GrepTool()),
     ToolDefinition("git_status", lambda _: GitStatusTool()),
     ToolDefinition("git_diff", lambda _: GitDiffTool()),
-    ToolDefinition("edit_file", lambda _: EditFileTool()),
-    ToolDefinition("write_file", lambda _: WriteFileTool()),
+    ToolDefinition("edit_file", lambda ctx: EditFileTool(ledger=ctx.ledger)),
+    ToolDefinition("write_file", lambda ctx: WriteFileTool(ledger=ctx.ledger)),
     ToolDefinition("bash", lambda _: BashTool()),
     ToolDefinition("load_skill", _load_skill, requires=("skill_loader",)),
 )

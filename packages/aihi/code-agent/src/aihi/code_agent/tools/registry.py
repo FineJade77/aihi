@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-from aihi.agent import SkillLoader, Tool
+from aihi.agent import ReadLedger, SkillLoader, Tool
 
 from ..config import CodeAgentConfig
 
@@ -16,6 +16,8 @@ class ToolBuildContext:
 
     config: CodeAgentConfig
     skill_loader: SkillLoader | None = None
+    # Shared by read_file and the mutating tools so an edit cannot precede a read.
+    ledger: ReadLedger = field(default_factory=ReadLedger)
 
     def has(self, requirement: str) -> bool:
         return getattr(self, requirement, None) is not None

@@ -7,6 +7,7 @@ from typing import Any
 
 from aihi.agent._core.errors import ToolInputError
 from aihi.agent.tools.base import ToolContext, ToolExecutionResult
+from aihi.agent.tools.builtin.ledger import ReadLedger
 from aihi.agent.tools.spec import ToolSpec
 
 
@@ -32,8 +33,31 @@ class EditFileTool:
         timeout_seconds=30.0,
     )
 
+    def __init__(self, *, ledger: ReadLedger | None = None) -> None:
+        self.ledger = ledger
+
+    def _unread(self, path: str, context: ToolContext) -> ToolExecutionResult | None:
+        """Refuse to modify a file this run has not read."""
+
+        if self.ledger is None:
+            return None
+        resolved = context.sandbox.resolve_path(path)
+        if self.ledger.has_read(context.run_id, resolved):
+            return None
+        return ToolExecutionResult(
+            content=(
+                f"Read {path} before modifying it: this run has not read it, so an "
+                "edit would be written blind."
+            ),
+            is_error=True,
+            metadata={"error_code": "file_not_read"},
+        )
+
     async def run(self, input: dict[str, Any], context: ToolContext) -> ToolExecutionResult:
         path = str(input["path"])
+        refusal = self._unread(path, context)
+        if refusal is not None:
+            return refusal
         old_text = str(input["old_text"])
         new_text = str(input["new_text"])
         replace_all = bool(input.get("replace_all", False))
