@@ -187,6 +187,14 @@ class SkillTrustManager:
         self.discovery = discovery
 
     def status(self, candidate: SkillCandidate) -> SkillStatus:
+        # A BUILTIN Skill ships inside the distribution, so its integrity is
+        # already the package's integrity: by the time one can be read, the
+        # package's own code has run. Demanding a lockfile record would add
+        # ceremony rather than safety, and would leave the Skills we ship
+        # unusable until every user hand-trusted them. Every other scope is
+        # third-party content and still needs an explicit record.
+        if candidate.scope is SkillScope.BUILTIN:
+            return SkillStatus(candidate, trusted=True, enabled=True)
         record = self.store.get(
             candidate.frontmatter.name,
             candidate.frontmatter.version,
@@ -202,6 +210,7 @@ class SkillTrustManager:
     def trust(
         self, candidate: SkillCandidate, *, trusted_by: str, enable: bool = False
     ) -> SkillTrustRecord:
+        self._require_explicit_trust_scope(candidate)
         if not trusted_by.strip():
             raise SkillNotTrusted("trusted_by must be explicit")
         record = SkillTrustRecord(
@@ -217,6 +226,7 @@ class SkillTrustManager:
         return record
 
     def enable(self, candidate: SkillCandidate) -> SkillTrustRecord:
+        self._require_explicit_trust_scope(candidate)
         record = self.store.get(
             candidate.frontmatter.name,
             candidate.frontmatter.version,
@@ -237,6 +247,7 @@ class SkillTrustManager:
         return enabled
 
     def disable(self, candidate: SkillCandidate) -> None:
+        self._require_explicit_trust_scope(candidate)
         record = self.store.get(
             candidate.frontmatter.name,
             candidate.frontmatter.version,
@@ -284,6 +295,13 @@ class SkillTrustManager:
                 details={"reason": status.reason or "disabled"},
             )
         return candidate
+
+    @staticmethod
+    def _require_explicit_trust_scope(candidate: SkillCandidate) -> None:
+        if candidate.scope is SkillScope.BUILTIN:
+            raise SkillNotTrusted(
+                f"Builtin Skill trust is managed by the package: {candidate.versioned_key}"
+            )
 
 
 __all__ = [

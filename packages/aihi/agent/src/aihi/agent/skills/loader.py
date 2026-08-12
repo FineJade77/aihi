@@ -11,7 +11,7 @@ from aihi.agent.skills.discovery import (
     SkillScope,
     _read_regular_file,
 )
-from aihi.agent.skills.errors import SkillIntegrityError, SkillNotFound, SkillNotRequested
+from aihi.agent.skills.errors import SkillIntegrityError, SkillNotRequested
 from aihi.agent.skills.manifest import SkillFrontmatter, parse_skill_document
 from aihi.agent.skills.trust import SkillTrustManager
 
@@ -76,11 +76,7 @@ class SkillLoader:
         discovery: SkillDiscovery | None = None,
     ) -> LoadedSkill:
         verifier = discovery or self.discovery
-        candidate = next(
-            (item for item in verifier.discover() if item.frontmatter.name == skill_name), None
-        )
-        if candidate is None:
-            raise SkillNotFound(f"Skill was not discovered: {skill_name}")
+        candidate = verifier.resolve(skill_name)
         return self.load(candidate, requested=requested, discovery=verifier)
 
 

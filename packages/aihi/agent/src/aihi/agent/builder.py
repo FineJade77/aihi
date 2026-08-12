@@ -128,12 +128,17 @@ class RuntimeBuilder:
 
     # --- capabilities, opt in --------------------------------------------
 
-    def with_skills(self, discovery: SkillDiscovery) -> RuntimeBuilder:
+    def with_skills(
+        self, discovery: SkillDiscovery, *, load_tool_name: str | None = None
+    ) -> RuntimeBuilder:
         """Offer the skill *index*; bodies still go through the trust flow."""
 
         return replace(
             self,
-            context_contributors=(*self.context_contributors, SkillIndexContributor(discovery)),
+            context_contributors=(
+                *self.context_contributors,
+                SkillIndexContributor(discovery, load_tool_name=load_tool_name),
+            ),
         )
 
     def with_context_contributors(self, *contributors: object) -> RuntimeBuilder:

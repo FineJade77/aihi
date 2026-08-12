@@ -446,10 +446,14 @@ Host 激活还必须通过显式 `PluginHostPolicy`：Manifest 的 `capabilities
 Skill 按 `builtin < user < project < workspace` 分层发现，高层同名 Skill 遮蔽低层版本，
 同层重复则拒绝启动。Discovery 只保留索引元数据和内容 Hash，不把 Markdown 正文放入候选对象。
 
-启动或编译上下文时只注入 Skill 索引（名称、描述、版本和作用域）。正文必须由调用方显式请求，
-并经过精确的 `name@version+scope+content_sha256` Trust、重新 Discovery/Hash 校验后才能加载；
-未请求、未信任、已禁用或发生变更的 Skill 一律拒绝。Skill 内容只能作为当前 Run 的知识输入，
-不能扩大工具、Policy、Approval、Capability Lease 或 Sandbox 权限。
+启动或编译上下文时只注入 Skill 索引（名称、描述、版本和作用域），且仅在同一 Runtime 确实
+注册了 `load_skill` 时注入。正文必须由调用方显式请求；索引中的精确 `name@version` 可以直接
+传给 loader，裸 `name` 作为兼容输入保留。应用随包注入的 `BUILTIN` Skill 以包完整性作为隐式
+Trust，配置根不能声明该作用域；其他作用域必须经过精确的
+`name@version+scope+content_sha256` Trust、重新 Discovery/Hash 校验后才能加载。未请求、未信任、
+已禁用的非内置 Skill 一律拒绝；所有 Skill 未请求或发生变更时也一律拒绝。Skill 内容只能
+作为当前 Run 的知识输入，不能扩大
+工具、Policy、Approval、Capability Lease 或 Sandbox 权限。
 
 ### 9.4 Hooks
 

@@ -101,13 +101,18 @@ class CodeAgentRuntime:
             SkillTrustManager(trust_store, discovery=skill_discovery),
             discovery=skill_discovery,
         )
+        tools = build_tools(ToolBuildContext(config=config, skill_loader=skill_loader))
         builder = RuntimeBuilder(
             provider=provider,
             model=config.provider.model,
             sandbox=sandbox,
-            tools=build_tools(ToolBuildContext(config=config, skill_loader=skill_loader)),
+            tools=tools,
         )
-        builder = builder.with_skills(skill_discovery)
+        # Couple the advertised index to the actual registry input. This also
+        # handles an explicit `agent.tools = [..., "load_skill"]` when the
+        # automatic `skills.load_tool` switch is off.
+        if any(tool.spec.name == "load_skill" for tool in tools):
+            builder = builder.with_skills(skill_discovery, load_tool_name="load_skill")
         if config.artifact_path is not None:
             builder = builder.with_artifacts(config.artifact_path)
         if config.compact_model is not None:

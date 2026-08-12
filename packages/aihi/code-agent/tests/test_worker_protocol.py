@@ -265,7 +265,27 @@ allowed_tools = ["search"]
         {"jsonrpc": "2.0", "id": 5, "method": "tool.list", "params": {"session_id": session_id}}
     )
     assert tools is not None
-    assert tools["result"]["tools"][0]["name"] == "read_file"  # type: ignore[index]
+    tool_names = {item["name"] for item in tools["result"]["tools"]}  # type: ignore[index]
+    assert {"read_file", "load_skill"}.issubset(tool_names)
+    skills = server.handle(
+        {"jsonrpc": "2.0", "id": 6, "method": "skill.list", "params": {"session_id": session_id}}
+    )
+    assert skills is not None
+    builtin_skills = {
+        item["name"]: item for item in skills["result"]["skills"]  # type: ignore[index]
+    }
+    assert builtin_skills["code_review"]["scope"] == "builtin"
+    assert builtin_skills["code_review"]["loadable"] is True
+    rejected = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 7,
+            "method": "skill.untrust",
+            "params": {"session_id": session_id, "name": "code_review@1.0.0"},
+        }
+    )
+    assert rejected is not None
+    assert "managed by the package" in rejected["error"]["message"]  # type: ignore[index]
     server.close()
 
 

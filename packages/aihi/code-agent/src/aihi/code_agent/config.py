@@ -144,7 +144,9 @@ class CodeAgentConfig:
     sandbox: SandboxSettings = SandboxSettings()
     skill_roots: tuple[SkillRootSettings, ...] = ()
     skill_trust_path: Path | None = None
-    skill_load_tool: bool = False
+    # BUILTIN Skills are always present, so their explicit loading tool is an
+    # out-of-box capability unless configuration deliberately disables it.
+    skill_load_tool: bool = True
     mcp_servers: tuple[McpServerSettings, ...] = ()
     artifact_path: Path | None = None
     compact_model: str | None = None
@@ -261,9 +263,10 @@ class CodeAgentConfig:
         )
 
         skill_roots = _parse_skill_roots(skills_map, root)
-        skill_load_tool = _boolean(
-            skills_map.get("load_tool", bool(skill_roots)), "skills.load_tool"
-        )
+        # On by default, because the BUILTIN root is always discovered: keying
+        # this off configured roots left the shipped Skills advertised in the
+        # context with no tool able to fetch them, and the model improvising.
+        skill_load_tool = _boolean(skills_map.get("load_tool", True), "skills.load_tool")
         skill_trust_path = (
             _resolve_path(
                 skills_map.get("trust_lockfile", ".aihi/skills.lock.json"),
@@ -641,6 +644,11 @@ def _parse_skill_roots(value: Mapping[str, Any], base_dir: Path) -> tuple[SkillR
             raise CodeAgentConfigError(f"skills.roots[{index}] must be a table")
         path = _resolve_path(raw.get("path"), base_dir, f"skills.roots[{index}].path")
         scope = _enum(raw.get("scope"), SkillScope, f"skills.roots[{index}].scope")
+        if scope is SkillScope.BUILTIN:
+            raise CodeAgentConfigError(
+                f"skills.roots[{index}].scope cannot be builtin; "
+                "builtin roots are supplied by the application"
+            )
         roots.append(SkillRootSettings(path=path, scope=scope))
     return tuple(roots)
 

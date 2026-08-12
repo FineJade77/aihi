@@ -11,7 +11,9 @@ The TypeScript TUI communicates with this package through the versioned
 commands, `run.start`/`run.resume`, Worker-owned approval list/resolve commands,
 and Skill list/trust commands. TOML config can declare Skill roots and MCP
 stdio servers without putting credentials in the file. Skill body loading is
-exposed as an explicit, trust-checked `load_skill` Tool when enabled.
+exposed through `load_skill`, enabled by default because packaged Skills are
+always present. Setting `skills.load_tool = false` removes both the Tool and its
+model-facing index unless `load_skill` is explicitly listed in `agent.tools`.
 Provider profiles can be declared as `[providers.<name>]`; `config.get` exposes
 only non-secret metadata, and `run.start` accepts a configured provider/model
 selection. Resume continues to enforce the persisted run configuration.

@@ -19,6 +19,7 @@ from aihi.agent.skills import (
     SkillTrustManager,
     parse_skill_document,
 )
+from aihi.agent.skills.context import render_index
 
 
 def write_skill(root: Path, *, name: str = "coding.help", description: str = "Help") -> None:
@@ -153,6 +154,56 @@ def test_skill_trust_requires_explicit_request_and_exact_hash(tmp_path: Path) ->
         loader.load(candidate, requested=True)
 
 
+def test_builtin_skill_is_implicitly_loadable_without_a_trust_record(tmp_path: Path) -> None:
+    skill_root = tmp_path / "builtin" / "coding"
+    write_skill(skill_root)
+    discovery = SkillDiscovery((SkillRoot(tmp_path / "builtin", SkillScope.BUILTIN),))
+    store = InMemorySkillTrustStore()
+    loader = SkillLoader(
+        SkillTrustManager(store, discovery=discovery),
+        discovery=discovery,
+    )
+
+    loaded = loader.load_by_name("coding.help@1.2.3", requested=True)
+
+    assert loaded.scope is SkillScope.BUILTIN
+    assert store.list_records() == ()
+
+
+def test_skill_loader_accepts_name_and_exact_version_but_rejects_mismatch(
+    tmp_path: Path,
+) -> None:
+    skill_root = tmp_path / "skills" / "coding"
+    write_skill(skill_root)
+    discovery = SkillDiscovery((SkillRoot(tmp_path / "skills", SkillScope.PROJECT),))
+    candidate = discovery.discover()[0]
+    manager = SkillTrustManager(InMemorySkillTrustStore(), discovery=discovery)
+    manager.trust(candidate, trusted_by="test", enable=True)
+    loader = SkillLoader(manager, discovery=discovery)
+
+    assert loader.load_by_name("coding.help", requested=True).version == "1.2.3"
+    assert loader.load_by_name("coding.help@1.2.3", requested=True).version == "1.2.3"
+    with pytest.raises(SkillNotFound, match=r"coding\.help@2\.0\.0"):
+        loader.load_by_name("coding.help@2.0.0", requested=True)
+
+
+def test_skill_index_identifiers_are_exact_loader_inputs(tmp_path: Path) -> None:
+    skill_root = tmp_path / "builtin" / "coding"
+    write_skill(skill_root)
+    discovery = SkillDiscovery((SkillRoot(tmp_path / "builtin", SkillScope.BUILTIN),))
+    loader = SkillLoader(
+        SkillTrustManager(InMemorySkillTrustStore(), discovery=discovery),
+        discovery=discovery,
+    )
+
+    index = render_index(discovery.discover(), load_tool_name="load_skill")
+    identifier = next(line[2:].split(" ", 1)[0] for line in index.splitlines() if line[:2] == "- ")
+
+    loaded = loader.load_by_name(identifier, requested=True)
+    assert identifier == f"{loaded.name}@{loaded.version}"
+    assert "load_skill" in index
+
+
 def test_shadowed_skill_cannot_be_loaded_from_discovery_all(tmp_path: Path) -> None:
     builtin = tmp_path / "builtin"
     project = tmp_path / "project"
@@ -167,7 +218,6 @@ def test_shadowed_skill_cannot_be_loaded_from_discovery_all(tmp_path: Path) -> N
     all_candidates = discovery.discover_all()
     builtin_candidate = next(item for item in all_candidates if item.scope == SkillScope.BUILTIN)
     manager = SkillTrustManager(InMemorySkillTrustStore(), discovery=discovery)
-    manager.trust(builtin_candidate, trusted_by="test", enable=True)
     with pytest.raises(SkillIntegrityError):
         SkillLoader(manager, discovery=discovery).load(builtin_candidate, requested=True)
 

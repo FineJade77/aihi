@@ -49,6 +49,7 @@ Provider Golden/`EvalGate`（CI 工具而非 Harness 能力）、`cli/`（把 Pr
 `aihi-code-cli` 已按阶段建立，已完成 Worker RPC、Session/Task、TUI 与首个真实 Coding
 loop/config/Skill/MCP 配置纵向链路，以及 Worker-owned Approval 查询/解析、Skill trust
 和显式 `load_skill` 加载。TUI 已支持配置选择、Session 分支/历史、Run 列表与取消请求，
+内置 Skill 随包隐式受信，默认配置会同时注册 `load_skill` 与注入可直接加载的版本化索引；
 接收模型流式 chunk，并将 User/Assistant/Tool/Approval durable Event 投影为可恢复的对话时间线；
 P-01 交付还包括 Git 只读工具、MCP/Tool/Skill 管理、Artifact、Compaction 与可治理 Subagent 配置。
 

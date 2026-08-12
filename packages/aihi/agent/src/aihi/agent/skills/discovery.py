@@ -9,7 +9,12 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
-from aihi.agent.skills.errors import SkillConflict, SkillIntegrityError, SkillManifestError
+from aihi.agent.skills.errors import (
+    SkillConflict,
+    SkillIntegrityError,
+    SkillManifestError,
+    SkillNotFound,
+)
 from aihi.agent.skills.manifest import SKILL_FILENAME, SkillFrontmatter, parse_skill_document
 
 
@@ -114,6 +119,23 @@ class SkillDiscovery:
                     },
                 )
         return tuple(sorted(selected.values(), key=lambda item: item.key))
+
+    def resolve(self, reference: str) -> SkillCandidate:
+        """Resolve either ``name`` or the exact ``name@version`` from the catalog."""
+
+        name, separator, version = reference.partition("@")
+        candidate = next(
+            (
+                item
+                for item in self.discover()
+                if item.key == name
+                and (not separator or item.frontmatter.version == version)
+            ),
+            None,
+        )
+        if candidate is None:
+            raise SkillNotFound(f"Skill was not discovered: {reference}")
+        return candidate
 
     def verify(self, candidate: SkillCandidate) -> SkillCandidate:
         """Re-read and re-hash a candidate immediately before trusted loading."""

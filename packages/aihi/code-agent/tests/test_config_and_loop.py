@@ -398,7 +398,11 @@ async def test_skill_trust_commands_enable_explicit_skill_loading(tmp_path) -> N
         }
     )
     assert listed is not None
-    assert listed["result"]["skills"][0]["loadable"] is False  # type: ignore[index]
+    listed_skills = {
+        skill["name"]: skill for skill in listed["result"]["skills"]  # type: ignore[index]
+    }
+    assert listed_skills["code_review"]["loadable"] is True
+    assert listed_skills["coding.demo"]["loadable"] is False
 
     trusted = server.handle(
         {
@@ -419,7 +423,11 @@ async def test_skill_trust_commands_enable_explicit_skill_loading(tmp_path) -> N
         }
     )
     assert listed_again is not None
-    assert listed_again["result"]["skills"][0]["loadable"] is True  # type: ignore[index]
+    listed_again_skills = {
+        skill["name"]: skill
+        for skill in listed_again["result"]["skills"]  # type: ignore[index]
+    }
+    assert listed_again_skills["coding.demo"]["loadable"] is True
     disabled = server.handle(
         {
             "jsonrpc": "2.0",

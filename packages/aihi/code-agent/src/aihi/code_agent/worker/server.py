@@ -22,15 +22,14 @@ from aihi.agent import (
     Session,
     SkillDiscovery,
     SkillRoot,
+    SkillScope,
     SkillTrustManager,
     SQLiteEventStore,
     TaskGraph,
     WorkspaceScope,
     approval_input_preview,
 )
-from aihi.agent import (
-    Event as AgentEvent,
-)
+from aihi.agent import Event as AgentEvent
 from aihi.agent.runtime import RunResult
 from aihi.code_agent.config import (
     CodeAgentConfig,
@@ -39,6 +38,7 @@ from aihi.code_agent.config import (
     load_worker_config,
 )
 from aihi.code_agent.runtime import CodeAgentRuntime
+from aihi.code_agent.skills import builtin_skill_root
 
 from ..protocol import (
     _COMMAND_NAMES,
@@ -843,9 +843,7 @@ class WorkerServer:
             raise RpcValidationError("enable must be a boolean", code=INVALID_PARAMS)
         config = self._config_loader(session.cwd)
         discovery, trust = self._skill_components(config)
-        candidate = next((item for item in discovery.discover() if item.key == name), None)
-        if candidate is None:
-            raise RpcValidationError(f"Skill was not discovered: {name}", code=INVALID_PARAMS)
+        candidate = discovery.resolve(name)
         record = trust.trust(candidate, trusted_by=trusted_by, enable=enable)
         return {"session_id": session.id, "skill": record.to_dict()}
 
@@ -854,9 +852,12 @@ class WorkerServer:
         name = self._required_text(params, "name", max_length=256)
         config = self._config_loader(session.cwd)
         discovery, trust = self._skill_components(config)
-        candidate = next((item for item in discovery.discover() if item.key == name), None)
-        if candidate is None:
-            raise RpcValidationError(f"Skill was not discovered: {name}", code=INVALID_PARAMS)
+        candidate = discovery.resolve(name)
+        if candidate.scope is SkillScope.BUILTIN:
+            raise RpcValidationError(
+                f"Builtin Skill trust is managed by the package: {candidate.versioned_key}",
+                code=INVALID_PARAMS,
+            )
         trust.store.remove(
             candidate.frontmatter.name, candidate.frontmatter.version, candidate.scope
         )
@@ -888,7 +889,7 @@ class WorkerServer:
         session = self._load_session(params)
         config = self._config_loader(session.cwd)
         names = list(config.tools)
-        if config.skill_load_tool and config.skill_roots and "load_skill" not in names:
+        if config.skill_load_tool and "load_skill" not in names:
             names.append("load_skill")
         return {
             "session_id": session.id,
@@ -897,15 +898,17 @@ class WorkerServer:
 
     @staticmethod
     def _skill_components(config: CodeAgentConfig) -> tuple[SkillDiscovery, SkillTrustManager]:
-        if not config.skill_roots or config.skill_trust_path is None:
-            raise RpcValidationError(
-                "No Skill roots are configured; add [[skills.roots]] first",
-                code=INVALID_PARAMS,
-            )
         discovery = SkillDiscovery(
-            [SkillRoot(root.path, root.scope) for root in config.skill_roots]
+            [
+                builtin_skill_root(),
+                *(SkillRoot(root.path, root.scope) for root in config.skill_roots),
+            ]
         )
-        trust_store = FileSkillTrustStore(config.skill_trust_path)
+        trust_store = FileSkillTrustStore(
+            config.skill_trust_path
+            if config.skill_trust_path is not None
+            else config.base_dir / ".aihi" / "skills.lock.json"
+        )
         return discovery, SkillTrustManager(trust_store, discovery=discovery)
 
     @staticmethod

@@ -48,8 +48,9 @@ contributor 返回**已渲染的文本段落**，因此 `context` 不需要认�
 ### 4. Skill 只注入索引
 
 `SkillIndexContributor` 渲染 `name@version (scope): description`，正文一律不进上下文；
-加载正文仍需 `SkillLoader` 的 `name@version+scope+content_sha256` Trust 与重新 Hash 校验
-（ADR-0004、ARCHITECTURE §9.3）。索引本身不扩大任何工具、Policy 或 Sandbox 权限。
+加载正文仍需 `SkillLoader` 重新 Discovery/Hash 校验。随应用包注入的 `BUILTIN` 以包完整性作为
+隐式 Trust，其他作用域仍需 `name@version+scope+content_sha256` Trust（ADR-0004、
+ARCHITECTURE §9.3）。索引本身不扩大任何工具、Policy 或 Sandbox 权限。
 
 ### 5. Memory 读自动、写不自动
 

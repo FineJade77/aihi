@@ -14,8 +14,9 @@ class LoadSkillTool:
     spec = ToolSpec.define(
         name="load_skill",
         description=(
-            "Load the full body of a named Skill from the discovered catalog. "
-            "The Skill must be explicitly trusted and enabled in the lockfile."
+            "Load the full body of a Skill by name or exact name@version from "
+            "the discovered catalog. Builtin Skills are trusted with the package; "
+            "other scopes must be explicitly trusted and enabled in the lockfile."
         ),
         input_schema={
             "type": "object",
