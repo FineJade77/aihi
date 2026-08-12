@@ -43,7 +43,9 @@ config therefore uses `~/.aihi/audit.jsonl`; a project config uses
 `<workspace>/.aihi/audit.jsonl`). Disable it with `[audit] enabled = false`, or
 set `[audit] path = "..."` to choose another file. The file is append-only and
 contains no raw credentials; the underlying Agent Telemetry redactor bounds
-and sanitizes event payloads before writing.
+and sanitizes event payloads before writing. The file is created with owner-only
+permissions (`0600`); `/doctor` reports whether the existing file or its nearest
+existing parent directory is writable without creating the file.
 
 ## 行为变更（RFC-0003 领域层）
 

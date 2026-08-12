@@ -20,7 +20,7 @@ SMOKE = REPOSITORY / "tests" / "integration" / "installed_wheel_smoke.py"
 @pytest.fixture(scope="session")
 def wheels(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Path]:
     output = tmp_path_factory.mktemp("wheels")
-    for package in (PACKAGES / "models", PACKAGES / "agent"):
+    for package in (PACKAGES / "models", PACKAGES / "agent", PACKAGES / "code-agent"):
         subprocess.run(
             [
                 sys.executable,
@@ -40,6 +40,7 @@ def wheels(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Path]:
     return {
         "models": next(output.glob("aihi_models-*.whl")),
         "agent": next(output.glob("aihi_agent-*.whl")),
+        "code_agent": next(output.glob("aihi_code_agent-*.whl")),
     }
 
 
@@ -109,6 +110,19 @@ def test_agent_wheel_declares_the_models_dependency(wheels: dict[str, Path]) -> 
     assert "aihi-models<0.2,>=0.1" in requirements
 
 
+def test_code_agent_wheel_declares_both_runtime_dependencies(wheels: dict[str, Path]) -> None:
+    with zipfile.ZipFile(wheels["code_agent"]) as archive:
+        metadata_name = next(name for name in archive.namelist() if name.endswith("METADATA"))
+        metadata = archive.read(metadata_name).decode("utf-8")
+    requirements = {
+        line.removeprefix("Requires-Dist:").strip().replace(" ", "")
+        for line in metadata.splitlines()
+        if line.startswith("Requires-Dist:")
+    }
+    assert "aihi-agent<0.2,>=0.1" in requirements
+    assert "aihi-models<0.2,>=0.1" in requirements
+
+
 def test_installed_wheels_coexist_run_and_remain_typed(
     wheels: dict[str, Path], tmp_path: Path
 ) -> None:
@@ -136,12 +150,29 @@ def test_installed_wheels_coexist_run_and_remain_typed(
     isolated = isolated_environment(site_packages)
     install_pure_wheel(wheels["models"], site_packages)
     install_pure_wheel(wheels["agent"], site_packages)
+    install_pure_wheel(wheels["code_agent"], site_packages)
 
     subprocess.run(
         [str(python), "-S", str(SMOKE), str(tmp_path / "workspace")],
         check=True,
         capture_output=True,
         text=True,
+        env=isolated,
+    )
+
+    subprocess.run(
+        [
+            str(python),
+            "-S",
+            "-c",
+            "from pathlib import Path; from aihi.code_agent.config import CodeAgentConfig; "
+            "config = CodeAgentConfig.defaults(Path.cwd()); "
+            "assert config.audit_path == Path.cwd() / '.aihi' / 'audit.jsonl'",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        cwd=tmp_path,
         env=isolated,
     )
 

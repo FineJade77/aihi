@@ -27,11 +27,13 @@ from aihi.agent import (
     restrict_registry,
     subagent_session_factory,
 )
+from aihi.code_agent.config import CodeAgentConfig
 from aihi.models import FakeProvider, FakeStep, Message
 
 
 async def main(workspace: Path) -> None:
     workspace.mkdir(parents=True, exist_ok=True)
+    assert CodeAgentConfig.defaults(workspace).audit_path == workspace / ".aihi" / "audit.jsonl"
     sandbox = HostBackend(workspace, unsafe=True)
 
     basic_session = Session.create(

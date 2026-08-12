@@ -28,6 +28,7 @@ import {
 } from "./composer.js";
 import { ComposerInput } from "./composer-view.js";
 import { commandHelpSummary, SLASH_COMMANDS } from "./commands.js";
+import { auditDiagnostic } from "./doctor.js";
 import {
   filterPickerOptions,
   modelPickerOptions,
@@ -171,6 +172,7 @@ function configReport(config: ConfigDescriptor): CommandReport {
       `✓ permissions · ${config.permission_mode}`,
       `✓ sandbox · ${config.sandbox.backend}${config.sandbox.unsafe ? " · unsafe host opt-in" : ""}`,
       `✓ tools · ${config.tools.length}`,
+      `audit · ${config.audit?.enabled ? config.audit.path ?? "enabled without path" : "disabled"}`,
     ],
   };
 }
@@ -847,6 +849,7 @@ export function TuiApp({
       if (name === "doctor") {
         const config = await client.getConfig(cwd);
         const reportLines = configReport(config).lines;
+        reportLines.push(await auditDiagnostic(config.audit));
         if (selectedSessionId) {
           const checks = await Promise.allSettled([
             client.listTools(selectedSessionId),

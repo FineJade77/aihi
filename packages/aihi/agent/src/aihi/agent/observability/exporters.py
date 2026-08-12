@@ -46,6 +46,10 @@ class JsonlTelemetrySink:
             path = Path(target).expanduser().resolve()
             path.parent.mkdir(parents=True, exist_ok=True)
             self._writer: TextIO = path.open("a", encoding="utf-8")
+            # Audit/telemetry records can contain project paths and bounded
+            # tool payloads. Keep the append-only file private to its owner,
+            # including when an older file was created with a permissive umask.
+            path.chmod(0o600)
         else:
             if not hasattr(target, "write"):
                 raise TelemetryError("JSONL target must be a path or writable text stream")

@@ -149,6 +149,11 @@ export interface ProviderDescriptor {
   base_url?: string | null;
 }
 
+export interface AuditDescriptor {
+  enabled: boolean;
+  path: string | null;
+}
+
 export interface ConfigDescriptor extends JsonObject {
   source_path: string | null;
   source_paths: string[];
@@ -164,6 +169,7 @@ export interface ConfigDescriptor extends JsonObject {
   };
   skills: JsonObject;
   mcp_servers: string[];
+  audit: AuditDescriptor;
 }
 
 export interface ApprovalDescriptor extends JsonObject {

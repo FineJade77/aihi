@@ -184,8 +184,9 @@ profile and model for subsequent new Runs; omit the arguments to open a
 keyboard-searchable picker. `/sessions [QUERY]` opens the same kind of picker
 for persisted sessions (the optional query is applied immediately). `/status`
 shows the active workspace/session/model/run snapshot, while `/doctor` checks
-the resolved configuration and the session-scoped Tool, MCP, and Skill
-registries. `/config` shows the effective, non-secret configuration. Provider profiles are declared under
+the resolved configuration, the configured audit JSONL destination (including
+whether an existing file or its parent is writable), and the session-scoped
+Tool, MCP, and Skill registries. `/config` shows the effective, non-secret configuration. Provider profiles are declared under
 `[providers.<name>]`, while `[provider]` remains the default.
 Use `/mcp` and `/tools` to inspect configured integrations, and
 `/skill-disable NAME` or `/skill-untrust NAME` to remove a Skill's active trust.

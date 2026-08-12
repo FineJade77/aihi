@@ -314,6 +314,7 @@ path = "audit.jsonl"
     audit_path = tmp_path / "audit.jsonl"
     records = [json.loads(line) for line in audit_path.read_text(encoding="utf-8").splitlines()]
     assert records
+    assert audit_path.stat().st_mode & 0o777 == 0o600
     assert any(record["name"] == "run.started" for record in records)
     assert any(record["name"] == "run.completed" for record in records)
 
