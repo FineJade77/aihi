@@ -14,3 +14,6 @@ build/
 
 # Local legacy SQLite compatibility fixture and SQLite WAL sidecars.
 /tests/fixtures/session_schema_v1.sqlite3*
+
+# Superpowers working documents: local process artefacts, not project docs.
+/docs/superpowers/
