@@ -19,6 +19,9 @@
 `McpClient.call_tool` / `PluginHost.call_tool` 仍是低层传输 API，不得直接交给 Runtime。
 
 `allowed_tools` 按**服务端工具名**过滤：应用可以只暴露子集，而不必信任服务器自我约束。
+MCP 工具注册到模型时使用确定性的 Provider-safe 别名（`mcp__server__tool`，必要时附短哈希），
+保留服务端原名用于 `tools/call`；这样 OpenAI-compatible Provider 不会因 MCP 合法的点号或长名称
+拒绝整个请求。
 
 ### 2. `StdioMcpTransport`
 

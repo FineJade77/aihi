@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import math
 import re
@@ -29,6 +30,8 @@ from aihi.agent.tools.spec import ToolSpec
 from aihi.models import JsonObject
 
 _SERVER_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
+_MODEL_TOOL_NAME_LIMIT = 64
+_MODEL_TOOL_NAME_DIGEST_LENGTH = 10
 
 
 class McpClient:
@@ -232,7 +235,7 @@ class McpRemoteTool:
 
     @property
     def spec(self) -> ToolSpec:
-        exposed_name = f"mcp.{self.server_name}.{self.definition.name}"
+        exposed_name = model_tool_name(self.server_name, self.definition.name)
         return self.definition.to_tool_spec(exposed_name=exposed_name)
 
     async def run(self, input: dict[str, Any], context: ToolContext) -> ToolExecutionResult:
@@ -258,4 +261,23 @@ class McpRemoteTool:
         )
 
 
-__all__ = ["McpClient", "McpRemoteTool"]
+def model_tool_name(server_name: str, tool_name: str) -> str:
+    """Return a provider-safe, deterministic alias for an MCP tool.
+
+    MCP permits dots and 128-character names, while common OpenAI-compatible
+    APIs restrict function names to ``[A-Za-z0-9_-]`` and cap them at 64
+    characters. The alias is only model/registry-facing: calls still use the
+    original MCP tool name stored in ``McpRemoteTool.definition``.
+    """
+
+    raw = f"mcp__{server_name}__{tool_name}"
+    safe = re.sub(r"[^A-Za-z0-9_-]", "_", raw)
+    ambiguous_separator = server_name.endswith("_") and tool_name.startswith("_")
+    if safe == raw and len(safe) <= _MODEL_TOOL_NAME_LIMIT and not ambiguous_separator:
+        return safe
+    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:_MODEL_TOOL_NAME_DIGEST_LENGTH]
+    prefix_length = _MODEL_TOOL_NAME_LIMIT - len(digest) - 1
+    return f"{safe[:prefix_length]}_{digest}"
+
+
+__all__ = ["McpClient", "McpRemoteTool", "model_tool_name"]

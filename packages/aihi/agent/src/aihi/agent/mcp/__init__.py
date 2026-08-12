@@ -1,6 +1,6 @@
 """MCP JSON-RPC client/server contracts and canonical Tool adapters."""
 
-from aihi.agent.mcp.client import McpClient, McpRemoteTool
+from aihi.agent.mcp.client import McpClient, McpRemoteTool, model_tool_name
 from aihi.agent.mcp.errors import (
     McpDisconnected,
     McpError,
@@ -31,6 +31,7 @@ __all__ = [
     "McpProtocolError",
     "McpRemoteError",
     "McpRemoteTool",
+    "model_tool_name",
     "McpServer",
     "McpServerHandler",
     "McpServerTool",

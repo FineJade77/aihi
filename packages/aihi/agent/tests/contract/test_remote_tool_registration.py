@@ -1,5 +1,6 @@
 """Plugin and MCP tools reach a model only through the registry."""
 
+import re
 import sys
 import textwrap
 import time
@@ -16,6 +17,7 @@ from aihi.agent.mcp import (
     McpToolAnnotations,
     McpToolDefinition,
     StdioMcpTransport,
+    model_tool_name,
     register_mcp_tools,
 )
 
@@ -79,13 +81,13 @@ async def test_registered_mcp_tools_carry_their_annotations(tmp_path: Path) -> N
 
     specs = await register_mcp_tools(registry, client, server_name="memory")
 
-    assert [spec.name for spec in specs] == ["mcp.memory.echo"]
+    assert [spec.name for spec in specs] == ["mcp__memory__echo"]
     spec = specs[0]
     # readOnlyHint/idempotentHint became canonical ToolSpec fields, so policy
     # sees a read-only tool rather than having to trust the server.
     assert spec.mutates is False
     assert spec.concurrency_safe is True
-    assert registry.get("mcp.memory.echo") is not None
+    assert registry.get("mcp__memory__echo") is not None
 
 
 @pytest.mark.asyncio
@@ -123,8 +125,8 @@ async def test_a_stdio_server_round_trips_through_the_registry(tmp_path: Path) -
     try:
         specs = await register_mcp_tools(registry, client, server_name="stdio")
 
-        assert [spec.name for spec in specs] == ["mcp.stdio.echo"]
-        tool = registry.get("mcp.stdio.echo")
+        assert [spec.name for spec in specs] == ["mcp__stdio__echo"]
+        tool = registry.get("mcp__stdio__echo")
         assert tool is not None
         result = await tool.run(
             {"text": "hello"},
@@ -140,6 +142,21 @@ async def test_a_stdio_server_round_trips_through_the_registry(tmp_path: Path) -
     finally:
         await client.disconnect()
     assert transport.connected is False
+
+
+def test_model_tool_names_are_provider_safe_and_collision_resistant() -> None:
+    simple = model_tool_name("memory", "echo")
+    dotted = model_tool_name("memory.server", "echo.tool")
+    colliding = model_tool_name("memory_server", "echo_tool")
+    ambiguous = model_tool_name("memory_", "_echo")
+    unambiguous = model_tool_name("memory", "__echo")
+    long_name = model_tool_name("s" * 64, "t" * 128)
+
+    assert simple == "mcp__memory__echo"
+    assert re.fullmatch(r"[A-Za-z0-9_-]+", dotted)
+    assert dotted != colliding
+    assert ambiguous != unambiguous
+    assert len(long_name) <= 64
 
 
 @pytest.mark.asyncio

@@ -480,6 +480,9 @@ MCP 远程工具通过 `register_mcp_tools()` 注册到 `ToolRegistry`（Plugin 
 `tools → policy → hooks → sandbox` 链路；直接 `McpClient.call_tool` 是低层传输 API，不得作为
 Runtime 的模型工具入口。缺少明确 `readOnlyHint=true` 的远程工具按可变更工具处理。
 注册时可用 `allowed_tools` 按服务端工具名过滤，应用因此不必信任服务器自我约束。
+MCP 原始工具名可以包含点号且长度上限高于多数模型 API；注册时会生成确定性的、最多 64 个字符且
+仅含 `[A-Za-z0-9_-]` 的模型可见别名（例如 `mcp__memory__search`）。模型返回别名后仍由同一个
+适配器调用原始 MCP 名称，别名冲突通过短哈希消解。
 `StdioMcpTransport` 是标准 stdio 传输：无 shell、独立进程组、最小环境、消息上限和有界关闭
 （ADR-0026）。
 
