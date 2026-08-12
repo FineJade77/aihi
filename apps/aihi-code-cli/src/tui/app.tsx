@@ -75,26 +75,11 @@ function messageText(data: JsonObject): string {
     .join("");
 }
 
-function stringifyPreview(value: unknown, maxLength = 84): string {
-  let text: string;
-  try {
-    text = JSON.stringify(value) ?? "{}";
-  } catch {
-    text = "[unserializable]";
-  }
-  return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text;
-}
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function taskColor(state: string): UiColor {
-  if (state === "completed") return COLORS.good;
-  if (state === "failed" || state === "cancelled") return COLORS.bad;
-  if (state === "waiting" || state === "interrupted") return COLORS.warn;
-  return COLORS.brand;
-}
 
 function shortId(value: string): string {
   return value.length > 16 ? `…${value.slice(-14)}` : value;
@@ -174,55 +159,62 @@ function Splash({
   );
 }
 
-function SessionPanel({
-  sessions,
-  selectedSessionId,
-}: {
-  sessions: SessionDescriptor[];
-  selectedSessionId?: string;
-}) {
-  return (
-    <Box borderStyle="round" borderColor={COLORS.panel} flexDirection="column" paddingX={1} width="28%">
-      <Text bold color={COLORS.brand}>SESSIONS</Text>
-      {sessions.length === 0 ? (
-        <Text color={COLORS.muted}>No sessions</Text>
-      ) : (
-        sessions.slice(0, 8).map((session) => {
-          const selected = session.session_id === selectedSessionId;
-          return (
-            <Text key={session.session_id} color={selected ? COLORS.accent : undefined}>
-              {selected ? "▸ " : "  "}{shortId(session.session_id)}
-              {" "}{String(session.metadata.model ?? "")}
-            </Text>
-          );
-        })
-      )}
-      {sessions.length > 8 && <Text color={COLORS.muted}>+{sessions.length - 8} more</Text>}
-    </Box>
-  );
+
+
+/** 122775 -> "122.8K": a status bar has no room for exact token counts. */
+function compactCount(value: number): string {
+  if (value < 1_000) return String(value);
+  if (value < 1_000_000) return `${(value / 1_000).toFixed(1)}K`;
+  return `${(value / 1_000_000).toFixed(1)}M`;
 }
 
-function EventPanel({ events, streamText }: { events: UiEvent[]; streamText: string }) {
+/** The bottom bar: where you are, what is answering, and how full the context is. */
+function StatusBar({
+  cwd,
+  provider,
+  model,
+  contextTokens,
+  contextLimit,
+  tasks,
+}: {
+  cwd: string;
+  provider: string;
+  model: string;
+  contextTokens: number;
+  contextLimit: number;
+  tasks: TaskDescriptor[];
+}) {
+  const ratio = contextLimit > 0 ? contextTokens / contextLimit : 0;
+  const contextTone =
+    ratio >= 0.9 ? COLORS.bad : ratio >= 0.7 ? COLORS.warn : COLORS.muted;
+  const active = tasks.filter((task) => task.state === "running").length;
   return (
-    <Box borderStyle="round" borderColor={COLORS.panel} flexDirection="column" paddingX={1} width="44%">
-      <Text bold color={COLORS.brand}>EVENT STREAM</Text>
-      {events.length === 0 ? (
-        <Text color={COLORS.muted}>Waiting for events…</Text>
-      ) : (
-        events.slice(-12).map((event, index) => (
-          <Text key={`${event.seq ?? "e"}-${event.type}-${index}`} wrap="truncate">
-            <Text color={event.ephemeral ? COLORS.muted : COLORS.good}>
-              {event.ephemeral ? "·" : "●"} {event.seq ?? "-"}
-            </Text>{" "}
-            <Text color={COLORS.accent}>{event.type}</Text>{" "}
-            <Text color={COLORS.muted}>{stringifyPreview(event.data)}</Text>
-          </Text>
-        ))
-      )}
-      {streamText && (
-        <Text color={COLORS.accent} wrap="truncate">
-          assistant: {streamText.slice(-400)}
+    <Box borderStyle="round" borderColor={COLORS.panel} paddingX={1}>
+      <Text color={COLORS.muted} wrap="truncate-start">
+        {tildePath(cwd)}
+      </Text>
+      <Text color={COLORS.muted}>{"  ·  "}</Text>
+      <Text color={COLORS.brand}>
+        {provider}/{model}
+      </Text>
+      <Text color={COLORS.muted}>{"  ·  "}</Text>
+      {contextLimit > 0 ? (
+        <Text color={contextTone}>
+          ctx {compactCount(contextTokens)}/{compactCount(contextLimit)}{" "}
+          {(ratio * 100).toFixed(1)}%
         </Text>
+      ) : (
+        <Text color={COLORS.muted}>ctx —</Text>
+      )}
+      {/* The task graph earns bar space only once there is a graph to show. */}
+      {tasks.length > 0 && (
+        <>
+          <Text color={COLORS.muted}>{"  ·  "}</Text>
+          <Text color={active > 0 ? COLORS.warn : COLORS.good}>
+            tasks {tasks.length}
+            {active > 0 ? ` (${active} running)` : ""}
+          </Text>
+        </>
       )}
     </Box>
   );
@@ -264,23 +256,6 @@ function AnswerPanel({ text, streaming }: { text: string; streaming: boolean }) 
   );
 }
 
-function TaskPanel({ tasks }: { tasks: TaskDescriptor[] }) {
-  return (
-    <Box borderStyle="round" borderColor={COLORS.panel} flexDirection="column" paddingX={1} width="28%">
-      <Text bold color={COLORS.brand}>TASK GRAPH</Text>
-      {tasks.length === 0 ? (
-        <Text color={COLORS.muted}>No tasks</Text>
-      ) : (
-        tasks.slice(0, 8).map((task) => (
-          <Text key={String(task.spec.task_id)} wrap="truncate">
-            <Text color={taskColor(task.state)}>{task.state.padEnd(11, " ")}</Text>{" "}
-            {shortId(String(task.spec.task_id))}
-          </Text>
-        ))
-      )}
-    </Box>
-  );
-}
 
 export function TuiApp({
   client,
@@ -295,7 +270,6 @@ export function TuiApp({
   const [sessions, setSessions] = useState<SessionDescriptor[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string | undefined>(sessionId);
   const [selectedSession, setSelectedSession] = useState<SessionDescriptor>();
-  const [events, setEvents] = useState<UiEvent[]>([]);
   const [tasks, setTasks] = useState<TaskDescriptor[]>([]);
   const [command, setCommand] = useState("");
   const [status, setStatus] = useState("Connecting to Worker…");
@@ -307,6 +281,7 @@ export function TuiApp({
   const [answerText, setAnswerText] = useState("");
   const [splashVisible, setSplashVisible] = useState(true);
   const [headSeq, setHeadSeq] = useState<number>();
+  const [context, setContext] = useState({ tokens: 0, limit: 0 });
   const [approvals, setApprovals] = useState<ApprovalDescriptor[]>([]);
   // Kept apart from `status`: a notice must survive the event traffic that
   // follows it, which is exactly what the old status heartbeat destroyed.
@@ -324,7 +299,6 @@ export function TuiApp({
     setSelectedSessionId(session.session_id);
     setSelectedSession(session);
     const history = page.events.map(eventFromRecord);
-    setEvents(history);
     setTasks(nextTasks);
     setStreamText("");
     // Reopening a session should still show its last answer, not an empty pane.
@@ -343,7 +317,6 @@ export function TuiApp({
       await loadSession(target);
     } else {
       setSelectedSession(undefined);
-      setEvents([]);
       setTasks([]);
       setStatus("No session yet · use /new to create one");
     }
@@ -376,7 +349,6 @@ export function TuiApp({
     const unsubscribe = client.subscribeEvents((event) => {
       if (event.session_id !== selectedSessionId) return;
       const nextEvent = eventFromNotification(event);
-      setEvents((current) => [...current, nextEvent].slice(-100));
       if (nextEvent.type === "run.started" || nextEvent.type === "run.resumed") {
         setActiveRunId(event.run_id);
         setStreamText("");
@@ -398,6 +370,13 @@ export function TuiApp({
       }
       if (nextEvent.type.startsWith("subagent.")) {
         void client.listTasks(event.session_id).then(setTasks).catch(() => undefined);
+      }
+      if (nextEvent.type === "model.usage") {
+        const tokens = nextEvent.data.context_tokens;
+        const limit = nextEvent.data.context_limit;
+        if (typeof tokens === "number" && typeof limit === "number") {
+          setContext({ tokens, limit });
+        }
       }
       if (nextEvent.type === "approval.requested" || nextEvent.type === "approval.resolved") {
         void client.listApprovals(event.session_id).then(setApprovals).catch(() => undefined);
@@ -560,7 +539,6 @@ export function TuiApp({
         if (!selectedSessionId) throw new Error("Create or open a session first");
         const page = await client.getSessionEvents(selectedSessionId, 0, 100);
         setStatus(`Session history · ${page.events.length} events · head ${page.head_seq}`);
-        setEvents(page.events.map(eventFromRecord));
         return;
       }
       if (name === "fork") {
@@ -781,7 +759,6 @@ export function TuiApp({
               {running ? "● busy" : "● ready"}
             </Text>
           </Box>
-          <Text color={COLORS.muted} wrap="truncate-start">{tildePath(cwd)}</Text>
           <Box>
             <Text color={COLORS.muted}>session  </Text>
             {selectedSessionId ? (
@@ -792,13 +769,10 @@ export function TuiApp({
             {headSeq !== undefined && <Text color={COLORS.muted}>  seq {headSeq}</Text>}
             {activeRunId !== undefined && <Text color={COLORS.muted}>  run  {activeRunId}</Text>}
           </Box>
-          <Box flexDirection="row" flexGrow={1} marginTop={1}>
-            <SessionPanel sessions={sessions} selectedSessionId={selectedSessionId} />
-            <EventPanel events={events} streamText={streamText} />
-            <TaskPanel tasks={tasks} />
-          </Box>
           {approvals.length > 0 && <ApprovalPanel approvals={approvals} />}
-          <AnswerPanel text={streamText || answerText} streaming={streamText.length > 0} />
+          <Box flexDirection="column" flexGrow={1} marginTop={1}>
+            <AnswerPanel text={streamText || answerText} streaming={streamText.length > 0} />
+          </Box>
         </>
       )}
       <Box marginTop={1}>
@@ -831,6 +805,14 @@ export function TuiApp({
           />
         </Box>
       )}
+      <StatusBar
+        cwd={cwd}
+        provider={activeProvider}
+        model={activeModel}
+        contextTokens={context.tokens}
+        contextLimit={context.limit}
+        tasks={tasks}
+      />
       <Text color={COLORS.muted}>message  /provider  /model  /config  /runs  /cancel  /history  /fork  /approvals  /approve  /skills  /skill-trust  /skill-disable  /skill-untrust  /mcp  /tools  /resume  /quit · Ctrl-C exits</Text>
     </Box>
   );
