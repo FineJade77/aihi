@@ -1,164 +1,290 @@
-# AIHI Agent 开发规范
+# Contributing to AIHI
 
-本文件是参与 AIHI 开发的 Coding Agent 的项目级约束。开始实现前先阅读：
+AIHI is a Python/TypeScript monorepo for building recoverable, provider-neutral Agent runtimes and
+applications. This guide is the contributor and coding-agent contract: it explains where changes belong,
+which invariants must never regress, how to validate a change and what to include in a review.
 
-1. [架构设计](docs/ARCHITECTURE.md)
-2. [任务分解](docs/TASK.md)
-3. [RFC-0001](docs/rfcs/0001-runtime-architecture.md)
-4. [RFC-0002](docs/rfcs/0002-context-and-compaction.md)
-5. [ADR-0001](docs/adr/0001-host-sandbox-default.md)
-6. [ADR-0002](docs/adr/0002-event-store-and-snapshots.md)
-7. [ADR-0003](docs/adr/0003-plugin-host-isolation.md)
-8. [ADR-0004](docs/adr/0004-artifact-lifecycle-and-scope.md)
-9. [ADR-0020](docs/adr/0020-approval-suspension-and-execution-scope.md)
-10. [ADR-0030](docs/adr/0030-aihi-multi-package-boundary.md)
-11. [ADR-0031](docs/adr/0031-resume-authority-and-delegated-sandbox-hardening.md)
-12. [ADR-0032](docs/adr/0032-tool-spec-ownership.md)
+> Before changing code, read [ARCHITECTURE.md](docs/ARCHITECTURE.md) and [TASK.md](docs/TASK.md).
+> The Chinese versions are [ARCHITECTURE.zh-CN.md](docs/ARCHITECTURE.zh-CN.md) and
+> [TASK.zh-CN.md](docs/TASK.zh-CN.md). ADR/RFC files under docs/adr/ and docs/rfcs/ are local-only
+> working notes and are intentionally ignored by Git.
 
-## 项目目标
+## Contents
 
-AIHI 是可复用的 Agent 基础设施，不是某一个具体 Agent 产品。目标发布为两个基础包：
-`aihi-models` 提供模型契约与 Provider，`aihi-agent` 依赖前者并提供完整 Agent Runtime。它们负责
-会话、上下文、模型适配、工具执行、策略、安全、记忆、Skill、Subagent、评估和可观测性；模型
-不是系统事实源，事件日志才是。Coding、Cowork（多人/多角色协作）或其他形态的 Agent 在应用层
-组合这些能力。本仓库当前不建设应用层，`aihi-code-agent` 必须等两个基础包完成后再单独确认。
+- [Project map](#project-map)
+- [Choose the right layer](#choose-the-right-layer)
+- [Development setup](#development-setup)
+- [Validation commands](#validation-commands)
+- [Change workflow](#change-workflow)
+- [Runtime invariants](#runtime-invariants)
+- [Security and sandbox rules](#security-and-sandbox-rules)
+- [Package-specific rules](#package-specific-rules)
+- [Compatibility and persistence](#compatibility-and-persistence)
+- [Documentation and review checklist](#documentation-and-review-checklist)
 
-## 目录边界
+## Project map
 
 ```text
-packages/aihi/models/
-  pyproject.toml
-  src/aihi/models/    # Model contracts, codecs, Provider Protocol/adapters
-  tests/
-packages/aihi/agent/
-  pyproject.toml
-  src/aihi/agent/
-    _core/            # Private Agent events, IDs, errors, schema/migrations
-    runtime/          # Agent state machine and run coordinator
-    sessions/ context/ tools/ policy/ hooks/ sandbox/
-    plugins/ mcp/ memory/ skills/ agents/ artifacts/
-    observability/ evals/
-  tests/
-tests/
-  integration/        # Installed-wheel integration
-  packaging/          # PEP 420, wheel and py.typed checks
-  fixtures/           # Frozen compatibility corpus
+packages/aihi/models/        aihi-models: model contracts and Provider adapters
+packages/aihi/agent/         aihi-agent: recoverable Agent Runtime
+packages/aihi/code-agent/    aihi-code-agent: Coding application runtime and Worker
+packages/aihi/code-protocol/ @aihi/code-protocol: RPC DTOs and JSON Schemas
+apps/aihi-code-cli/          @aihi/code-cli: private TypeScript/Ink TUI
+tests/                       cross-package contract, integration, packaging and fixtures
+docs/                         stable architecture and roadmap; ADR/RFC drafts remain local
 ```
 
-依赖方向必须单向：`aihi.models ← aihi.agent ← application`，应用也可以直接组合
-`aihi.models`。`aihi.models` 不得 import `aihi.agent`；两个基础包不得反向 import 任意应用。
-`aihi.agent` 内部通过 Protocol 使用 Provider、Store、Tool、Policy、Hook 和 Sandbox。
-应用之间也不得互相 import。应用负责 Prompt、模型/Provider 组合、Agent 角色、工具集合、配置和
-交互体验；基础包负责可复用实现和公共契约。`aihi.agent.agents` 是 Subagent TaskGraph/协调
-基础设施，不代表面向用户的 Agent 产品。
+Dependency direction is one-way:
 
-跨包和应用层只能使用 `aihi.models.__all__`、`aihi.agent.__all__`（叶子顶层 `__all__` 是唯一受
-支持的组合面，内部子模块路径不承诺兼容），不复制基础实现，
-也不得把产品专属 Prompt、项目规则、凭据、终端 UI 或产品默认 Policy 写回核心包。若应用
-开发发现 Provider-neutral、可复用的 Harness 缺口，先在 [docs/TASK.md](docs/TASK.md) 的 H-* Backlog
-登记，再补契约、测试和实现；仅服务于单个 Agent 的逻辑留在对应应用目录。
+```text
+aihi-models -> aihi-agent -> application runtime -> UI
+                           aihi-code-agent     @aihi/code-cli
+```
 
-## 不可破坏的不变式
+aihi.models must not import aihi.agent; base packages must not import applications; applications must
+not copy runtime or safety implementations. aihi.agent.agents is subagent coordination infrastructure,
+not the directory for a user-facing Agent product.
 
-- Assistant Tool Call 必须在工具执行前持久化。
-- 每个 Tool Call 必须有唯一 Tool Result，包括拒绝、取消和恢复结果；等待 Approval 的调用
-  例外，它保持未配对直到 Resume 执行或拒绝它。
-- Policy 返回 `ASK` 时必须挂起 Run（`WAITING_APPROVAL` + `run.suspended`），不得伪造
-  Tool Result 让模型继续；默认（无 Resolver）行为是挂起，不是自动批准或拒绝。
-- 执行进程是独立于 `mutates` 的授权轴：`accept_edits` 只覆盖工作区编辑，
-  声明 `process.exec` 的工具必须有显式 Approval。放行事件的 `rule_id` 必须如实反映依据。
-- 原始 Event 永不被压缩覆盖；Compaction 只生成新的 Context View。
-- 所有副作用必须经过 `tools → policy → hooks → sandbox` 链路。
-- Provider Fallback 不得盲目重放可能已经产生副作用的工具。
-- Resume 必须沿用首次 `run.started` 固化的模型、Provider、Sandbox、工作区、权限、Prompt 摘要和
-  输出预算；调用方不得在恢复时弱化或漂移配置（ADR-0031）。
-- Provider 产生首个 Stream Chunk 后不得自动 retry 或切换；未来应用 Gateway 只能作为普通
-  `Provider` decorator，不能控制 Run 恢复或 Tool 重放。
-- 子代理的权限、预算和工作区只能是父 Run 的子集；派生必须经过工具链路，子 Run 在独立
-  Session 中执行，权限模式取父子中更严格者；WorkspaceScope 必须落实为收窄后的 Sandbox，
-  不能可靠收窄的进程执行 fail closed（ADR-0023、ADR-0031）。
-- 事件、错误、模型消息和工具结果必须可 JSON 序列化和恢复。
+The three Python distributions are published at version 0.1.0:
 
-## Host 沙箱基线
+- [aihi-models on PyPI](https://pypi.org/project/aihi-models/0.1.0/)
+- [aihi-agent on PyPI](https://pypi.org/project/aihi-agent/0.1.0/)
+- [aihi-code-agent on PyPI](https://pypi.org/project/aihi-code-agent/0.1.0/)
 
-`HostBackend` 是本地首选，但 Host 不是安全隔离边界。
+## Choose the right layer
 
-- 必须显式声明 `unsafe=true`；没有显式声明时拒绝构造和执行。
-- `run.started`、`tool.started` 必须记录 `sandbox=host` 和 `unsafe=true`。
-- 仍需执行 workspace canonical path、symlink escape、超时、输出上限和进程组清理。
-- 不得声称 Host 提供文件或网络隔离。
-- Docker 是可选后端；`require_isolation=true` 的策略必须拒绝 Host。
+| Change | Put it in | Do not put it in |
+| --- | --- | --- |
+| Message, model request/response, stream chunk, Provider error or adapter | packages/aihi/models | aihi-agent or an application |
+| Runtime, Session, EventStore, Context, ToolSpec, Policy, Sandbox, Skill, MCP, Memory, Subagent, Eval or Observability contract | packages/aihi/agent | Coding prompts, UI or product defaults |
+| Coding prompt, workspace rules, Provider/Model catalog, permission-mode defaults, Coding tools or Worker composition | packages/aihi/code-agent | The two base packages |
+| RPC method, DTO, event guard or JSON Schema shared by Worker and clients | packages/aihi/code-protocol | Runtime state or persistence |
+| Slash command, picker, transcript viewport, composer or terminal presentation | apps/aihi-code-cli | Worker business truth or EventStore writes |
+| Product-specific behavior | The relevant application | A reusable base package |
 
-## Runtime 实现规则
+When a gap may be reusable across products, record an H-* item in [TASK.md](docs/TASK.md) before
+moving it into a base package. Product-specific prompts, roles, tool bundles, credentials and UX stay
+in the application layer. Base packages expose only their top-level public APIs; do not import private
+modules across package boundaries.
 
-Runtime 是显式状态机，不把状态藏在不可恢复的局部变量中。每个重要状态变化都产生事件。
-流式 Token Delta 必须是 `ephemeral=True` 并经 `Session.emit` 发布，不写入 Store；
-`Session.append` 拒绝 ephemeral 事件，`emit` 拒绝持久事件。无副作用的相邻事件可以用
-`append_many` 合并成一个事务，但跨越工具执行边界的事件必须各自立即落盘（ADR-0021）。
+## Development setup
 
-取消任务时必须：
+Requirements:
 
-1. 收尾并取消在飞工具任务；
-2. 为未完成 Tool Call 合成错误 Tool Result；
-3. 持久化 `run.interrupted` 并置为 `INTERRUPTED`（可恢复）；显式放弃走 `abandon()`，
-   写 `run.cancelled` 并置为 `CANCELLED`（不可恢复，ADR-0024）；
-4. 保证下一次 Resume 不会留下孤儿 Tool Call。
+- Python 3.11+
+- [uv](https://docs.astral.sh/uv/)
+- Node.js 20+
+- pnpm 9
 
-## Provider、Tool 和 Plugin 规则
+Install the workspace:
 
-- `aihi.models` 只拥有模型 canonical 类型，厂商字段只能存在于 Adapter 内或 opaque payload 中；
-  Event、Policy、Sandbox 和 Agent Tool 执行元数据不得进入模型包。
-- `aihi.models.ModelToolDefinition` 只包含名称、描述和输入 Schema；`aihi.agent.tools.ToolSpec` 另外声明
-  是否修改外部状态、并发安全、能力需求、超时和幂等策略，并向模型显式投影定义。
-- Tool 输入先校验和规范化，再进行 Policy 决策。
-- 命令内容的敏感路径检查是启发式，不是安全边界；命令类工具的边界是逐次审批加沙箱（ADR-0028）。
-- 只读且并发安全的工具调用可以并行；有副作用的工具必须单独执行，Tool Result 始终按调用顺序提交。
-- Plugin 必须通过 Manifest 和版本化 Plugin Host；不得直接 import 第三方代码进主进程。
-- 项目级 Plugin 默认不信任；Skill 只向上下文注入索引，正文按需加载，不得无条件塞入系统上下文。
-- 可选能力通过 `RuntimeExtensions` 注入，不再往 `RunCoordinator` 构造函数加参数；
-  `ContextContributor` 失败 fail closed，`RunRecorder` 失败 fail open（ADR-0022）。
-- Hook 不能绕过 Policy、Approval 或 Sandbox；Hook 自身也受同样治理。
+```bash
+uv sync
+pnpm install
+```
 
-## 存储、上下文和记忆
+For normal use, install the published Coding Agent:
 
-- 使用 SQLite WAL；任何其他后端遵循同一个 `EventStore` Protocol。
-- `expected_seq` 是并发写入的必要条件，不能静默覆盖别的 Run 的事件。
-- 大型工具输出写入 Artifact Store，上下文只保留预览和引用。
-- 压缩至少保留目标、约束、决策、文件变化、验证结果、未解决事项和下一步。
-- 长期 Memory 必须带作用域、来源、置信度和可删除能力；禁止持久化 Secret。
+```bash
+python -m pip install aihi-code-agent==0.1.0
+```
 
-## 开发流程
+For repository development, use editable installs only when you need to test source changes:
 
-按 [TASK.md](docs/TASK.md) 的 AIHI 多包迁移阶段推进。每个任务先补契约和测试，再写实现；不要
-为了提前扩展而创建未接入 Runtime 的空抽象。
+```bash
+uv pip install -e packages/aihi/models
+uv pip install -e packages/aihi/agent
+uv pip install -e packages/aihi/code-agent
+```
 
-开发具体 Agent 产品时，先复用两个基础包完成应用组合；只有跨 Agent 可复用的缺口才修改
-`packages/aihi/models` 或 `packages/aihi/agent`。应用代码和基础包改动必须分别补对应目录的测试；
-公共契约或
-安全默认值变化时同步更新 ARCHITECTURE、TASK 和必要的 RFC/ADR。ARCHITECTURE 只写稳定契约，
-里程碑进度写进 TASK，单次取舍写进 ADR；不要把「当前 Mx 提供…」写进架构文档。
+The root pyproject.toml configures test paths, namespace source paths, Ruff and strict mypy.
+Do not add dependencies to a package merely to simplify a local test; update the package manifest and
+the packaging/integration tests together.
 
-完成改动前至少运行：
+## Validation commands
+
+Run the smallest relevant check first, then the full suite before handoff.
+
+### Python
 
 ```bash
 python3 -m compileall -q packages
 python3 -m pytest
+ruff check .
+mypy
 ```
 
-若环境已安装开发依赖，再运行 `ruff check .` 和 `mypy`（`mypy --strict` 当前为零错误，
-新增代码必须保持零错误）。新增 Provider、Store、Sandbox、
-Tool 或 Plugin Host 必须补对应的 contract test；涉及安全行为必须补
-`packages/aihi/agent/tests/security/`。
+Useful focused commands:
 
-## 变更与安全
+```bash
+python3 -m pytest packages/aihi/models/tests
+python3 -m pytest packages/aihi/agent/tests
+python3 -m pytest packages/aihi/code-agent/tests
+python3 -m pytest packages/aihi/agent/tests/security
+```
 
-- 不覆盖或回滚用户已有修改。
-- 破坏事件 Schema、公共 Protocol 或安全默认值时，必须新增或更新 RFC/ADR。
-- 新增 durable 事件类型必须同时登记进 Agent schema 的 `DURABLE_EVENT_TYPES` 并补进
-  `tests/fixtures/session_schema_v1.json` 冻结语料，否则兼容性测试失败。
-- 改变既有事件字段含义必须升 `EVENT_SCHEMA_VERSION` 并注册对应迁移。
-- 修改 `aihi.models` 的 Message JSON 必须同步更新版本化 codec，并通过 Message → Event Store →
-  Session reload → Replay 的跨 distribution 冻结语料；旧 fixture 不得重新生成来适配实现。
-- 不提交 API Key、Token、凭据、完整环境变量或未经脱敏的模型/工具输出。
-- 删除文件前确认其不再被 README、代码或文档引用；本项目只使用正式的
-  `docs/TASK.md` 任务文档。
+### TypeScript and CLI
+
+```bash
+pnpm --dir apps/aihi-code-cli typecheck
+pnpm --dir apps/aihi-code-cli test
+pnpm --dir packages/aihi/code-protocol typecheck
+```
+
+### Packaging
+
+Build all Python distributions:
+
+```bash
+mkdir -p dist/pypi
+python3 -m build --sdist --wheel --no-isolation --outdir dist/pypi packages/aihi/models
+python3 -m build --sdist --wheel --no-isolation --outdir dist/pypi packages/aihi/agent
+python3 -m build --sdist --wheel --no-isolation --outdir dist/pypi packages/aihi/code-agent
+python3 -m twine check dist/pypi/*
+```
+
+Packaging tests must verify wheel layout, PEP 420 namespace coexistence, py.typed, dependency metadata,
+installed-wheel smoke behavior and frozen compatibility fixtures. Never regenerate a frozen fixture merely
+to make a changed implementation pass.
+
+## Change workflow
+
+1. **Scope the change.** Identify the owning package, public API and current H-*/P-* task.
+2. **Read the contract.** Check the relevant architecture section, package README and existing tests.
+3. **Write the test first.** Add a unit, contract, security, integration, packaging or UI regression test.
+4. **Implement through injection points.** Keep product choices in applications and side effects in the governed tool path.
+5. **Run focused checks.** Include an installed-wheel check when distribution metadata or package layout changes.
+6. **Update documentation.** Keep English and Chinese README/architecture/task documents in sync.
+7. **Review the diff.** Remove generated files, credentials, local logs and unrelated formatting changes.
+8. **Commit one reviewable slice.** Keep unrelated cleanup out of the same commit and report the validation run.
+
+### Public API changes
+
+aihi.models.__all__ and aihi.agent.__all__ are the supported cross-distribution composition surfaces.
+If a public symbol changes, update its contract tests and package README. If event schema, protocol or
+security defaults change, update the stable architecture/task docs and record the decision in local
+ADR/RFC notes for review.
+
+### Dependency changes
+
+Keep the dependency graph acyclic. A new runtime dependency must be justified in the package manifest,
+lock/workspace metadata, packaging tests and the relevant README. Optional integrations should be
+injected through Protocols rather than imported by the core loop.
+
+## Runtime invariants
+
+These rules are not implementation preferences; tests and code review must preserve them.
+
+- Persist an Assistant Tool Call before executing the tool.
+- Every executed Tool Call has exactly one durable Tool Result. A pending approval remains unpaired only
+  until Resume executes it or a matching denial records its result.
+- A Policy result of ASK appends approval.requested and suspends the Run in WAITING_APPROVAL; never fabricate
+  a result to continue.
+- The event log is the source of truth. Ephemeral model chunks are for observers/UI and do not replace
+  durable messages or results.
+- Resume reuses the first run.started Provider, Model, Workspace, Sandbox, permission mode, prompt summary
+  and output budget; it cannot weaken or drift authority.
+- INTERRUPTED is resumable; CANCELLED is explicit abandonment and is not resumable.
+- A Session has one writer and monotonic seq; appends use expected_seq for conflict detection.
+- Provider fallback must never blindly replay a possibly side-effecting Tool.
+- After the first Provider stream chunk, do not automatically retry or switch Provider.
+- Events, errors, messages and tool results must be JSON serializable and reloadable.
+- Child Agents run in independent Sessions with stricter subsets of parent permissions, budget and workspace.
+
+## Security and sandbox rules
+
+### Tool execution
+
+All side effects follow:
+
+```text
+Tool input -> validation -> policy/approval -> hooks -> sandbox -> durable Tool Result
+```
+
+- ToolSpec owns execution governance; ModelToolDefinition contains only model-visible fields.
+- Validate and normalize tool input before Policy evaluation.
+- Read-only and concurrency-safe tools may run in parallel; mutating or non-safe tools run serially,
+  with results committed in call order.
+- process.exec tools require explicit Approval. accept_edits does not authorize process execution.
+- Sensitive-path checks in command text are heuristics, not a security boundary.
+- Hooks and remote MCP/Plugin tools cannot bypass Policy, Approval or Sandbox.
+
+### Host and isolation
+
+HostBackend is a controlled local backend, not a security isolation boundary:
+
+- Construction and execution require explicit unsafe=true.
+- run.started and tool.started record sandbox=host and unsafe=true.
+- Enforce workspace canonicalization, symlink escape checks, timeouts, output limits and process-group cleanup.
+- Do not claim Host provides filesystem or network isolation.
+- Local-isolated and Docker backends must fail closed when required capabilities are unavailable.
+- require_isolation=true must reject Host.
+
+## Package-specific rules
+
+### aihi-models
+
+- Own model canonical types, Message codec, Provider Protocol, adapters and model-facing errors.
+- Keep Agent Event, Policy, Sandbox and execution metadata out of the package.
+- DeepSeek uses the OpenAI-compatible implementation with an explicit endpoint.
+- Credentials and model catalogs are application-owned; adapters must not silently read environment variables.
+- Provider constructors and contract tests must preserve timeout, retryability and first-chunk semantics.
+
+### aihi-agent
+
+- Keep RuntimeBuilder explicit: Provider, Model, Sandbox and Tools are application choices.
+- Do not add a default_runtime() that silently selects Provider or tools.
+- Keep optional abilities behind RuntimeExtensions, ContextContributor and RunRecorder.
+- Use SQLite WAL by default; large outputs belong in Artifact Store, not prompt history.
+- Context contributors fail closed; telemetry/recording failures remain observational and fail open.
+
+### aihi-code-agent
+
+- Own TOML config discovery, Coding prompts, Provider/Model catalogs, permission mode, Worker composition,
+  Coding tools, Skill/MCP/subagent wiring and local audit.
+- User config is ~/.aihi/aihi-code.toml; project config is <workspace>/.aihi/aihi-code.toml.
+  Do not introduce a config-directory CLI override.
+- Worker is the sole EventStore writer and communicates using Code Protocol 0.2.
+- Built-in Skills are trusted by package integrity; other scopes require explicit trust and hash validation.
+- Keep ModelRouter/ModelGateway and cross-provider fallback out of the base packages.
+
+### @aihi/code-protocol and @aihi/code-cli
+
+- Keep the protocol language-neutral, versioned and JSON serializable.
+- run.start/run.resume return immediate acceptance; progress and terminal state arrive as notifications.
+- Reconnect by replaying session.events(after_seq) before relying on live notifications.
+- The CLI owns projection, viewport, composer and picker state; the Worker owns runtime truth and writes.
+- Do not persist drafts, viewport state or arbitrary tool input in the EventStore.
+
+## Compatibility and persistence
+
+- New durable Event types must be registered in the Agent schema and covered by frozen compatibility data.
+- Removing or changing the meaning of an existing Event field requires a schema version and migration.
+- Message JSON changes require a versioned codec and Message -> EventStore -> Session reload -> Replay coverage.
+- Old JSON, SQLite and Trace fixtures are compatibility contracts; do not rewrite them to fit new code.
+- A Session fork creates a normal independent Session with a copied prefix; the parent remains immutable.
+- Compaction, Memory, Snapshots, Trace and Eval are derived data and must not overwrite original Events.
+- audit.jsonl is a redacted, best-effort operational log, never the runtime source of truth.
+- Do not commit API keys, tokens, credentials, complete environment dumps, unredacted model/tool output,
+  local .aihi state or generated build artifacts.
+
+## Documentation and review checklist
+
+Before opening or handing off a change, confirm:
+
+- [ ] The owning package and dependency direction are correct.
+- [ ] Public API, event/protocol schema and security impact are identified.
+- [ ] Focused tests and the full relevant quality gates pass.
+- [ ] Installed-wheel checks were run for packaging/layout changes.
+- [ ] English and Chinese documentation are synchronized.
+- [ ] No secrets, generated artifacts, local ADR/RFC files or unrelated edits are included.
+- [ ] Commit message clearly describes one reviewable change.
+
+For a new reusable capability, update [TASK.md](docs/TASK.md), [TASK.zh-CN.md](docs/TASK.zh-CN.md), the
+relevant package README and tests. Keep stable contracts in the architecture documents; keep local
+decision rationale in ignored ADR/RFC files.
+
+## License and conduct
+
+Follow the repository license and communicate respectfully in code review. Prefer evidence from tests,
+contracts and reproducible commands over assumptions.
