@@ -55,7 +55,7 @@ packages/aihi/code-agent    Coding-agent composition and stdio Worker
 packages/aihi/code-protocol TypeScript protocol types and JSON Schemas
 apps/aihi-code-cli          Private TypeScript/Ink terminal application
 tests                       Contract, integration, packaging, and fixture tests
-docs                        Architecture, ADRs, and project task notes
+docs                        Architecture and project task notes (ADR/RFC drafts are local-only)
 ```
 
 ## Quick start
@@ -133,7 +133,7 @@ The host sandbox is not an isolation boundary and requires an explicit unsafe ac
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Project tasks](docs/TASK.md)
-- [Architecture decision records](docs/adr/)
+- ADR/RFC drafts are kept locally in `docs/adr/` and `docs/rfcs/` and are intentionally excluded from Git.
 
 ## Status
 

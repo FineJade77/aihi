@@ -19,3 +19,7 @@ build/
 
 # Superpowers working documents: local process artefacts, not project docs.
 /docs/superpowers/
+
+# Architecture decision records and RFC drafts are local working notes.
+/docs/adr/
+/docs/rfcs/
