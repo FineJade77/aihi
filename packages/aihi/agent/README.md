@@ -1,5 +1,7 @@
 # aihi-agent
 
+[English] | [简体中文](README.zh-CN.md)
+
 Provider-neutral, recoverable agent runtime for AIHI.
 
 `aihi-agent` turns model contracts into a durable execution system. It provides the loop, sessions, tools, policy, approvals, sandbox boundary, context management, integrations, and observability that an application can compose for a specific product.

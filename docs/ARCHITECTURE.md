@@ -1,5 +1,7 @@
 # AIHI Architecture
 
+[English] | [简体中文](ARCHITECTURE.zh-CN.md)
+
 > Stable architecture and public-boundary guide for the AIHI monorepo.
 
 | Field | Value |

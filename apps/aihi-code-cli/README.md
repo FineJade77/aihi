@@ -1,5 +1,7 @@
 # @aihi/code-cli
 
+[English] | [简体中文](README.zh-CN.md)
+
 Local TypeScript/Ink terminal UI for the AIHI coding-agent Worker.
 
 The CLI launches the Python `aihi-code-agent` Worker, performs the protocol `0.2` handshake, renders durable and live events, and provides the interactive controls expected from a small coding-agent CLI. It is a private workspace app rather than a published npm library.

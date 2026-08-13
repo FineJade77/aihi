@@ -1,0 +1,129 @@
+# AIHI 任务路线图
+
+[English](TASK.md) | **简体中文**
+
+> AIHI monorepo 的交付计划。每项任务都包含状态、范围和验收证据。
+
+| 字段 | 内容 |
+| --- | --- |
+| 状态 | 基础能力完成；应用和平台路线图持续推进 |
+| 当前版本线 | Python 包 `0.1.x`；Code Protocol `0.2` |
+| 架构 | [ARCHITECTURE.md](ARCHITECTURE.md) |
+| 最近完成 | 多 Provider / 多 Model catalog 与选择体验 |
+
+`docs/adr/` 与 `docs/rfcs/` 下的 ADR/RFC 是本地工作文件，已加入 `.gitignore`，稳定决策必须同步
+到架构文档、项目 README、代码契约和测试中。
+
+## 如何阅读
+
+| 状态 | 含义 |
+| --- | --- |
+| Done | 已实现、已记录并通过相关测试 |
+| In progress | 当前交付阶段，保持范围收敛 |
+| Planned | 已接受方向，但尚未承诺实现 |
+| Deferred | 合理需求，等待消费者或前置条件 |
+
+`M-*` 表示基础里程碑，`H-*` 表示可复用 Harness 工作，`P-*` 表示应用/平台工作。新增任务必须
+使用这些前缀，并在编码前写清验收条件。
+
+## 已交付基线
+
+仓库已成为多包 monorepo，并具备可运行的本地 Coding Agent 纵向链路。
+
+| 区域 | 已交付能力 | 状态 |
+| --- | --- | --- |
+| `aihi-models` | Provider-neutral 消息、codec、能力、Token 估算及 Fake/OpenAI/Anthropic/OpenAI-compatible/DeepSeek Adapter | Done |
+| `aihi-agent` | 可恢复 Loop、默认 turn budget、EventStore、Replay、Context/Compaction、Tool、Policy、Approval、Sandbox、Artifact、Skill、MCP、Plugin、Memory、Subagent、Eval | Done |
+| `aihi-code-agent` | Coding 配置、用户/项目 `.aihi` 配置发现、Provider/Model catalog、Worker、Session/Run/Task API、Coding Tool 和 TUI 组合 | Done |
+| `@aihi/code-protocol` | Code Protocol 0.2 DTO、method map、guard 和 Schema | Done |
+| `@aihi/code-cli` | Ink TUI、Transcript Replay、滚动/输入体验、Session/Model picker、Slash 命令、Approval、Skill/MCP/Tool 管理和 Doctor | Done |
+| 打包 | 独立 wheels、PEP 420 namespace、installed-wheel 兼容性和冻结 fixture Replay | Done |
+| 运维 | 脱敏本地 `audit.jsonl`、Doctor 审计检查、Session 恢复和 Replay 诊断 | Done |
+
+M0–M7 和 H-01–H-17 基础建设已完成，建立了多包边界、事件 Schema 兼容性、安全不变式、上下文预算、
+可选能力和 Replay/Eval 面。历史编号保留用于 changelog 和 fixture 追溯，新工作使用下方路线图。
+
+## 当前路线图
+
+### P-01：Coding CLI 纵向链路
+
+**状态：Done。** 本地 Worker/TUI 已支持配置 Provider、选择 Model、创建/恢复 Session、流式 Run、
+持久化 Event、Approval、取消/恢复和 Doctor 诊断。
+
+| 切片 | 范围 | 验收 |
+| --- | --- | --- |
+| P-01.1 | Code Protocol 0.2、非阻塞 Run acceptance、Error/Approval DTO | 版本 handshake、Runtime guard 和协议测试通过 |
+| P-01.2 | 事件驱动 Transcript | Replay 与实时通知使用同一 reducer；序号缺口触发 Replay |
+| P-01.3 | Transcript viewport 与 Composer | 终端感知滚动/跟随、Tool 折叠、多行输入和 Slash 补全 |
+| P-01.4 | Session 与 Model UX | Session/Provider/Model picker、`/status`、`/doctor`、取消/恢复 |
+| P-01.5 | Provider/Model catalog | 多 Provider profile、每个 Provider 多 Model、`/providers`、`/models`、TUI 展示与校验 |
+| P-01.6 | 本地可运维性 | 脱敏 `audit.jsonl`、Doctor 审计检查、wheel 隔离验证和回归测试 |
+
+### H-03–H-06：平台 Adapter
+
+**状态：Planned。** 等真实远程消费者出现后再做，只能基于既有协议新增 Adapter，不改变 Runtime 语义。
+
+| 编号 | 范围 | 前置条件 |
+| --- | --- | --- |
+| H-03 | PostgreSQL `EventStore` | 明确的多用户部署需求 |
+| H-04 | HTTP control plane、Worker lease、IPC 认证 | 服务边界与威胁模型 |
+| H-05 | 生产隔离 profile | 支持的部署目标和能力探测 |
+| H-06 | 远程 Telemetry/Exporter | Sink、脱敏策略和保留策略 |
+
+### P-02：Cowork 所需 Harness 缺口
+
+**状态：Planned。** 待具体 Cowork 工作流明确后重新评估。只有 Provider-neutral、可复用且不包含产品
+Prompt、Role 或 UI Policy 的能力才能进入 `aihi-agent`。
+
+### P-03：平台部署
+
+**状态：Deferred。** 依赖 H-03–H-06 和生产消费者；当前 Runtime 不包含 Service API、远程 Worker 或
+PostgreSQL 实现。
+
+### P-04 / P-05：Web 与 Desktop 客户端
+
+**状态：Deferred。** 协议已与客户端形态解耦，但需先在 TUI 中验证 Event/Replay/Approval 契约。
+
+### 已知后续事项
+
+- 生成嵌套父子委派兼容性语料并补充递归 Graph Replay。
+- 在项目示例中完善 Provider 凭据和 Model catalog 配置说明。
+- 增加 Worker/TUI 长 Session 和重连 soak test。
+- 明确 Python wheels 与 Protocol package 的发布/版本策略。
+
+## Definition of Done
+
+任务完成必须满足：公共契约和归属明确；Event、Error、Retry、Cancel 和安全语义有测试；既有 Session、
+fixture 和 installed-wheel 消费者保持兼容或提供迁移；文档和示例符合实际代码；相关单元、集成、打包、
+UI 测试通过；变更以一个可审查提交完成，不混入无关清理。
+
+## 开发流程
+
+1. 先在本文写明包边界和验收条件。
+2. 先补契约/安全测试，再写实现。
+3. 通过公共注入点实现，禁止跨包导入私有模块。
+4. 同步更新相关 README 和 [ARCHITECTURE.md](ARCHITECTURE.md)。
+5. 先跑聚焦测试，再跑全量门禁。
+6. 检查 diff，排除生成文件、凭据、本地 fixture 和意外协议变更。
+
+## 质量门禁
+
+```bash
+python3 -m compileall -q packages
+python3 -m pytest
+ruff check .
+mypy
+pnpm --dir apps/aihi-code-cli test
+```
+
+打包改动必须独立构建 wheel、验证 PEP 420 和 `py.typed`，并回放冻结 Event/SQLite/Trace fixture；
+TUI 改动必须覆盖 reducer/replay 和命令/picker。
+
+## Backlog 规则
+
+1. 本文件是唯一任务清单，不在包内创建第二份路线图。
+2. 产品专属需求留在应用层，除非第二个产品证明其 Provider-neutral、可复用。
+3. 平台能力只能消费既有 `EventStore`、`TelemetrySink` 或 `SandboxBackend` 协议；需要改变 Runtime
+   语义时先评审边界。
+4. 不为便利放宽安全默认值：Host 仍需显式 unsafe，`ASK` 必须挂起，副作用保持统一工具链路。
+5. ADR/RFC 草稿仅本地保存；稳定决策应写入本文、代码契约和测试，而不是依赖未发布文件。

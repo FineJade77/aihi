@@ -1,5 +1,7 @@
 # AIHI
 
+[English] | [简体中文](README.zh-CN.md)
+
 AIHI is a small, provider-neutral foundation for building recoverable AI agents, plus a coding-agent runtime and a TypeScript terminal UI.
 
 The repository is a Python/TypeScript monorepo. The Python packages own model contracts and agent execution; the TypeScript packages own the wire contract and the local TUI.

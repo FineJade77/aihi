@@ -1,0 +1,220 @@
+# AIHI 架构
+
+[English](ARCHITECTURE.md) | **简体中文**
+
+> AIHI monorepo 的稳定架构、公共边界和安全不变式。
+
+| 字段 | 内容 |
+| --- | --- |
+| 状态 | 当前基线 |
+| 范围 | `aihi-models`、`aihi-agent`、`aihi-code-agent`、`@aihi/code-protocol`、`@aihi/code-cli` |
+| 运行时 | Python 3.11+；TypeScript/Ink CLI |
+| 协议 | Code Protocol 0.2 |
+| 事实源 | Runtime 使用事件日志；本文描述稳定边界 |
+
+本文说明契约、职责、依赖方向和安全不变式。交付进度见 [TASK.md](TASK.md)；`docs/adr/` 和
+`docs/rfcs/` 下的 ADR/RFC 仅作为本地工作记录，已被 Git 忽略，不会发布到 GitHub。
+
+## 目录
+
+- [产品边界](#产品边界)
+- [系统拓扑](#系统拓扑)
+- [仓库结构](#仓库结构)
+- [包职责](#包职责)
+- [Runtime 与事件模型](#runtime-与事件模型)
+- [模型与 Provider](#模型与-provider)
+- [工具与安全](#工具与安全)
+- [Skill、MCP 与扩展](#skillmcp-与扩展)
+- [Coding Worker 与 TUI 协议](#coding-worker-与-tui-协议)
+- [持久化与可观测性](#持久化与可观测性)
+- [扩展规则与质量门禁](#扩展规则与质量门禁)
+
+## 产品边界
+
+AIHI 是可复用的 Agent Harness。模型生成意图，Harness 将意图转换为持久化、可治理、可恢复的
+Run；具体应用负责 Prompt、项目规则、Provider/Model profile、产品工具和用户交互。
+
+```text
+aihi-models → aihi-agent → 应用层 Runtime → 用户界面
+                           (aihi-code-agent) (@aihi/code-cli)
+```
+
+首个产品是 Coding Agent，未来 Cowork 等产品应复用 Harness，而不是复制 Runtime。
+
+### 基础包负责
+
+- Provider-neutral 模型消息、能力、流式协议和 Adapter。
+- 可恢复 Session、事件溯源 Run、Replay、分支和审计。
+- 上下文编译、Token 预算、Compaction 和 Artifact 生命周期。
+- Tool 契约、Policy、Approval、Sandbox、Hook、Skill、MCP、Plugin 和 Subagent。
+- 本地 Coding Worker 以及消费 Worker 协议的 TypeScript TUI。
+
+### 基础包不负责
+
+- `ModelRouter`、`ModelGateway`、Model roles 和跨 Provider fallback。
+- 产品 Prompt、项目约定、默认模型及产品工具集。
+- TUI、Web/Desktop UI 和聊天渠道。
+- 把 `HostBackend` 描述成安全隔离沙箱。
+
+这些选择属于应用层或未来的 Adapter 层，基础包必须保持 Provider-neutral 且不依赖应用。
+
+## 系统拓扑
+
+```mermaid
+flowchart TB
+    UI["@aihi/code-cli\nTypeScript Ink TUI"]
+    WORKER["aihi-code-agent\nWorker + Coding Runtime"]
+    PROTOCOL["@aihi/code-protocol\nJSON-RPC 2.0 / Schema"]
+    AGENT["aihi-agent\nRuntime、Session、Tool、Policy、Sandbox"]
+    MODELS["aihi-models\n模型契约与 Provider Adapter"]
+    STORE["SQLite EventStore\nArtifact + audit.jsonl"]
+    PROVIDERS["配置的 Provider\nOpenAI / Anthropic / Compatible / DeepSeek"]
+    UI <-->|"stdio\nContent-Length"| PROTOCOL
+    PROTOCOL <--> WORKER
+    WORKER --> AGENT
+    AGENT --> MODELS
+    MODELS --> PROVIDERS
+    AGENT --> STORE
+    WORKER --> STORE
+```
+
+所有副作用都必须经过：
+
+```text
+Tool input → 校验 → Policy/Approval → Hook → Sandbox → 持久化 Tool Result
+```
+
+事件日志是事实源，模型响应和 TUI 内存都不是。
+
+## 仓库结构
+
+```text
+packages/aihi/models         aihi-models；模型契约与 Provider
+packages/aihi/agent          aihi-agent；Runtime、Session、Tool、安全链路
+packages/aihi/code-agent     aihi-code-agent；Coding Worker 与应用组合
+packages/aihi/code-protocol  @aihi/code-protocol；DTO 与 JSON Schema
+apps/aihi-code-cli           @aihi/code-cli；Ink TUI
+tests/                       契约、集成、打包和冻结 fixture
+docs/                        架构与任务文档
+```
+
+Python 包使用 PEP 420 的 `aihi` namespace；namespace 根没有 `__init__.py`，每个叶子包维护
+自己的 `__init__.py`、`__all__` 和 `py.typed`。
+
+## 包职责
+
+| 包 | 负责 | 不负责 |
+| --- | --- | --- |
+| `aihi-models` | Message、Model Request/Response、Usage、Capabilities、ModelToolDefinition、Provider Protocol、Adapter、codec | Agent Event、ToolSpec、Policy、Sandbox、Router/Gateway、模型选择、凭据 |
+| `aihi-agent` | Agent loop、Session/EventStore、Context/Compaction、ToolSpec、Dispatcher、Policy、Approval、Sandbox、Artifact、Skill、Memory、MCP、Plugin、Subagent、Eval、Observability | 产品 Prompt、Provider profile、TUI、应用默认值 |
+| `aihi-code-agent` | Coding 配置、Provider/Model catalog、Worker、RPC handler、Coding Tool 和应用组合 | 第二套 Runtime、Provider Adapter、UI |
+| `@aihi/code-protocol` | 版本化 RPC method、DTO、Event guard、JSON Schema | Runtime 状态、持久化、Tool 执行 |
+| `@aihi/code-cli` | Ink 展示、Slash 命令、Picker、Transcript 投影、输入状态和进程生命周期 | EventStore 写入、Policy 决策、模型调用、业务事实 |
+
+跨包只使用各包顶层公共 API，禁止通过私有模块绕过边界。
+
+## Runtime 与事件模型
+
+一次用户请求创建一个 `Run`，一个 `Session` 可包含多个 Run：
+
+```text
+CREATED → RUNNING → WAITING_TOOL → RUNNING
+                       │
+                       ▼
+                 WAITING_APPROVAL → WAITING_TOOL
+
+RUNNING → COMPLETED | FAILED | INTERRUPTED | CANCELLED
+```
+
+`WAITING_APPROVAL` 是可恢复的挂起态；`INTERRUPTED` 可 Resume；`CANCELLED` 表示主动放弃，不可恢复。
+
+### 稳定不变式
+
+1. 执行 Tool 前先持久化 Assistant Tool Call。
+2. 每个已执行 Tool Call 恰好产生一个持久化 Result；等待审批的调用保持 pending。
+3. Policy 和 Tool 结果立即落盘；流式 chunk 仅作为 UI ephemeral event。
+4. Resume 使用首次 `run.started` 固化的 Provider、Model、Workspace、Sandbox、permission mode、Prompt 摘要和 output budget。
+5. 取消或进程重启修复孤儿调用，但不盲目重放可能已产生副作用的 Tool。
+6. 一个 Session 只有一个 writer，`seq` 单调递增，追加使用 `expected_seq` 检测冲突。
+
+事件信封包含 `event_id`、`session_id`、`run_id`、`seq`、`type`、`schema_version`、`created_at` 和
+`data`。新增可选字段兼容；删除或改变含义必须迁移；未知信封版本必须 fail closed。
+
+## 模型与 Provider
+
+`aihi.models.Provider` 是 Agent Runtime 唯一需要的模型边界：
+
+```python
+capabilities(model)
+stream(ModelRequest)
+count_tokens(ModelRequest)
+```
+
+当前 Adapter 包括 Fake、OpenAI、Anthropic、OpenAI-compatible 和 DeepSeek。DeepSeek 复用
+OpenAI-compatible 实现，但必须使用明确 endpoint。
+
+多个 Provider 和 Model 属于应用层决策。`aihi-code-agent` 从配置加载 catalog、校验所选 Model 并
+提供 CLI 切换；CLI 不实现 Router 或 Fallback。首个 stream chunk 产生后不得静默重试或切换 Provider。
+
+## 工具与安全
+
+`aihi.models.ModelToolDefinition` 只包含模型可见的名称、描述和 JSON Schema；
+`aihi.agent.tools.ToolSpec` 额外声明 mutation、并发、幂等性、能力、超时和审批治理字段。
+
+| 类别 | 示例 | 默认行为 |
+| --- | --- | --- |
+| 只读 | `read_file`、`glob`、`grep` | 声明并发安全时可并行 |
+| 工作区修改 | `write_file`、`edit_file` | 受 `accept_edits` 或 Approval 控制 |
+| 进程执行 | `bash` | 始终需要显式 Approval，不使用 `shell=True` |
+
+Policy 输出 `ALLOW`、`DENY` 或 `ASK`。`ASK` 会持久化 `approval.requested` 并挂起 Run，由应用提供
+人工 Resolver。Approval 和 Capability Lease 按 `run_id` 作用域化，Resume 时从事件重建；一次性
+Approval 只能消费一次。`HostBackend` 需要显式 `unsafe=true`，只提供 workspace 约束、超时、输出
+上限和进程组清理，不提供系统隔离。
+
+## Skill、MCP 与扩展
+
+可选能力通过 `RuntimeExtensions` 接入：Skill 先发现元数据和 Hash，正文只有被显式请求才加载；
+内置 Skill 由包完整性隐式信任，用户/项目/Workspace Skill 必须精确 trust。MCP 和 Plugin Tool
+注册后经过统一 ToolRegistry、Policy、Hook、Sandbox 链路；Plugin 在独立受限 Host 进程中激活；
+Memory 作用域化且写入需要授权；Subagent 以受治理的 `task` Tool 在独立 Session 中运行。
+
+## Coding Worker 与 TUI 协议
+
+`aihi-code-agent` 是应用 Runtime 和 EventStore 唯一写入端；`@aihi/code-cli` 是薄客户端。两者通过
+Code Protocol 0.2 的 stdio 通讯：
+
+- JSON-RPC 2.0、`Content-Length` framing 和精确版本 handshake。
+- `run.start`/`run.resume` 立即返回包含 `run_id` 的 acceptance。
+- 进度和终态由版本化 notification 传递，启动前失败使用 `run.error`。
+- 重连先完整分页 `session.events(after_seq)`，再接收实时通知。
+- TUI 的 replay 和实时事件共用 reducer，按 `seq` 去重，以 canonical `assistant.message` 覆盖临时 `model.chunk`。
+
+TUI 只拥有 viewport、折叠 Tool 输出、Slash 补全和草稿历史等展示状态；用户消息及 Runtime Event
+由 Worker 持久化。
+
+## 持久化与可观测性
+
+默认使用 SQLite WAL；大型输出、Diff 和附件存入 Artifact Store，并带 Session/Run retention 和
+访问检查。Snapshot 与 Compaction 只是派生加速数据，不替代原始事件。`audit.jsonl` 是本地脱敏、
+尽力而为的运维日志，不能成为事实源；`/doctor` 检查审计目标及其父目录可写性。Trace、Replay 和
+Eval 只处理脱敏事件 Bundle，不重新执行 Tool 或 Provider。
+
+## 扩展规则与质量门禁
+
+新增能力时先判断是否 Provider-neutral 且可跨产品复用，再定义协议、事件和失败语义；产品默认值
+和 UX 留在应用层；所有副作用保持 `tool → policy → hooks → sandbox` 链路；公共符号必须先有兼容性、
+安全性和 installed-package 测试。
+
+```bash
+python3 -m compileall -q packages
+python3 -m pytest
+ruff check .
+mypy
+pnpm --dir apps/aihi-code-cli test
+```
+
+打包测试还必须独立构建和安装 wheels，验证 PEP 420、`py.typed` 及冻结 Event/SQLite/Trace fixture
+可回放且不被重新生成。
+
+参见 [任务路线图](TASK.zh-CN.md) 和各包中文 README。

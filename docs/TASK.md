@@ -1,5 +1,7 @@
 # AIHI Roadmap
 
+[English] | [简体中文](TASK.zh-CN.md)
+
 > Delivery plan for the AIHI monorepo. This is a living project board: every item has a status, scope
 > and acceptance evidence.
 

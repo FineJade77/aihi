@@ -1,5 +1,7 @@
 # aihi-code-agent
 
+[English] | [简体中文](README.zh-CN.md)
+
 UI-free coding-agent runtime and stdio Worker for AIHI.
 
 `aihi-code-agent` is the application layer that composes `aihi-models` and `aihi-agent` into a coding workflow. It owns configuration, coding prompts, workspace tools, Skills/MCP integration, subagents, audit wiring, and the Worker entrypoint. The TypeScript TUI is a separate package.

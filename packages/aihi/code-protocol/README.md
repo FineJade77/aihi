@@ -1,5 +1,7 @@
 # @aihi/code-protocol
 
+[English] | [简体中文](README.zh-CN.md)
+
 Versioned TypeScript DTOs and JSON Schemas for the AIHI coding-agent Worker boundary.
 
 This private workspace package is the language-neutral contract between the Python `aihi-code-agent` Worker and the TypeScript `@aihi/code-cli` client. It defines data and compatibility rules; it does not start a Worker, execute tools, or contain business policy.

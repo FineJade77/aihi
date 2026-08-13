@@ -1,5 +1,7 @@
 # aihi-models
 
+[English] | [简体中文](README.zh-CN.md)
+
 Provider-neutral model contracts and provider adapters for AIHI.
 
 `aihi-models` is the lowest Python layer in the repository. It normalizes messages, streamed output, tool definitions, usage, provider failures, and wire serialization so the agent runtime does not depend on one vendor SDK.
