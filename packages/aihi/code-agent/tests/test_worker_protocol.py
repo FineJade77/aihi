@@ -200,10 +200,10 @@ def test_config_get_exposes_profiles_without_credentials(tmp_path) -> None:
     config_path.write_text(
         """[provider]
 name = "fake"
-model = "demo"
+models = ["demo", "fast-demo"]
 
 [providers.openai]
-model = "gpt-4o"
+models = ["gpt-4o", "gpt-4.1"]
 api_key_env = "OPENAI_API_KEY"
 
 [agent]
@@ -235,8 +235,13 @@ allowed_tools = ["search"]
     assert response is not None
     descriptor = response["result"]["config"]  # type: ignore[index]
     assert descriptor["provider"]["name"] == "fake"
+    assert descriptor["provider"]["models"] == ["demo", "fast-demo"]
     assert descriptor["permission_mode"] == "plan"
     assert {item["name"] for item in descriptor["providers"]} == {"fake", "openai"}
+    openai_descriptor = next(
+        item for item in descriptor["providers"] if item["name"] == "openai"
+    )
+    assert openai_descriptor["models"] == ["gpt-4o", "gpt-4.1"]
     assert descriptor["providers"][1]["api_key_env"] == "OPENAI_API_KEY"
     assert descriptor["source_paths"] == [str(config_path.resolve())]
     assert descriptor["audit"]["enabled"] is True

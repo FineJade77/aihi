@@ -54,23 +54,25 @@ export function providerPickerOptions(providers: readonly ProviderDescriptor[]):
     key: provider.name,
     value: provider.name,
     label: provider.name,
-    detail: provider.model + (provider.base_url ? ` · ${provider.base_url}` : ""),
-    searchText: `${provider.name} ${provider.model} ${provider.base_url ?? ""}`,
+    detail: `${provider.models?.length ?? 1} model${(provider.models?.length ?? 1) === 1 ? "" : "s"} · ${provider.model}${provider.base_url ? ` · ${provider.base_url}` : ""}`,
+    searchText: `${provider.name} ${(provider.models ?? [provider.model]).join(" ")} ${provider.base_url ?? ""}`,
     provider: provider.name,
     model: provider.model,
   }));
 }
 
 export function modelPickerOptions(providers: readonly ProviderDescriptor[]): PickerOption[] {
-  return providers.map((provider) => ({
-    key: `${provider.name}/${provider.model}`,
-    value: provider.model,
-    label: provider.model,
-    detail: provider.name + (provider.base_url ? ` · ${provider.base_url}` : ""),
-    searchText: `${provider.model} ${provider.name} ${provider.base_url ?? ""}`,
-    provider: provider.name,
-    model: provider.model,
-  }));
+  return providers.flatMap((provider) =>
+    (provider.models ?? [provider.model]).map((model) => ({
+      key: `${provider.name}/${model}`,
+      value: model,
+      label: model,
+      detail: provider.name + (provider.base_url ? ` · ${provider.base_url}` : ""),
+      searchText: `${model} ${provider.name} ${provider.base_url ?? ""}`,
+      provider: provider.name,
+      model,
+    })),
+  );
 }
 
 export function filterPickerOptions(

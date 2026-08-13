@@ -7,6 +7,7 @@ The repository is a Python/TypeScript monorepo. The Python packages own model co
 ## Highlights
 
 - Provider-neutral model contracts with OpenAI, Anthropic, DeepSeek, OpenAI-compatible, and fake providers.
+- Application-layer configuration supports multiple provider profiles and a model catalog per provider.
 - Durable, event-sourced agent sessions with resumable runs, compaction, approvals, and bounded turn budgets.
 - Policy-aware coding tools, sandbox backends, Skills, MCP, subagents, artifacts, and redacted audit/telemetry logs.
 - A language-neutral JSON-RPC protocol shared by the Python Worker and TypeScript CLI.

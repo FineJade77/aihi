@@ -53,6 +53,8 @@ function showConfig(config: ConfigDescriptor) {
 
 The package exports its TypeScript entrypoint as `@aihi/code-protocol` and checked-in schemas under `@aihi/code-protocol/schema/*`.
 
+`ConfigDescriptor.providers` is the non-secret provider catalog. Each descriptor has an active/default `model` and an optional `models` array containing every model configured for that provider. Clients should present model choices as provider/model pairs and never assume that a model is valid for another provider.
+
 ## Repository layout
 
 ```text

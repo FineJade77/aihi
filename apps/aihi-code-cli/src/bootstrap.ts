@@ -41,6 +41,25 @@ export async function bootstrapSession(
 ): Promise<BootstrapResult> {
   const cwd = resolve(options.cwd);
   const config = await client.getConfig(cwd);
+  const requestedProvider = options.provider?.replace(/-/g, "_").toLowerCase();
+  const requestedProfile = requestedProvider === undefined
+    ? undefined
+    : config.providers.find((candidate) => candidate.name === requestedProvider);
+  if (requestedProvider !== undefined && requestedProfile === undefined) {
+    throw new Error(`Provider is not configured: ${requestedProvider}`);
+  }
+  if (
+    options.model !== undefined &&
+    requestedProfile !== undefined &&
+    requestedProfile.models !== undefined &&
+    requestedProfile.models.length > 0 &&
+    !requestedProfile.models.includes(options.model)
+  ) {
+    throw new Error(
+      `Model is not configured for provider ${requestedProvider}: ${options.model}. ` +
+        `Choose one of ${requestedProfile.models.join(", ")}`,
+    );
+  }
   let session: SessionDescriptor | undefined;
   let resumed = false;
 
@@ -64,14 +83,25 @@ export async function bootstrapSession(
   }
 
   const sessionProvider = metadataText(session, "provider") ?? config.provider.name;
-  const requestedProvider = options.provider?.replace(/-/g, "_").toLowerCase();
   const provider = requestedProvider ?? sessionProvider;
   const profile = config.providers.find((candidate) => candidate.name === provider);
   if (profile === undefined) {
     throw new Error(`Provider is not configured: ${provider}`);
   }
+  const requestedModel = options.model;
+  if (
+    requestedModel !== undefined &&
+    profile.models !== undefined &&
+    profile.models.length > 0 &&
+    !profile.models.includes(requestedModel)
+  ) {
+    throw new Error(
+      `Model is not configured for provider ${provider}: ${requestedModel}. ` +
+        `Choose one of ${profile.models.join(", ")}`,
+    );
+  }
   const model =
-    options.model ??
+    requestedModel ??
     (requestedProvider !== undefined ? profile.model : metadataText(session, "model")) ??
     profile.model;
 

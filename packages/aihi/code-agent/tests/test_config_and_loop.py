@@ -22,11 +22,11 @@ def test_config_loads_provider_sandbox_skill_and_mcp_paths(tmp_path, monkeypatch
         """
 [provider]
 name = "deepseek"
-model = "deepseek-chat"
+models = ["deepseek-chat", "deepseek-reasoner"]
 api_key_env = "DEEPSEEK_API_KEY"
 
 [providers.openai]
-model = "gpt-4o"
+models = ["gpt-4o", "gpt-4.1"]
 api_key_env = "OPENAI_API_KEY"
 
 [sandbox]
@@ -67,11 +67,14 @@ allowed_tools = ["search"]
 
     assert config.provider.name == "deepseek"
     assert config.provider.model == "deepseek-chat"
+    assert config.provider.available_models == ("deepseek-chat", "deepseek-reasoner")
     assert config.permission_mode is PermissionMode.ACCEPT_EDITS
     assert config.provider_profiles["openai"].api_key_env == "OPENAI_API_KEY"
     selected = config.select_provider("openai", model="gpt-4.1")
     assert selected.provider.name == "openai"
     assert selected.provider.model == "gpt-4.1"
+    with pytest.raises(ValueError, match="not configured for provider"):
+        config.select_provider("openai", model="not-a-model")
     assert config.sandbox.root == tmp_path.resolve()
     assert config.skill_roots[0].path == (tmp_path / ".aihi/skills").resolve()
     assert config.mcp_servers[0].cwd == tmp_path.resolve()
@@ -118,6 +121,16 @@ def test_config_rejects_unknown_permission_mode(tmp_path) -> None:
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="agent.permission_mode must be one of"):
+        load_config(path, cwd=tmp_path)
+
+
+def test_config_rejects_default_model_outside_provider_catalog(tmp_path) -> None:
+    path = tmp_path / "aihi-code.toml"
+    path.write_text(
+        '[provider]\nname = "fake"\nmodel = "missing"\nmodels = ["demo"]\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="model must be one of the configured"):
         load_config(path, cwd=tmp_path)
 
 

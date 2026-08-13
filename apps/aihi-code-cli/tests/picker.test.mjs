@@ -9,14 +9,20 @@ import {
 } from "../dist/tui/picker.js";
 
 const providers = [
-  { name: "openai", model: "gpt-4o", base_url: "https://api.openai.com/v1" },
-  { name: "deepseek", model: "deepseek-chat", base_url: "https://api.deepseek.com/v1" },
+  { name: "openai", model: "gpt-4o", models: ["gpt-4o", "gpt-4.1"], base_url: "https://api.openai.com/v1" },
+  { name: "deepseek", model: "deepseek-chat", models: ["deepseek-chat", "deepseek-reasoner"], base_url: "https://api.deepseek.com/v1" },
 ];
 
 test("picker options are searchable across labels and details", () => {
   const options = providerPickerOptions(providers);
   assert.deepEqual(filterPickerOptions(options, "deep chat").map((item) => item.key), ["deepseek"]);
-  assert.deepEqual(filterPickerOptions(modelPickerOptions(providers), "openai gpt").map((item) => item.key), ["openai/gpt-4o"]);
+  assert.deepEqual(filterPickerOptions(modelPickerOptions(providers), "openai gpt").map((item) => item.key), ["openai/gpt-4o", "openai/gpt-4.1"]);
+  assert.deepEqual(modelPickerOptions(providers).map((item) => item.key), [
+    "openai/gpt-4o",
+    "openai/gpt-4.1",
+    "deepseek/deepseek-chat",
+    "deepseek/deepseek-reasoner",
+  ]);
   assert.deepEqual(filterPickerOptions(options, "").map((item) => item.key), ["openai", "deepseek"]);
 });
 

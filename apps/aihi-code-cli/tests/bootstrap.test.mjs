@@ -8,10 +8,10 @@ const config = {
   source_path: "/home/test/.aihi/aihi-code.toml",
   source_paths: ["/home/test/.aihi/aihi-code.toml"],
   base_dir: "/workspace",
-  provider: { name: "deepseek", model: "deepseek-chat" },
+  provider: { name: "deepseek", model: "deepseek-chat", models: ["deepseek-chat", "deepseek-reasoner"] },
   providers: [
-    { name: "deepseek", model: "deepseek-chat" },
-    { name: "openai", model: "gpt-5" },
+    { name: "deepseek", model: "deepseek-chat", models: ["deepseek-chat", "deepseek-reasoner"] },
+    { name: "openai", model: "gpt-5", models: ["gpt-5", "gpt-5-mini"] },
   ],
   tools: [],
   sandbox: { backend: "host", root: "/workspace", unsafe: true },
@@ -109,6 +109,21 @@ test("provider override is resolved before the TUI mounts", async () => {
   assert.deepEqual(createParams, { cwd, provider: "openai" });
   assert.equal(result.provider, "openai");
   assert.equal(result.model, "gpt-5");
+});
+
+test("bootstrap rejects a model that is not configured for the selected provider", async () => {
+  const cwd = resolve("project");
+  const client = {
+    async getConfig() { return config; },
+    async createSession() { throw new Error("unexpected createSession"); },
+    async getSession() { throw new Error("unexpected getSession"); },
+    async listSessions() { throw new Error("unexpected listSessions"); },
+  };
+
+  await assert.rejects(
+    bootstrapSession(client, { cwd, provider: "openai", model: "not-configured" }),
+    /Model is not configured for provider openai/,
+  );
 });
 
 test("an explicit session cannot silently switch workspaces", async () => {

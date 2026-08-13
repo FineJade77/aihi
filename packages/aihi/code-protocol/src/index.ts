@@ -145,6 +145,8 @@ export interface RunCancelResult {
 export interface ProviderDescriptor {
   name: string;
   model: string;
+  /** Configured model catalog; always contains the active/default model. */
+  models?: string[];
   api_key_env?: string | null;
   base_url?: string | null;
 }

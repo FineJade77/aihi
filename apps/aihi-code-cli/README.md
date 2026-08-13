@@ -79,7 +79,7 @@ aihi-code --workspace /path/to/project summarize the auth module
 | `--cwd PATH` | Workspace path (default: current directory) |
 | `--store PATH` | SQLite event store (default: `~/.aihi/sessions.sqlite3`) |
 | `--provider NAME` | Provider profile for the first/new session |
-| `--model NAME` | Model for the first/new session |
+| `--model NAME` | Model from the selected provider for the first/new session |
 | `--session ID` | Open a known session |
 | `--continue`, `-c` | Open the newest session for the workspace |
 | `PROMPT...` | Run a first user turn after startup |
@@ -92,7 +92,7 @@ Type `/help` in the TUI to see the current command list. The main commands are:
 | --- | --- |
 | Sessions | `/new`, `/open`, `/sessions`, `/history`, `/refresh`, `/fork`, `/quit` |
 | Runs | `/run`, `/runs`, `/resume`, `/cancel`, `/interrupt` |
-| Models | `/provider`, `/model`, `/status` |
+| Models | `/providers`, `/models`, `/provider`, `/model`, `/status` |
 | Approvals | `/approvals`, `/approve ID [once]`, `/deny ID` |
 | Configuration | `/config`, `/doctor` |
 | Integrations | `/skills`, `/skill-trust`, `/skill-disable`, `/skill-untrust`, `/mcp`, `/tools` |
@@ -113,11 +113,11 @@ The CLI, Worker RPC, and environment do not accept a configuration-path override
 ```toml
 [provider]
 name = "deepseek"
-model = "deepseek-chat"
+models = ["deepseek-chat", "deepseek-reasoner"]
 api_key_env = "DEEPSEEK_API_KEY"
 
 [providers.openai]
-model = "gpt-4o"
+models = ["gpt-4o", "gpt-4.1"]
 api_key_env = "OPENAI_API_KEY"
 
 [sandbox]
@@ -144,6 +144,8 @@ allowed_tools = ["search"]
 ```
 
 API keys are referenced by environment variable name and are not stored in TOML. The generated user configuration keeps Host execution disabled. If Host mode is selected, the TUI requests consent for the exact workspace and resolved root; the acknowledgement is stored in `~/.aihi/host-workspaces.json`. Host mode is not process isolation.
+
+Use `/providers` to display the configured provider catalog, `/providers NAME` to select a provider, `/models` to display every provider/model pair, and `/models PROVIDER/MODEL` to switch both values. `/provider` and `/model` remain compatibility aliases. The startup banner, `/config`, `/doctor`, and status bar show the active pair plus the configured catalog.
 
 ## Sessions and recovery
 

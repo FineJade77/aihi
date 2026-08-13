@@ -111,6 +111,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
       cwd: bootstrap.cwd,
       provider: bootstrap.provider,
       model: bootstrap.model,
+      configuredProviders: bootstrap.config.providers,
       sessionId: bootstrap.session.session_id,
       storePath,
       configPaths: bootstrap.config.source_paths,

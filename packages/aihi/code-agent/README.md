@@ -68,12 +68,15 @@ Minimal example:
 ```toml
 [provider]
 name = "deepseek"
-model = "deepseek-chat"
+models = ["deepseek-chat", "deepseek-reasoner"]
 api_key_env = "DEEPSEEK_API_KEY"
 
-# Additional selectable profiles are declared under [providers.<name>].
+# Every provider profile has its own model catalog. `model` is optional and
+# defaults to the first entry in `models` (the old single-model form remains
+# supported).
 [providers.local]
 name = "openai-compatible"
+models = ["local-model", "local-fast"]
 model = "local-model"
 base_url = "http://127.0.0.1:8000/v1/chat/completions"
 api_key_env = "LOCAL_API_KEY"
@@ -102,6 +105,8 @@ args = ["-y", "some-mcp-server"]
 ```
 
 API keys stay in environment variables; configuration exposes only non-secret metadata through `config.get`. `permission_mode` is persisted with the run startup configuration. Hard safety denies remain active in every mode. Host execution is fail-closed and is not an isolation boundary; interactive acknowledgement is stored for the exact workspace/root in `~/.aihi/host-workspaces.json`.
+
+Each provider can expose multiple models through `models = [...]`. The provider's active/default model is `model` or the first catalog entry. A model is valid only for the provider that declares it; `config.get` returns the non-secret provider/model catalog to clients.
 
 ## Skills and subagents
 

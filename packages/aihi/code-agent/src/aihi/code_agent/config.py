@@ -78,9 +78,22 @@ class CodeAgentConfigError(ValueError):
 class ProviderSettings:
     name: str = "fake"
     model: str = "demo"
+    # ``model`` remains the active/default model for backward compatibility.
+    # ``models`` is the optional catalog exposed to clients for selection.
+    models: tuple[str, ...] = ()
     api_key_env: str | None = None
     base_url: str | None = None
     timeout_seconds: float = 90.0
+
+    @property
+    def available_models(self) -> tuple[str, ...]:
+        """Return a deterministic catalog that always contains the active model."""
+
+        if self.models:
+            if self.model in self.models:
+                return self.models
+            return (self.model, *self.models)
+        return (self.model,)
 
 
 @dataclass(frozen=True, slots=True)
@@ -347,6 +360,16 @@ class CodeAgentConfig:
                 f"Provider {selected_name!r} is not configured; add [providers.{selected_name}]"
             )
         selected_model = selected.model if model is None else _text(model, "model")
+        if (
+            model is not None
+            and selected.models
+            and selected_model not in selected.available_models
+        ):
+            available = ", ".join(selected.available_models)
+            raise CodeAgentConfigError(
+                f"Model {selected_model!r} is not configured for provider "
+                f"{selected_name!r}; choose one of: {available}"
+            )
         return replace(self, provider=replace(selected, model=selected_model))
 
     def public_descriptor(self) -> dict[str, object]:
@@ -356,6 +379,7 @@ class CodeAgentConfig:
             {
                 "name": profile.name,
                 "model": profile.model,
+                "models": list(profile.available_models),
                 "api_key_env": profile.api_key_env,
                 "base_url": profile.base_url,
             }
@@ -369,6 +393,7 @@ class CodeAgentConfig:
             "provider": {
                 "name": self.provider.name,
                 "model": self.provider.model,
+                "models": list(self.provider.available_models),
                 "api_key_env": self.provider.api_key_env,
                 "base_url": self.provider.base_url,
             },
@@ -694,7 +719,21 @@ def _parse_provider_settings(
     default_model: object,
 ) -> ProviderSettings:
     provider_name = _provider_name(value.get("name", default_name), f"{key}.name")
-    model = _text(value.get("model", default_model), f"{key}.model")
+    raw_models = value.get("models")
+    if raw_models is None:
+        models = ()
+    else:
+        models = _string_tuple(raw_models, f"{key}.models")
+        if not models:
+            raise CodeAgentConfigError(f"{key}.models must contain at least one model")
+    model = _text(
+        value.get("model", models[0] if models else default_model),
+        f"{key}.model",
+    )
+    if models and model not in models:
+        raise CodeAgentConfigError(
+            f"{key}.model must be one of the configured {key}.models entries"
+        )
     api_key_env = value.get("api_key_env")
     if api_key_env is not None:
         api_key_env = _env_name(api_key_env, f"{key}.api_key_env")
@@ -707,6 +746,7 @@ def _parse_provider_settings(
     return ProviderSettings(
         name=provider_name,
         model=model,
+        models=models,
         api_key_env=api_key_env,
         base_url=base_url,
         timeout_seconds=timeout_seconds,

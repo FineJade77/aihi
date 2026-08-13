@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   ApprovalDescriptor,
   ConfigDescriptor,
+  ProviderDescriptor,
   RunResult,
   SessionDescriptor,
   TaskDescriptor,
@@ -69,6 +70,7 @@ export interface TuiAppProps {
   cwd: string;
   provider: string;
   model: string;
+  configuredProviders?: readonly ProviderDescriptor[];
   sessionId?: string;
   storePath?: string;
   configPaths?: string[];
@@ -164,11 +166,14 @@ function statusReport({
 }
 
 function configReport(config: ConfigDescriptor): CommandReport {
+  const providerSummary = config.providers
+    .map((item) => `${item.name} (${item.models?.length ?? 1})`)
+    .join(", ");
   return {
     title: "DOCTOR",
     lines: [
       "✓ config loaded" + (config.source_path ? ` · ${tildePath(config.source_path)}` : " · defaults"),
-      `✓ providers · ${config.providers.length || 1} configured · active ${config.provider.name}/${config.provider.model}`,
+      `✓ providers · ${config.providers.length || 1} configured · ${providerSummary || config.provider.name} · active ${config.provider.name}/${config.provider.model}`,
       `✓ permissions · ${config.permission_mode}`,
       `✓ sandbox · ${config.sandbox.backend}${config.sandbox.unsafe ? " · unsafe host opt-in" : ""}`,
       `✓ tools · ${config.tools.length}`,
@@ -225,12 +230,14 @@ function Splash({
   cwd,
   provider,
   model,
+  configuredProviders,
   storePath,
   configPaths,
 }: {
   cwd: string;
   provider: string;
   model: string;
+  configuredProviders?: readonly ProviderDescriptor[];
   storePath?: string;
   configPaths?: string[];
 }) {
@@ -240,6 +247,14 @@ function Splash({
       <Box flexDirection="column" marginTop={1} paddingX={2}>
         <InfoRow label="cwd" value={tildePath(cwd)} />
         <InfoRow label="provider" value={`${provider} · ${model}`} />
+        {configuredProviders !== undefined && configuredProviders.length > 0 && (
+          <InfoRow
+            label="catalog"
+            value={configuredProviders
+              .map((item) => `${item.name}[${(item.models ?? [item.model]).length}]`)
+              .join(" · ")}
+          />
+        )}
         <InfoRow label="store" value={storePath ? tildePath(storePath) : "in-memory (this process only)"} />
         {configPaths !== undefined && configPaths.length > 0 && (
           <InfoRow label="config" value={configPaths.map(tildePath).join(" → ")} />
@@ -492,6 +507,7 @@ export function TuiApp({
   cwd,
   provider,
   model,
+  configuredProviders,
   sessionId,
   storePath,
   configPaths,
@@ -825,8 +841,11 @@ export function TuiApp({
       }
       if (name === "config") {
         const config = await client.getConfig(cwd);
+        const providerSummary = config.providers
+          .map((item) => `${item.name}[${(item.models ?? [item.model]).join(", ")}]`)
+          .join(" · ");
         setStatus(
-          `${config.provider.name}/${config.provider.model} · tools ${config.tools.length} · MCP ${config.mcp_servers.length} · Skill roots ${Array.isArray(config.skills.roots) ? config.skills.roots.length : 0}`,
+          `${providerSummary} · active ${activeProvider}/${activeModel} · tools ${config.tools.length} · MCP ${config.mcp_servers.length} · Skill roots ${Array.isArray(config.skills.roots) ? config.skills.roots.length : 0}`,
         );
         return;
       }
@@ -869,7 +888,7 @@ export function TuiApp({
         setStatus("Diagnostics complete");
         return;
       }
-      if (name === "provider") {
+      if (name === "provider" || name === "providers") {
         const selectedName = args[0];
         if (!selectedName) {
           await openPicker("provider");
@@ -878,19 +897,42 @@ export function TuiApp({
         const config = await client.getConfig(cwd);
         const selected = config.providers.find((item) => item.name === selectedName.replace(/-/g, "_").toLowerCase());
         if (!selected) throw new Error(`Provider is not configured: ${selectedName}`);
+        const selectedModel = args[1] ?? selected.model;
+        const models = selected.models ?? [selected.model];
+        if (!models.includes(selectedModel)) {
+          throw new Error(`Model is not configured for ${selected.name}: ${selectedModel}`);
+        }
         setActiveProvider(selected.name);
-        setActiveModel(args[1] ?? selected.model);
-        setStatus(`Selected ${selected.name}/${args[1] ?? selected.model}`);
+        setActiveModel(selectedModel);
+        setStatus(`Selected ${selected.name}/${selectedModel}`);
         return;
       }
-      if (name === "model") {
+      if (name === "model" || name === "models") {
         const selectedModel = args[0];
         if (!selectedModel) {
           await openPicker("model");
           return;
         }
-        setActiveModel(selectedModel);
-        setStatus(`Selected ${activeProvider}/${selectedModel}`);
+        const config = await client.getConfig(cwd);
+        const separator = selectedModel.indexOf("/");
+        const pairProvider = separator >= 0 ? selectedModel.slice(0, separator) : undefined;
+        const pairProfile = pairProvider === undefined
+          ? undefined
+          : config.providers.find((item) => item.name === pairProvider);
+        const requestedProvider = pairProfile === undefined ? activeProvider : pairProvider;
+        const requestedModel = pairProfile === undefined
+          ? selectedModel
+          : selectedModel.slice(separator + 1);
+        const profile = config.providers.find((item) => item.name === requestedProvider);
+        const models = profile?.models ?? (profile ? [profile.model] : []);
+        if (!profile) throw new Error(`Provider is not configured: ${requestedProvider}`);
+        if (!models.includes(requestedModel)) {
+          throw new Error(`Model is not configured for ${requestedProvider}: ${requestedModel}`);
+        }
+        const selectedProvider = profile.name;
+        setActiveProvider(selectedProvider);
+        setActiveModel(requestedModel);
+        setStatus(`Selected ${selectedProvider}/${requestedModel}`);
         return;
       }
       if (name === "sessions" || name === "ls") {
@@ -1353,6 +1395,7 @@ export function TuiApp({
           cwd={cwd}
           provider={activeProvider}
           model={activeModel}
+          configuredProviders={configuredProviders}
           storePath={storePath}
           configPaths={configPaths}
         />
