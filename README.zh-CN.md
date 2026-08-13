@@ -57,6 +57,14 @@ uv sync
 pnpm install
 ```
 
+使用已发布的 Python 包：
+
+```bash
+python -m pip install aihi-code-agent==0.1.0
+```
+
+该命令会自动安装 `aihi-agent` 和 `aihi-models` 依赖；仓库开发仍可使用 editable 安装。
+
 ### 运行检查
 
 ```bash
@@ -81,6 +89,8 @@ pnpm --dir apps/aihi-code-cli start -- --workspace /path/to/project
 - [架构设计](docs/ARCHITECTURE.zh-CN.md)
 - [任务路线图](docs/TASK.zh-CN.md)
 - [各项目 README](packages/aihi/models/README.zh-CN.md)
+
+PyPI：[`aihi-models`](https://pypi.org/project/aihi-models/0.1.0/) · [`aihi-agent`](https://pypi.org/project/aihi-agent/0.1.0/) · [`aihi-code-agent`](https://pypi.org/project/aihi-code-agent/0.1.0/)
 
 ADR/RFC 仅保存在本地 `docs/adr/` 和 `docs/rfcs/`，不会提交到 Git。
 

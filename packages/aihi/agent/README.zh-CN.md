@@ -32,6 +32,15 @@ Run 会挂起，等待应用层解决后恢复。
 
 ## 安装与最小运行
 
+已发布版本：
+
+```bash
+python -m pip install aihi-agent==0.1.0
+```
+
+参见 [PyPI 项目页](https://pypi.org/project/aihi-agent/0.1.0/)。它会自动安装兼容的
+`aihi-models`；仓库开发使用 editable 安装：
+
 ```bash
 uv sync
 uv pip install -e packages/aihi/agent

@@ -215,6 +215,9 @@ pnpm --dir apps/aihi-code-cli test
 ```
 
 打包测试还必须独立构建和安装 wheels，验证 PEP 420、`py.typed` 及冻结 Event/SQLite/Trace fixture
-可回放且不被重新生成。
+可回放且不被重新生成。三个 Python distribution 已以 `0.1.0` 发布到 PyPI：
+[`aihi-models`](https://pypi.org/project/aihi-models/0.1.0/)、
+[`aihi-agent`](https://pypi.org/project/aihi-agent/0.1.0/) 和
+[`aihi-code-agent`](https://pypi.org/project/aihi-code-agent/0.1.0/)。
 
 参见 [任务路线图](TASK.zh-CN.md) 和各包中文 README。

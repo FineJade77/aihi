@@ -7,7 +7,7 @@
 | 字段 | 内容 |
 | --- | --- |
 | 状态 | 基础能力完成；应用和平台路线图持续推进 |
-| 当前版本线 | Python 包 `0.1.x`；Code Protocol `0.2` |
+| 当前版本线 | Python 包已以 `0.1.0` 发布到 PyPI；Code Protocol `0.2` |
 | 架构 | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | 最近完成 | 多 Provider / 多 Model catalog 与选择体验 |
 
@@ -37,7 +37,7 @@
 | `aihi-code-agent` | Coding 配置、用户/项目 `.aihi` 配置发现、Provider/Model catalog、Worker、Session/Run/Task API、Coding Tool 和 TUI 组合 | Done |
 | `@aihi/code-protocol` | Code Protocol 0.2 DTO、method map、guard 和 Schema | Done |
 | `@aihi/code-cli` | Ink TUI、Transcript Replay、滚动/输入体验、Session/Model picker、Slash 命令、Approval、Skill/MCP/Tool 管理和 Doctor | Done |
-| 打包 | 独立 wheels、PEP 420 namespace、installed-wheel 兼容性和冻结 fixture Replay | Done |
+| 打包 | 独立 wheels、PEP 420 namespace、installed-wheel 兼容性、冻结 fixture Replay 和 PyPI `0.1.0` 发布 | Done |
 | 运维 | 脱敏本地 `audit.jsonl`、Doctor 审计检查、Session 恢复和 Replay 诊断 | Done |
 
 M0–M7 和 H-01–H-17 基础建设已完成，建立了多包边界、事件 Schema 兼容性、安全不变式、上下文预算、
@@ -89,7 +89,7 @@ PostgreSQL 实现。
 - 生成嵌套父子委派兼容性语料并补充递归 Graph Replay。
 - 在项目示例中完善 Provider 凭据和 Model catalog 配置说明。
 - 增加 Worker/TUI 长 Session 和重连 soak test。
-- 明确 Python wheels 与 Protocol package 的发布/版本策略。
+- 明确后续 Python wheels 与 Protocol package 的发布/版本策略。
 
 ## Definition of Done
 

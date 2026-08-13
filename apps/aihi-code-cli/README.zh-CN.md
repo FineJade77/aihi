@@ -41,6 +41,15 @@ pnpm --dir apps/aihi-code-cli build
 pnpm --dir apps/aihi-code-cli start -- --workspace /path/to/project
 ```
 
+安装已发布的 Python Worker：
+
+```bash
+python -m pip install aihi-code-agent==0.1.0
+```
+
+仓库开发时改用 `uv pip install -e packages/aihi/code-agent`。参见
+[aihi-code-agent PyPI 项目](https://pypi.org/project/aihi-code-agent/0.1.0/)。
+
 常用参数包括 `--workspace`/`--cwd`、`--session`、`--model`、`--provider` 和
 `--permission-mode`。配置文件路径固定为用户 `~/.aihi/aihi-code.toml` 与项目
 `<workspace>/.aihi/aihi-code.toml`，不能通过 CLI 改变配置目录。

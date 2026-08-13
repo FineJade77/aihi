@@ -32,6 +32,14 @@ Providers are flat modules under `src/aihi/models/providers`. Credentials and mo
 
 ## Installation
 
+Published release:
+
+```bash
+python -m pip install aihi-models==0.1.0
+```
+
+See the [PyPI project page](https://pypi.org/project/aihi-models/0.1.0/). For repository development:
+
 From the repository workspace:
 
 ```bash

@@ -29,6 +29,14 @@ Provider 是扁平模块，凭据、模型选择和多个 Provider 的组合由�
 
 ## 安装
 
+已发布版本：
+
+```bash
+python -m pip install aihi-models==0.1.0
+```
+
+参见 [PyPI 项目页](https://pypi.org/project/aihi-models/0.1.0/)。仓库开发使用：
+
 ```bash
 uv sync
 uv pip install -e packages/aihi/models

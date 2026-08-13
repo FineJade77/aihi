@@ -28,6 +28,15 @@ aihi-models → aihi-agent → aihi-code-agent Worker ← @aihi/code-cli
 
 ## 安装和启动
 
+已发布版本：
+
+```bash
+python -m pip install aihi-code-agent==0.1.0
+```
+
+参见 [PyPI 项目页](https://pypi.org/project/aihi-code-agent/0.1.0/)。它会自动安装兼容的
+`aihi-agent` 和 `aihi-models`；仓库开发使用 editable 安装：
+
 ```bash
 uv sync
 uv pip install -e packages/aihi/code-agent

@@ -258,6 +258,9 @@ pnpm --dir apps/aihi-code-cli test
 ~~~
 
 Packaging tests build and install wheels independently and together, verify PEP 420 namespace layout and
-py.typed, and replay frozen event/SQLite/trace fixtures without regenerating them.
+py.typed, and replay the frozen event/SQLite/trace fixtures without regenerating them. The three Python
+distributions are published as `0.1.0` on PyPI: [aihi-models](https://pypi.org/project/aihi-models/0.1.0/),
+[aihi-agent](https://pypi.org/project/aihi-agent/0.1.0/) and
+[aihi-code-agent](https://pypi.org/project/aihi-code-agent/0.1.0/).
 
 See [TASK.md](TASK.md) for the delivery matrix and each package README for API usage.

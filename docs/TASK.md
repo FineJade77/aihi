@@ -8,7 +8,7 @@
 | Field | Value |
 | --- | --- |
 | Status | Foundation complete; application and platform roadmap remains |
-| Current release line | 0.1.x packages; Code Protocol 0.2 |
+| Current release line | Python packages 0.1.0 on PyPI; Code Protocol 0.2 |
 | Architecture | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | Last completed slice | Multi-provider / multi-model catalog and selection UX |
 
@@ -50,7 +50,7 @@ The repository is a multi-package monorepo with a runnable local Coding Agent ve
 | aihi-code-agent | Coding configuration, project/user .aihi config discovery, provider/model catalog, Worker, Session/Run/Task APIs, Coding tools and TUI composition | Done |
 | @aihi/code-protocol | Code Protocol 0.2 DTOs, method map, guards and schemas | Done |
 | @aihi/code-cli | Ink TUI, transcript replay, scrolling/composer UX, session/model pickers, slash commands, approvals, skills/MCP/tools management and doctor checks | Done |
-| Packaging | Separate wheels, PEP 420 namespace, installed-wheel compatibility and frozen fixture replay | Done |
+| Packaging | Separate wheels, PEP 420 namespace, installed-wheel compatibility, frozen fixture replay and PyPI 0.1.0 publication | Done |
 | Operability | Redacted local audit.jsonl, doctor audit target checks, session recovery and replay diagnostics | Done |
 
 ### Foundation history
@@ -112,7 +112,7 @@ These are bounded improvements, not permission to expand the current slice:
 - Generate nested parent/child delegation compatibility corpus and recursive graph replay coverage.
 - Document provider credentials and catalog configuration in package examples.
 - Add long-session and reconnect soak tests for the Worker/TUI boundary.
-- Define an explicit release/versioning policy for the Python wheels and protocol package.
+- Define an explicit release/versioning policy for future Python wheels and the protocol package.
 
 ## Definition of done
 

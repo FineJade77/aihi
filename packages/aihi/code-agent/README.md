@@ -29,6 +29,15 @@ This package is UI-free. The shared DTO and schema boundary lives in [`@aihi/cod
 
 ## Installation
 
+Published release:
+
+```bash
+python -m pip install aihi-code-agent==0.1.0
+```
+
+See the [PyPI project page](https://pypi.org/project/aihi-code-agent/0.1.0/). This installs the
+compatible `aihi-agent` and `aihi-models` dependencies automatically. For repository development:
+
 From the repository root:
 
 ```bash
