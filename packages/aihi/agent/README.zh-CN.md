@@ -2,79 +2,162 @@
 
 [English](README.md) | **简体中文**
 
-AIHI 的 Provider-neutral、可恢复 Agent Runtime。它把模型契约转换成带持久化、策略和安全边界的
-执行系统，供具体应用组合。
+面向 AIHI 的 Provider-neutral、可恢复 Agent Runtime。
+
+\`aihi-agent\` 将模型契约转换为可持久化的执行系统，提供 Agent loop、Session、Tool、Policy、
+Approval、Sandbox 边界、Context 管理、集成能力和可观测性，供应用组合成具体产品。
 
 ## 职责
 
-- 通过显式 `RuntimeBuilder` 运行有界的 model/tool turns。
-- 追加事件日志并在中断后恢复 Session。
-- 编译上下文、预算保护和派生摘要压缩。
-- 通过 Policy、Approval、Hooks 和 Sandbox 执行工具。
-- 提供 Skill、MCP、Plugin、Subagent、Memory、Artifact、Telemetry、Replay 和 Eval 接入点。
+- 通过显式 Runtime 组合运行有界的 model/tool turns。
+- 持久化只追加的 Event Log，并在中断后恢复 Session。
+- 编译 Context，并生成不改写历史的派生摘要和 Compaction。
+- 通过 Policy、Approval、Hook 和 Sandbox backend 注册、治理和执行 Tool。
+- 集成 Skill、MCP Server、Subagent、Memory、Artifact、Telemetry、Replay 和 Eval。
 
-本包不选择 Provider、不实现 UI、不提供 Router/Gateway，也不隐藏工具默认值。
+本包**不**选择 Provider、不实现 UI、不提供 Model Router/Gateway，也不隐藏 Tool 默认值；这些选择
+由应用传给 \`RuntimeBuilder\`。
 
 ## 架构
 
-```text
-aihi.models Provider
-        │
-RuntimeBuilder → RunCoordinator → EventStore
-        │              ├─ ContextCompiler / Compaction
-        │              ├─ ToolRegistry → Policy → Approval
-        │              └─ Hooks → SandboxBackend → Tool
-        └─ Skills / MCP / Subagents / Memory / Artifacts
-```
+~~~text
+Model Provider (aihi-models)
+              │
+              ▼
+RuntimeBuilder ──► Runtime / RunCoordinator ──► EventStore
+              │                  │
+              │                  ├── ContextCompiler / Compaction
+              │                  ├── ToolRegistry ──► Policy ──► Approval
+              │                  │                         │
+              │                  │                         ▼
+              │                  └── Hooks ──► SandboxBackend ──► Tool
+              │
+              └── Skills / MCP / Subagents / Memory / Artifacts / Telemetry
+~~~
 
-事件存储是事实源。工具调用先落盘再执行，并且每个调用恰好有一个结果；Policy 返回 `ASK` 时
-Run 会挂起，等待应用层解决后恢复。
+Event Store 是事实源。Tool Call 会在执行前记录，并且每个调用恰好有一个 Result。Policy 返回
+\`ASK\` 时会挂起 Run，之后可以恢复执行。
 
-## 安装与最小运行
+## 安装
 
 已发布版本：
 
-```bash
+~~~bash
 python -m pip install aihi-agent==0.1.0
-```
+~~~
 
 参见 [PyPI 项目页](https://pypi.org/project/aihi-agent/0.1.0/)。它会自动安装兼容的
-`aihi-models`；仓库开发使用 editable 安装：
+\`aihi-models\` 依赖。仓库开发使用：
 
-```bash
+~~~bash
 uv sync
+~~~
+
+本地 editable 安装：
+
+~~~bash
 uv pip install -e packages/aihi/agent
-```
+~~~
 
-```python
-from aihi.agent import RuntimeBuilder
+\`aihi-agent\` 要求 Python 3.11+，依赖 \`aihi-models\` 0.1.x。
 
+## 最小 Runtime
+
+~~~python
+from pathlib import Path
+
+from aihi.agent import HostBackend, InMemoryEventStore, ReadFileTool, RuntimeBuilder, Session
+from aihi.models import FakeProvider, FakeStep, Message
+
+provider = FakeProvider([FakeStep(text="I inspected the workspace.")])
 runtime = (
-    RuntimeBuilder()
-    .with_provider(provider, model="my-model")
-    .with_sandbox(sandbox)
-    .with_tools(tool_registry)
+    RuntimeBuilder(
+        provider=provider,
+        model="fake-model",
+        sandbox=HostBackend(Path.cwd(), unsafe=True),
+        tools=[ReadFileTool()],
+    )
+    .with_max_turns(20)
     .build()
 )
-```
 
-Provider、Sandbox 和 tools 必须由应用显式注入；不存在无条件选择这些依赖的
-`default_runtime()`。
+session = Session.create(
+    InMemoryEventStore(),
+    cwd=Path.cwd(),
+    provider="fake",
+    model="fake-model",
+)
 
-## 核心约束
+result = await runtime.coordinator.run(
+    session,
+    model=runtime.model,
+    user_message=Message.text("user", "Inspect this project."),
+)
+print(result.state)
+~~~
 
-- 默认 loop 有最大 turns，防止无界消耗 token。
-- 读文件、Glob、Grep 等声明为并发安全的只读工具可并行执行；修改工具保持顺序。
-- Host backend 必须显式 `unsafe=true`。
-- Resume 使用首次 `run.started` 固化的 Provider、Model、Workspace、权限和预算。
-- 子 Agent 使用独立 Session，并只能获得父级权限、预算和 workspace 的更严格子集。
+实际应用中，若环境支持，优先使用隔离 backend。\`HostBackend\` 是受控的本地执行 backend，不是
+安全隔离边界，并且要求显式确认 \`unsafe=True\`。
+
+## Runtime 组合
+
+\`RuntimeBuilder\` 要求调用方提前提供关键依赖：
+
+- \`provider\` 和 \`model\`；
+- 一个 \`sandbox\` backend；
+- 由应用批准的 \`tools\` 集合。
+
+可通过以下方法显式增加可选扩展：
+
+- \`.with_max_turns(...)\` 和 \`.with_context_window(...)\`；
+- \`.with_policy(...)\`、\`.with_approvals(...)\` 和 \`.with_hooks(...)\`；
+- \`.with_skills(...)\`、\`.with_memory(...)\` 和 \`.with_compaction(...)\`；
+- \`.with_subagents(...)\`、\`.with_artifacts(...)\` 和 \`.with_telemetry(...)\`。
+
+Coordinator 的默认 turn budget 是有限的（\`100\`），应用可以进一步降低它以形成产品级安全边界。
+
+## 核心模块
+
+| 区域 | 主要 API |
+| --- | --- |
+| Runtime 与 Run | \`Runtime\`、\`RuntimeBuilder\`、\`RunCoordinator\`、\`RunResult\`、\`RunState\` |
+| Session 与存储 | \`Session\`、\`EventStore\`、\`InMemoryEventStore\`、\`SQLiteEventStore\`、\`Event\` |
+| Context | \`ContextCompiler\`、摘要、Compaction Generator |
+| Tool | \`Tool\`、\`ToolSpec\`、\`ToolContext\`、\`ToolRegistry\`、内置文件/Shell Tool |
+| Policy 与 Approval | \`PermissionMode\`、\`DefaultPolicyEngine\`、\`Approval\`、Approval Resolver |
+| Sandbox | \`HostBackend\`、\`LocalIsolatedBackend\`、\`DockerBackend\` |
+| 集成 | Skill、MCP、Plugin、Subagent、Memory、Artifact |
+| 可观测性 | \`Telemetry\`、\`JsonlTelemetrySink\`、\`InMemoryTelemetrySink\` |
+| 验证 | Replay、Golden Task、Eval 和 Contract Helper |
+
+## Tool 与 Approval 模型
+
+Tool 通过显式 \`ToolSpec\` metadata 注册。Policy Engine 决定某次调用是允许、拒绝还是需要
+Approval。Approval Lease 可以根据应用 Policy，将决定限定到一次请求、某个 Tool 或整个 Run。
+
+内置 Tool 必须配合适合当前 Workspace 的 Sandbox 和 Policy 使用。文件读取、Glob/Grep、编辑、
+写入和 Shell 执行不是可以互换的能力。
+
+## 可观测性
+
+Telemetry 是观察流，不是 Event Log。\`JsonlTelemetrySink\` 输出脱敏、有界的记录，并默认创建
+仅 Owner 可读写的文件。恢复使用 Event Store；运维诊断查看 Telemetry Stream，不要把 UI 输出当作事实源。
 
 ## 开发
 
-```bash
-pytest packages/aihi/agent/tests
-ruff check packages/aihi/agent
-mypy packages/aihi/agent/src
-```
+~~~bash
+uv run pytest packages/aihi/agent/tests
+uv run ruff check packages/aihi/agent
+uv run mypy
+uv run python -m build --wheel --no-isolation packages/aihi/agent
+~~~
 
-参见 [架构文档](../../../docs/ARCHITECTURE.zh-CN.md) 和 [Coding Agent 文档](../code-agent/README.zh-CN.md)。
+参见仓库的[架构文档](../../../docs/ARCHITECTURE.zh-CN.md)以及应用层组合示例
+[code-agent README](../code-agent/README.zh-CN.md)。
+
+## 安全模型
+
+- 凭据保留在应用/Provider 边界，不得写入 Prompt 或 Event payload。
+- 将模型输出、Tool 参数、Skill、MCP 响应和 Subagent 输出视为不可信输入。
+- 不要声称 \`HostBackend\` 可以隔离进程；需要隔离时使用 \`LocalIsolatedBackend\` 或 \`DockerBackend\`。
+- 暴露 Tool 给模型前设置有限的 turn limit，并审查 Approval/Policy 默认值。
