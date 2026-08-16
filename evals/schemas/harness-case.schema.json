@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aihi.dev/schemas/harness-case.v1.json",
+  "title": "AIHI Agent Harness evaluation case",
+  "description": "A replay-only conformance case for aihi-agent. Semantic validity, event transitions and source hash are checked by the runner.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["case_id", "trace", "expected"],
+  "properties": {
+    "case_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "trace": {
+      "$ref": "#/$defs/trace_bundle"
+    },
+    "expected": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/replay_success"
+        },
+        {
+          "$ref": "#/$defs/replay_rejection"
+        }
+      ]
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "trace_bundle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "redacted", "session_id", "source_sha256", "events"],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "redacted": {
+          "const": true
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "events": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    "replay_success": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["outcome"],
+      "properties": {
+        "outcome": {
+          "const": "replay_pass"
+        },
+        "run_states": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "event_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "required_event_types": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "forbidden_event_types": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "require_no_pending_tools": {
+          "type": "boolean"
+        }
+      }
+    },
+    "replay_rejection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["outcome", "error_code"],
+      "properties": {
+        "outcome": {
+          "const": "replay_reject"
+        },
+        "error_code": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

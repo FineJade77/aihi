@@ -10,6 +10,7 @@ build/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+eval-results/
 .aihi/settings.local.json
 .aihi/audit.jsonl
 .DS_Store

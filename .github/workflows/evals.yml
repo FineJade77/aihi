@@ -1,0 +1,48 @@
+name: AIHI evaluations
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Evaluation mode
+        required: true
+        default: pr
+        type: choice
+        options:
+          - pr
+          - nightly
+          - release
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - name: Run evaluation gate
+        env:
+          AIHI_CODE_EVAL_CONFIG: ${{ vars.AIHI_CODE_EVAL_CONFIG }}
+        run: |
+          set -euo pipefail
+          export PYTHONPATH=packages/aihi/models/src:packages/aihi/agent/src:packages/aihi/code-agent/src
+          MODE="${{ inputs.mode || 'pr' }}"
+          if [ "$MODE" = "pr" ]; then
+            uv run python -m scripts.evals.run --mode pr --output eval-results/pr
+          else
+            if [ -z "${AIHI_CODE_EVAL_CONFIG:-}" ]; then
+              echo "AIHI_CODE_EVAL_CONFIG repository variable is required for $MODE" >&2
+              exit 2
+            fi
+            uv run python -m scripts.evals.run --mode "$MODE" \
+              --config "$AIHI_CODE_EVAL_CONFIG" --output "eval-results/$MODE"
+          fi
+      - name: Upload evaluation reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aihi-eval-results
+          path: eval-results/

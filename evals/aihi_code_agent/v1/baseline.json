@@ -1,0 +1,24 @@
+{
+  "baseline_version": 1,
+  "dataset_id": "aihi-code-agent-benchmark-v1",
+  "executor": "scripted_reference_v1",
+  "note": "Deterministic oracle-chain smoke baseline; not a real-model capability score.",
+  "case_ids": [
+    "bug-fix-bool",
+    "feature-slug",
+    "test-repair-stats",
+    "security-safe-path"
+  ],
+  "categories": [
+    "bug_fix",
+    "feature",
+    "security_boundary",
+    "test_repair"
+  ],
+  "summary": {
+    "total": 4,
+    "passed": 4,
+    "failed": 0,
+    "pass_rate": 1.0
+  }
+}

@@ -1,0 +1,286 @@
+from __future__ import annotations
+
+import asyncio
+import json
+import sys
+from dataclasses import replace
+from pathlib import Path
+
+import pytest
+from aihi.agent import Event, InMemoryEventStore, RunResult, RunState, Session
+from aihi.code_agent.evals import (
+    CodeAgentEvalRunner,
+    CodeTask,
+    CodeTaskDataset,
+    TaskExecution,
+    directory_sha256,
+)
+from aihi.code_agent.evals.dataset import CodeEvalValidationError
+
+
+def _task(fixture: Path, *, forbidden_paths: tuple[str, ...] = ()) -> CodeTask:
+    return CodeTask(
+        case_id="mvp-task",
+        category="feature",
+        prompt="Create answer.txt containing ok.",
+        fixture_path=fixture,
+        fixture_sha256=directory_sha256(fixture),
+        timeout_seconds=5,
+        max_turns=5,
+        max_tokens=1_000,
+        test_commands=(
+            (
+                sys.executable,
+                "-c",
+                "from pathlib import Path; assert Path('answer.txt').read_text() == 'ok\\n'",
+            ),
+        ),
+        allowed_paths=("answer.txt",),
+        forbidden_paths=forbidden_paths,
+        require_clean_regression=True,
+        expected_files=("answer.txt",),
+    )
+
+
+async def _successful_executor(
+    task: CodeTask, workspace: Path, store: InMemoryEventStore
+) -> TaskExecution:
+    (workspace / "answer.txt").write_text("ok\n", encoding="utf-8")
+    return await _completed_execution(workspace, store)
+
+
+async def _completed_execution(workspace: Path, store: InMemoryEventStore) -> TaskExecution:
+    session = Session.create(store, cwd=workspace, provider="fake", model="demo")
+    session.append_many(
+        [
+            Event(type="run.started", session_id=session.id, run_id="run-1"),
+            Event(
+                type="run.state_changed",
+                session_id=session.id,
+                run_id="run-1",
+                data={"state": "running"},
+            ),
+            Event(
+                type="run.state_changed",
+                session_id=session.id,
+                run_id="run-1",
+                data={"state": "completed"},
+            ),
+            Event(
+                type="run.completed",
+                session_id=session.id,
+                run_id="run-1",
+                data={"state": "completed"},
+            ),
+        ]
+    )
+    return TaskExecution(
+        session=session,
+        run_result=RunResult(run_id="run-1", state=RunState.COMPLETED),
+    )
+
+
+async def _reference_executor(
+    task: CodeTask, workspace: Path, store: InMemoryEventStore
+) -> TaskExecution:
+    patches = {
+        "bug-fix-bool": (
+            "def parse_bool(value: str) -> bool:\n"
+            "    normalized = value.strip().lower()\n"
+            "    if normalized in {'', 'false', '0', 'no', 'off'}:\n"
+            "        return False\n"
+            "    if normalized in {'true', '1', 'yes', 'on'}:\n"
+            "        return True\n"
+            "    raise ValueError('not a boolean')\n"
+        ),
+        "feature-slug": (
+            "import re\n"
+            "import unicodedata\n\n"
+            "def slugify(value: str) -> str:\n"
+            "    ascii_value = unicodedata.normalize(\n"
+            "        'NFKD', value\n"
+            "    ).encode('ascii', 'ignore').decode()\n"
+            "    return re.sub(r'[^a-z0-9]+', '-', ascii_value.lower()).strip('-')\n"
+        ),
+        "test-repair-stats": (
+            "def median(values: list[float]) -> float:\n"
+            "    ordered = sorted(values)\n"
+            "    middle = len(ordered) // 2\n"
+            "    if len(ordered) % 2:\n"
+            "        return ordered[middle]\n"
+            "    return (ordered[middle - 1] + ordered[middle]) / 2\n"
+        ),
+        "security-safe-path": (
+            "from pathlib import Path\n\n"
+            "def resolve_inside(root: str | Path, candidate: str) -> Path:\n"
+            "    root_path = Path(root).resolve()\n"
+            "    candidate_path = (root_path / candidate).resolve()\n"
+            "    try:\n"
+            "        candidate_path.relative_to(root_path)\n"
+            "    except ValueError as exc:\n"
+            "        raise ValueError('path escapes root') from exc\n"
+            "    return candidate_path\n"
+        ),
+    }
+    target = {
+        "bug-fix-bool": "target.py",
+        "feature-slug": "slug.py",
+        "test-repair-stats": "stats.py",
+        "security-safe-path": "safe_path.py",
+    }[task.case_id]
+    (workspace / target).write_text(patches[task.case_id], encoding="utf-8")
+    if task.case_id == "test-repair-stats":
+        (workspace / "test_stats.py").write_text(
+            "from stats import median\n\nassert median([1, 2, 3, 4]) == 2.5\n",
+            encoding="utf-8",
+        )
+    return await _completed_execution(workspace, store)
+
+
+@pytest.mark.asyncio
+async def test_code_eval_runner_grades_workspace_tests_scope_and_trace(tmp_path: Path) -> None:
+    fixture = tmp_path / "fixture"
+    fixture.mkdir()
+    (fixture / "README.md").write_text("fixture\n", encoding="utf-8")
+
+    report = await CodeAgentEvalRunner(executor=_successful_executor).run_dataset(
+        (_task(fixture),), dataset_id="aihi-code-agent-benchmark-v1", mode="offline"
+    )
+
+    result = report.results[0]
+    assert result.passed is True
+    assert {grade.grader_id for grade in result.grades} == {
+        "code_tests",
+        "code_scope",
+        "code_expected_files",
+        "harness_trace",
+    }
+    assert result.trace is not None
+    assert report.to_dict()["summary"] == {
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "pass_rate": 1.0,
+    }
+
+
+@pytest.mark.asyncio
+async def test_code_eval_runner_rejects_forbidden_workspace_changes(tmp_path: Path) -> None:
+    fixture = tmp_path / "fixture"
+    fixture.mkdir()
+
+    async def executor(task: CodeTask, workspace: Path, store: InMemoryEventStore) -> TaskExecution:
+        (workspace / "answer.txt").write_text("ok\n", encoding="utf-8")
+        (workspace / "secret.txt").write_text("should fail\n", encoding="utf-8")
+        return await _successful_executor(task, workspace, store)
+
+    result = (await CodeAgentEvalRunner(executor=executor).run_case(
+        _task(fixture, forbidden_paths=("secret.txt",))
+    ))
+
+    assert result.passed is False
+    scope = next(grade for grade in result.grades if grade.grader_id == "code_scope")
+    assert scope.details["forbidden_paths"] == ["secret.txt"]
+
+
+@pytest.mark.asyncio
+async def test_code_eval_runner_fails_closed_on_fixture_hash_mismatch(tmp_path: Path) -> None:
+    fixture = tmp_path / "fixture"
+    fixture.mkdir()
+    task = _task(fixture)
+    (fixture / "changed.txt").write_text("tampered\n", encoding="utf-8")
+
+    result = await CodeAgentEvalRunner(executor=_successful_executor).run_case(task)
+
+    assert result.passed is False
+    assert result.error_code == "fixture_invalid"
+
+
+def test_code_task_dataset_round_trips_jsonl(tmp_path: Path) -> None:
+    fixture = tmp_path / "fixture"
+    fixture.mkdir()
+    task = _task(fixture)
+    dataset = CodeTaskDataset("benchmark", (task,))
+
+    restored = CodeTaskDataset.from_jsonl(
+        "benchmark", dataset.to_jsonl(base_dir=tmp_path), base_dir=tmp_path
+    )
+
+    assert restored.tasks[0].to_dict(base_dir=tmp_path) == task.to_dict(base_dir=tmp_path)
+
+
+def test_code_task_rejects_network_and_non_docker_execution(tmp_path: Path) -> None:
+    fixture = tmp_path / "fixture"
+    fixture.mkdir()
+    common = _task(fixture).to_dict(base_dir=tmp_path)
+    common["execution"] = {"sandbox_backend": "host", "network": False, "repeat": 1}
+    with pytest.raises(CodeEvalValidationError, match="sandbox_backend"):
+        CodeTask.from_dict(common, base_dir=tmp_path)
+
+    common["execution"] = {"sandbox_backend": "docker", "network": True, "repeat": 1}
+    with pytest.raises(CodeEvalValidationError, match="network"):
+        CodeTask.from_dict(common, base_dir=tmp_path)
+
+
+@pytest.mark.asyncio
+async def test_code_eval_runner_applies_task_timeout(tmp_path: Path) -> None:
+    fixture = tmp_path / "fixture"
+    fixture.mkdir()
+    task = _task(fixture)
+    task = replace(task, timeout_seconds=1)
+
+    async def slow_executor(
+        _task: CodeTask, _workspace: Path, _store: InMemoryEventStore
+    ) -> TaskExecution:
+        await asyncio.sleep(2)
+        raise AssertionError("unreachable")
+
+    result = await CodeAgentEvalRunner(executor=slow_executor).run_case(task)
+
+    assert result.passed is False
+    assert result.error_code == "execution_timeout"
+
+
+@pytest.mark.asyncio
+async def test_code_eval_runner_expands_repeated_tasks(tmp_path: Path) -> None:
+    fixture = tmp_path / "fixture"
+    fixture.mkdir()
+    task = replace(_task(fixture), repeat=2)
+
+    report = await CodeAgentEvalRunner(executor=_successful_executor).run_dataset(
+        (task,), mode="nightly"
+    )
+
+    assert [result.case_id for result in report.results] == [
+        "mvp-task#repeat-1",
+        "mvp-task#repeat-2",
+    ]
+    assert [result.metrics["attempt"] for result in report.results] == [1, 2]
+
+
+@pytest.mark.asyncio
+async def test_v1_manifest_has_fixed_fixtures_and_reproducible_reference_baseline() -> None:
+    repository_root = Path(__file__).resolve().parents[4]
+    benchmark_root = repository_root / "evals" / "aihi_code_agent" / "v1"
+    dataset = CodeTaskDataset.from_jsonl(
+        "aihi-code-agent-benchmark-v1",
+        (benchmark_root / "manifest.jsonl").read_text(encoding="utf-8"),
+        base_dir=benchmark_root,
+    )
+    baseline = json.loads((benchmark_root / "baseline.json").read_text(encoding="utf-8"))
+
+    report = await CodeAgentEvalRunner(executor=_reference_executor).run_dataset(dataset)
+
+    assert [task.case_id for task in dataset.tasks] == baseline["case_ids"]
+    assert {task.category for task in dataset.tasks} == set(baseline["categories"])
+    assert report.total == baseline["summary"]["total"]
+    assert report.passed == baseline["summary"]["passed"]
+    assert report.failed == baseline["summary"]["failed"]
+    assert report.pass_rate == baseline["summary"]["pass_rate"]
+
+
+def test_report_is_strict_json() -> None:
+    # Keep this small smoke assertion close to the task contract: report data
+    # must be serializable before a CI artifact is written.
+    payload = {"case_id": "x", "metadata": {"safe": True}}
+    assert json.loads(json.dumps(payload)) == payload

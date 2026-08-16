@@ -59,6 +59,28 @@ M0–M7 和 H-01–H-17 基础建设已完成，建立了多包边界、事件 S
 | P-01.5 | Provider/Model catalog | 多 Provider profile、每个 Provider 多 Model、`/providers`、`/models`、TUI 展示与校验 |
 | P-01.6 | 本地可运维性 | 脱敏 `audit.jsonl`、Doctor 审计检查、wheel 隔离验证和回归测试 |
 
+### H-18：评估契约与 Harness 一致性
+
+**状态：In progress。** 评估边界已冻结在[评估契约](EVALUATION.zh-CN.md)中。Harness 案例归属于
+`evals/aihi_agent/`，必须使用脱敏、只做 Replay 的 Trace 评估 `aihi-agent`。
+
+| 切片 | 范围 | 验收 |
+| --- | --- | --- |
+| H-18.1 | 带版本的评估目录和 JSON Schema | `evals/schemas/` 能校验 Harness 案例和报告；中英文契约一致 |
+| H-18.2 | Harness 一致性语料和确定性 Runner | 合法/拒绝 Trace 覆盖生命周期、Approval、恢复、权限和脱敏；所有必选案例通过 |
+
+### P-06：Coding Agent 基准
+
+**状态：In progress。** 产品任务归属于 `evals/aihi_code_agent/`，必须评估隔离工作区中的实际结果。任务可以
+额外导出 Harness Trace，但不能把 Coding Prompt、Tool 或产品 Policy 下沉到 `aihi-agent`。
+
+| 切片 | 范围 | 验收 |
+| --- | --- | --- |
+| P-06.1 | Task、Fixture、Oracle 和报告契约 | `code-task.schema.json` 与 `eval-report.schema.json` 已版本化并有文档 |
+| P-06.2 | 隔离任务 Runner 和确定性评分器 | 隐藏测试、回归、路径范围、安全和 Trace 结果汇总为一个机器可读报告 |
+| P-06.3 | 基准语料和基线 | 初始任务类别、固定 Fixture Hash 和 pass@1 基线可重复 |
+| P-06.4 | Offline/PR/Nightly/Release 自动化门禁 | `scripts/evals/run.py` 使用稳定退出码并写入脱敏报告；PR 使用确定性 Smoke 基线；Live 模式必须显式提供 Docker/禁网配置 |
+
 ### H-03–H-06：平台 Adapter
 
 **状态：Planned。** 等真实远程消费者出现后再做，只能基于既有协议新增 Adapter，不改变 Runtime 语义。

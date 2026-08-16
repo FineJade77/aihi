@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aihi.dev/schemas/eval-report.v1.json",
+  "title": "AIHI evaluation report",
+  "description": "A stable, JSON-serializable report for Harness, Coding Agent or combined evaluation runs.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["report_version", "target", "dataset_id", "mode", "summary", "cases"],
+  "properties": {
+    "report_version": {
+      "const": 1
+    },
+    "target": {
+      "enum": ["aihi_agent", "aihi_code_agent", "combined"]
+    },
+    "dataset_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "mode": {
+      "enum": ["offline", "pr", "nightly", "release"]
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "config": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "prompt_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "tools_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "passed", "failed", "pass_rate"],
+      "properties": {
+        "total": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "passed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pass_rate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "duration_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tool_calls": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "cases": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/case_result"
+      }
+    }
+  },
+  "$defs": {
+    "case_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["case_id", "passed", "score"],
+      "properties": {
+        "case_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "passed": {
+          "type": "boolean"
+        },
+        "score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "error_code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "grades": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "metrics": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    }
+  }
+}

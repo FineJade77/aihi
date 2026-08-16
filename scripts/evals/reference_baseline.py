@@ -1,0 +1,105 @@
+"""Deterministic reference executor for the PR smoke gate.
+
+This executor is intentionally a tooling fixture. It validates the task,
+workspace, oracle and report chain; it is not a model baseline.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from aihi.agent import Event, EventStore, RunResult, RunState, Session
+from aihi.code_agent.evals import CodeTask, TaskExecution
+
+
+async def reference_executor(
+    task: CodeTask, workspace: Path, store: EventStore
+) -> TaskExecution:
+    patches = {
+        "bug-fix-bool": (
+            "def parse_bool(value: str) -> bool:\n"
+            "    normalized = value.strip().lower()\n"
+            "    if normalized in {'', 'false', '0', 'no', 'off'}:\n"
+            "        return False\n"
+            "    if normalized in {'true', '1', 'yes', 'on'}:\n"
+            "        return True\n"
+            "    raise ValueError('not a boolean')\n"
+        ),
+        "feature-slug": (
+            "import re\n"
+            "import unicodedata\n\n"
+            "def slugify(value: str) -> str:\n"
+            "    ascii_value = unicodedata.normalize(\n"
+            "        'NFKD', value\n"
+            "    ).encode('ascii', 'ignore').decode()\n"
+            "    return re.sub(r'[^a-z0-9]+', '-', ascii_value.lower()).strip('-')\n"
+        ),
+        "test-repair-stats": (
+            "def median(values: list[float]) -> float:\n"
+            "    ordered = sorted(values)\n"
+            "    middle = len(ordered) // 2\n"
+            "    if len(ordered) % 2:\n"
+            "        return ordered[middle]\n"
+            "    return (ordered[middle - 1] + ordered[middle]) / 2\n"
+        ),
+        "security-safe-path": (
+            "from pathlib import Path\n\n"
+            "def resolve_inside(root: str | Path, candidate: str) -> Path:\n"
+            "    root_path = Path(root).resolve()\n"
+            "    candidate_path = (root_path / candidate).resolve()\n"
+            "    try:\n"
+            "        candidate_path.relative_to(root_path)\n"
+            "    except ValueError as exc:\n"
+            "        raise ValueError('path escapes root') from exc\n"
+            "    return candidate_path\n"
+        ),
+    }
+    targets = {
+        "bug-fix-bool": "target.py",
+        "feature-slug": "slug.py",
+        "test-repair-stats": "stats.py",
+        "security-safe-path": "safe_path.py",
+    }
+    try:
+        target = targets[task.case_id]
+        patch = patches[task.case_id]
+    except KeyError as exc:
+        raise ValueError(f"No reference patch for task {task.case_id}") from exc
+    (workspace / target).write_text(patch, encoding="utf-8")
+    if task.case_id == "test-repair-stats":
+        (workspace / "test_stats.py").write_text(
+            "from stats import median\n\nassert median([1, 2, 3, 4]) == 2.5\n",
+            encoding="utf-8",
+        )
+
+    session = Session.create(store, cwd=workspace, provider="reference", model="reference")
+    session.append_many(
+        [
+            Event(type="run.started", session_id=session.id, run_id="reference-run"),
+            Event(
+                type="run.state_changed",
+                session_id=session.id,
+                run_id="reference-run",
+                data={"state": "running"},
+            ),
+            Event(
+                type="run.state_changed",
+                session_id=session.id,
+                run_id="reference-run",
+                data={"state": "completed"},
+            ),
+            Event(
+                type="run.completed",
+                session_id=session.id,
+                run_id="reference-run",
+                data={"state": "completed"},
+            ),
+        ]
+    )
+    return TaskExecution(
+        session=session,
+        run_result=RunResult(run_id="reference-run", state=RunState.COMPLETED),
+    )
+
+
+__all__ = ["reference_executor"]

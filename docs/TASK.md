@@ -77,6 +77,31 @@ diagnose the local runtime.
 | P-01.5 | Provider/model catalogs | Multiple provider profiles, multiple models per provider, /providers and /models, TUI catalog display and validation |
 | P-01.6 | Local operability | Redacted audit.jsonl, doctor audit check, wheel isolation validation and regression tests |
 
+### H-18 — Evaluation contract and Harness conformance
+
+**Status: In progress.** The evaluation boundary is frozen in
+[EVALUATION.md](EVALUATION.md). Harness cases belong to `evals/aihi_agent/` and
+must exercise `aihi-agent` through redacted, replay-only traces.
+
+| Slice | Scope | Acceptance |
+| --- | --- | --- |
+| H-18.1 | Versioned evaluation directories and JSON Schemas | `evals/schemas/` validates Harness cases and reports; English/Chinese contracts agree |
+| H-18.2 | Harness conformance corpus and deterministic runner | Valid and rejected traces cover lifecycle, approval, recovery, authority and redaction; all required cases pass |
+
+### P-06 — Coding Agent benchmark
+
+**Status: In progress.** Product tasks belong to `evals/aihi_code_agent/` and
+must grade actual isolated workspace outcomes. They may additionally export a
+Harness Trace, but must not move Coding prompts, tools or product policy into
+`aihi-agent`.
+
+| Slice | Scope | Acceptance |
+| --- | --- | --- |
+| P-06.1 | Task, fixture, oracle and report contract | `code-task.schema.json` and `eval-report.schema.json` are versioned and documented |
+| P-06.2 | Isolated task runner and deterministic graders | Hidden tests, regression, path scope, safety and trace results produce one machine-readable report |
+| P-06.3 | Benchmark corpus and baseline | Initial task categories, fixed fixture hashes and pass@1 baseline are reproducible |
+| P-06.4 | Offline/PR/nightly/release automation gates | `scripts/evals/run.py` has stable exit codes, writes redacted reports, PR uses the deterministic smoke baseline, and live modes require explicit Docker/no-network config |
+
 ### H-03–H-06 — platform adapters
 
 **Status: Planned.** These capabilities are postponed until a real remote consumer exists. They may only
