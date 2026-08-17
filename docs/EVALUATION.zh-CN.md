@@ -49,9 +49,9 @@ Harness 门禁是二值的：所有必选案例都必须通过。`0.8`、`0.9` �
 且通过 Harness 安全/契约检查
 ```
 
-v1 Smoke 语料目前包含四个任务，覆盖 Bug 修复、小功能、测试修复和安全边界。提交的脚本化基线只验证
-Runner/Oracle 链路，明确不是真实模型能力分数。后续语料切片再加入重构、仓库理解、指令遵循、中断/恢复
-和 Subagent 使用。
+v1 Smoke-plus 语料目前包含九个任务，覆盖 Bug 修复、小功能、测试修复、安全边界、重构、仓库理解、
+指令遵循、中断/恢复和 Subagent 使用。提交的脚本化基线只验证 Runner/Oracle 链路，明确不是真实模型能力
+分数。
 
 ## 可复现性与兼容性
 
@@ -76,6 +76,8 @@ python3 -m scripts.evals.run --mode pr
 ```
 
 报告写入 `eval-results/<mode>/`。退出码 `0` 表示门禁通过，`1` 表示评估案例失败，`2` 表示准备或配置失败。
-`nightly` 和 `release` 必须显式传入 `--config <path>`，该配置必须使用 Docker 且关闭网络；缺少配置时会 fail
-closed。`.github/workflows/evals.yml` 会在 Pull Request 上运行 `pr`，其他模式通过显式 workflow dispatch 触发，
-不会在仓库中保存凭据。
+`nightly` 和 `release` 必须显式传入 `--config <path>`，配置必须指定真实 Provider、`api_key_env`、Docker
+镜像并关闭网络；Fake Provider、MCP Server、缺少凭据或占位 Model 都会 fail closed。提交的
+`evals/aihi_code_agent/v1/nightly.config.example.toml` 是不含凭据的模板。这些模式还会写入
+`baseline-comparison.json`；基线对比用于诊断，发布门禁仍要求所有任务通过。`.github/workflows/evals.yml` 会在
+Pull Request 上运行 `pr`，其他模式通过显式 workflow dispatch 触发，不会在仓库中保存凭据。

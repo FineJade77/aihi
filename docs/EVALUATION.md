@@ -56,11 +56,11 @@ AND allowed/forbidden path checks
 AND Harness safety/conformance checks
 ```
 
-The v1 smoke corpus currently contains four tasks covering bug fixes, small
-features, test repair and a security boundary. The committed scripted baseline
-checks the runner/oracle chain only; it is explicitly not a real-model
-capability score. Later corpus slices add refactoring, repository
-understanding, instruction following, interruption/resume and subagent use.
+The v1 smoke-plus corpus currently contains nine tasks covering bug fixes, small
+features, test repair, a security boundary, refactoring, repository
+understanding, instruction following, interruption/resume and subagent use. The
+committed scripted baseline checks the runner/oracle chain only; it is explicitly
+not a real-model capability score.
 
 ## Reproducibility and compatibility
 
@@ -90,7 +90,12 @@ python3 -m scripts.evals.run --mode pr
 Reports are written below `eval-results/<mode>/`. Exit code `0` means the gate
 passed, `1` means an evaluation case failed, and `2` means setup or
 configuration failed. `nightly` and `release` require an explicit
-`--config <path>` containing a Docker, no-network Coding Agent configuration;
-they fail closed when it is missing. The CI template in
+`--config <path>` containing a real Provider, its `api_key_env`, a Docker image,
+and networking disabled; fake Provider, MCP servers, missing credentials and
+placeholder models fail closed. The committed
+`evals/aihi_code_agent/v1/nightly.config.example.toml` is a credential-free
+template. These modes also write `baseline-comparison.json`; the baseline is a
+diagnostic comparison while the release gate still requires every task to
+pass. The CI template in
 `.github/workflows/evals.yml` runs `pr` on pull requests and exposes the other
 modes through an explicit dispatch input, without storing credentials.

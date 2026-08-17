@@ -100,7 +100,7 @@ Harness Trace, but must not move Coding prompts, tools or product policy into
 | P-06.1 | Task, fixture, oracle and report contract | `code-task.schema.json` and `eval-report.schema.json` are versioned and documented |
 | P-06.2 | Isolated task runner and deterministic graders | Hidden tests, regression, path scope, safety and trace results produce one machine-readable report |
 | P-06.3 | Benchmark corpus and baseline | Initial task categories, fixed fixture hashes and pass@1 baseline are reproducible |
-| P-06.4 | Offline/PR/nightly/release automation gates | `scripts/evals/run.py` has stable exit codes, writes redacted reports, PR uses the deterministic smoke baseline, and live modes require explicit Docker/no-network config |
+| P-06.4 | Offline/PR/nightly/release automation gates | `scripts/evals/run.py` has stable exit codes, writes redacted reports and baseline comparisons, PR uses the deterministic smoke baseline, and live modes fail closed without an explicit real-Provider Docker/no-network config |
 
 ### H-03–H-06 — platform adapters
 

@@ -79,7 +79,7 @@ M0–M7 和 H-01–H-17 基础建设已完成，建立了多包边界、事件 S
 | P-06.1 | Task、Fixture、Oracle 和报告契约 | `code-task.schema.json` 与 `eval-report.schema.json` 已版本化并有文档 |
 | P-06.2 | 隔离任务 Runner 和确定性评分器 | 隐藏测试、回归、路径范围、安全和 Trace 结果汇总为一个机器可读报告 |
 | P-06.3 | 基准语料和基线 | 初始任务类别、固定 Fixture Hash 和 pass@1 基线可重复 |
-| P-06.4 | Offline/PR/Nightly/Release 自动化门禁 | `scripts/evals/run.py` 使用稳定退出码并写入脱敏报告；PR 使用确定性 Smoke 基线；Live 模式必须显式提供 Docker/禁网配置 |
+| P-06.4 | Offline/PR/Nightly/Release 自动化门禁 | `scripts/evals/run.py` 使用稳定退出码并写入脱敏报告和基线对比；PR 使用确定性 Smoke 基线；Live 模式缺少显式真实 Provider + Docker/禁网配置时必须 fail closed |
 
 ### H-03–H-06：平台 Adapter
 

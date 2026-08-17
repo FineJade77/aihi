@@ -7,17 +7,27 @@
     "bug-fix-bool",
     "feature-slug",
     "test-repair-stats",
-    "security-safe-path"
+    "security-safe-path",
+    "refactor-name",
+    "repository-understanding-settings",
+    "instruction-following-report",
+    "interrupt-resume-checkpoint",
+    "subagent-plan"
   ],
   "categories": [
     "bug_fix",
     "feature",
+    "instruction_following",
+    "interrupt_resume",
+    "refactor",
+    "repository_understanding",
     "security_boundary",
+    "subagent",
     "test_repair"
   ],
   "summary": {
-    "total": 4,
-    "passed": 4,
+    "total": 9,
+    "passed": 9,
     "failed": 0,
     "pass_rate": 1.0
   }

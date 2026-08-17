@@ -281,12 +281,19 @@ def test_conformance_runner_accepts_existing_eval_dataset() -> None:
 def test_versioned_mvp_manifest_is_replayable() -> None:
     repository_root = Path(__file__).resolve().parents[5]
     manifest = repository_root / "evals" / "aihi_agent" / "v1" / "manifest.jsonl"
-    dataset = EvalDataset.from_jsonl("aihi-agent-conformance-v1", manifest.read_text())
+    raw = manifest.read_text()
+    dataset = EvalDataset.from_jsonl("aihi-agent-conformance-v1", raw)
 
     report = HarnessConformanceRunner().run_dataset(dataset)
 
-    assert report.total == 3
+    assert report.total == 9
     assert report.is_gate_pass is True
+    assert "sk-1234567890abcdef" not in raw
+    approval = next(case for case in dataset.cases if case.case_id == "approval-resume-completed")
+    approval_event = next(
+        event for event in approval.trace.events if event["type"] == "approval.requested"
+    )
+    assert approval_event["data"]["tool_input"]["api_key"] == "[REDACTED]"
 
 
 def test_conformance_gate_reports_mismatches_and_rejects_failed_gate() -> None:

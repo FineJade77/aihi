@@ -1,0 +1,27 @@
+# Copy this file outside the repository and replace the model/image values.
+# Never commit credentials or a file containing a real API key.
+
+[provider]
+name = "openai"
+model = "REPLACE_WITH_MODEL"
+api_key_env = "OPENAI_API_KEY"
+
+[agent]
+permission_mode = "accept_edits"
+max_output_tokens = 8192
+
+[sandbox]
+backend = "docker"
+image = "python:3.11-slim"
+network = "none"
+allow_network = false
+workspace_read_only = false
+
+[artifacts]
+enabled = false
+
+[audit]
+enabled = false
+
+[subagents]
+enabled = false

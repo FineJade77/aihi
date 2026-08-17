@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 from aihi.agent import Event, InMemoryEventStore, RunResult, RunState, Session
+from aihi.code_agent.config import CodeAgentConfig, ProviderSettings, SandboxSettings
 from aihi.code_agent.evals import (
     CodeAgentEvalRunner,
     CodeTask,
@@ -16,6 +17,9 @@ from aihi.code_agent.evals import (
     directory_sha256,
 )
 from aihi.code_agent.evals.dataset import CodeEvalValidationError
+
+from scripts.evals.reference_baseline import reference_executor
+from scripts.evals.run import compare_baseline, validate_live_config
 
 
 def _task(fixture: Path, *, forbidden_paths: tuple[str, ...] = ()) -> CodeTask:
@@ -78,63 +82,6 @@ async def _completed_execution(workspace: Path, store: InMemoryEventStore) -> Ta
         session=session,
         run_result=RunResult(run_id="run-1", state=RunState.COMPLETED),
     )
-
-
-async def _reference_executor(
-    task: CodeTask, workspace: Path, store: InMemoryEventStore
-) -> TaskExecution:
-    patches = {
-        "bug-fix-bool": (
-            "def parse_bool(value: str) -> bool:\n"
-            "    normalized = value.strip().lower()\n"
-            "    if normalized in {'', 'false', '0', 'no', 'off'}:\n"
-            "        return False\n"
-            "    if normalized in {'true', '1', 'yes', 'on'}:\n"
-            "        return True\n"
-            "    raise ValueError('not a boolean')\n"
-        ),
-        "feature-slug": (
-            "import re\n"
-            "import unicodedata\n\n"
-            "def slugify(value: str) -> str:\n"
-            "    ascii_value = unicodedata.normalize(\n"
-            "        'NFKD', value\n"
-            "    ).encode('ascii', 'ignore').decode()\n"
-            "    return re.sub(r'[^a-z0-9]+', '-', ascii_value.lower()).strip('-')\n"
-        ),
-        "test-repair-stats": (
-            "def median(values: list[float]) -> float:\n"
-            "    ordered = sorted(values)\n"
-            "    middle = len(ordered) // 2\n"
-            "    if len(ordered) % 2:\n"
-            "        return ordered[middle]\n"
-            "    return (ordered[middle - 1] + ordered[middle]) / 2\n"
-        ),
-        "security-safe-path": (
-            "from pathlib import Path\n\n"
-            "def resolve_inside(root: str | Path, candidate: str) -> Path:\n"
-            "    root_path = Path(root).resolve()\n"
-            "    candidate_path = (root_path / candidate).resolve()\n"
-            "    try:\n"
-            "        candidate_path.relative_to(root_path)\n"
-            "    except ValueError as exc:\n"
-            "        raise ValueError('path escapes root') from exc\n"
-            "    return candidate_path\n"
-        ),
-    }
-    target = {
-        "bug-fix-bool": "target.py",
-        "feature-slug": "slug.py",
-        "test-repair-stats": "stats.py",
-        "security-safe-path": "safe_path.py",
-    }[task.case_id]
-    (workspace / target).write_text(patches[task.case_id], encoding="utf-8")
-    if task.case_id == "test-repair-stats":
-        (workspace / "test_stats.py").write_text(
-            "from stats import median\n\nassert median([1, 2, 3, 4]) == 2.5\n",
-            encoding="utf-8",
-        )
-    return await _completed_execution(workspace, store)
 
 
 @pytest.mark.asyncio
@@ -222,6 +169,33 @@ def test_code_task_rejects_network_and_non_docker_execution(tmp_path: Path) -> N
         CodeTask.from_dict(common, base_dir=tmp_path)
 
 
+def test_live_config_validation_fails_closed_without_real_provider_or_docker(
+    tmp_path: Path,
+) -> None:
+    defaults = CodeAgentConfig.defaults(tmp_path)
+    with pytest.raises(ValueError, match="real Provider"):
+        validate_live_config(defaults, environment={})
+
+    live = replace(
+        defaults,
+        provider=ProviderSettings(
+            name="openai", model="gpt-eval", api_key_env="OPENAI_API_KEY"
+        ),
+        sandbox=SandboxSettings(
+            backend="docker",
+            root=tmp_path,
+            image="python:3.11-slim",
+            network="none",
+            allow_network=False,
+        ),
+    )
+    validate_live_config(live, environment={"OPENAI_API_KEY": "test-only"})
+
+    unsafe = replace(live, sandbox=replace(live.sandbox, allow_network=True))
+    with pytest.raises(ValueError, match="allow_network"):
+        validate_live_config(unsafe, environment={"OPENAI_API_KEY": "test-only"})
+
+
 @pytest.mark.asyncio
 async def test_code_eval_runner_applies_task_timeout(tmp_path: Path) -> None:
     fixture = tmp_path / "fixture"
@@ -269,7 +243,7 @@ async def test_v1_manifest_has_fixed_fixtures_and_reproducible_reference_baselin
     )
     baseline = json.loads((benchmark_root / "baseline.json").read_text(encoding="utf-8"))
 
-    report = await CodeAgentEvalRunner(executor=_reference_executor).run_dataset(dataset)
+    report = await CodeAgentEvalRunner(executor=reference_executor).run_dataset(dataset)
 
     assert [task.case_id for task in dataset.tasks] == baseline["case_ids"]
     assert {task.category for task in dataset.tasks} == set(baseline["categories"])
@@ -277,6 +251,9 @@ async def test_v1_manifest_has_fixed_fixtures_and_reproducible_reference_baselin
     assert report.passed == baseline["summary"]["passed"]
     assert report.failed == baseline["summary"]["failed"]
     assert report.pass_rate == baseline["summary"]["pass_rate"]
+    comparison = compare_baseline(report, baseline)
+    assert comparison["case_ids_match"] is True
+    assert comparison["delta"] == {"passed": 0, "pass_rate": 0.0}
 
 
 def test_report_is_strict_json() -> None:

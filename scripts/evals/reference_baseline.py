@@ -53,12 +53,54 @@ async def reference_executor(
             "        raise ValueError('path escapes root') from exc\n"
             "    return candidate_path\n"
         ),
+        "refactor-name": (
+            "def _join_parts(parts: list[str]) -> str:\n"
+            "    return \" \".join(parts)\n\n"
+            "\n"
+            "def format_label(first: str, last: str) -> str:\n"
+            "    \"\"\"Format a two-part label without changing caller-visible spacing.\"\"\"\n\n"
+            "    return _join_parts([first, last])\n"
+        ),
+        "repository-understanding-settings": (
+            "DEFAULTS = {\"timeout\": 30, \"retries\": 2}\n\n\n"
+            "def get_setting(config: dict[str, int], name: str) -> int | None:\n"
+            "    \"\"\"Read a setting and fall back to the known defaults.\"\"\"\n\n"
+            "    return config.get(name, DEFAULTS.get(name))\n\n\n"
+            "def effective_timeout(config: dict[str, object]) -> int:\n"
+            "    candidate = config.get(\"timeout\")\n"
+            "    if (\n"
+            "        isinstance(candidate, int)\n"
+            "        and not isinstance(candidate, bool)\n"
+            "        and candidate > 0\n"
+            "    ):\n"
+            "        return candidate\n"
+            "    return DEFAULTS[\"timeout\"]\n"
+        ),
+        "instruction-following-report": (
+            "# Changelog\n\n- Added the requested report.\n"
+        ),
+        "interrupt-resume-checkpoint": (
+            "def resume_offset(state: dict[str, int]) -> int:\n"
+            "    \"\"\"Return the saved offset for a resumable run.\"\"\"\n\n"
+            "    value = state.get(\"offset\", 0)\n"
+            "    return value if value > 0 else 0\n"
+        ),
+        "subagent-plan": (
+            "def plan_children(items: list[str]) -> list[str]:\n"
+            "    \"\"\"Build the child-task list for a delegated run.\"\"\"\n\n"
+            "    return [item.strip() for item in items if item.strip()]\n"
+        ),
     }
     targets = {
         "bug-fix-bool": "target.py",
         "feature-slug": "slug.py",
         "test-repair-stats": "stats.py",
         "security-safe-path": "safe_path.py",
+        "refactor-name": "formatter.py",
+        "repository-understanding-settings": "settings.py",
+        "instruction-following-report": "CHANGELOG.md",
+        "interrupt-resume-checkpoint": "checkpoint.py",
+        "subagent-plan": "delegation_plan.py",
     }
     try:
         target = targets[task.case_id]
