@@ -5,3 +5,4 @@
 `baseline.json` 记录脚本化参考执行器结果。该基线用于验证 Runner/Oracle 链路，明确不是真实模型能力分数。
 `nightly.config.example.toml` 说明真实 Provider、凭据环境变量和 Docker/禁网配置要求；它只是模板，必须在仓库
 外提供 Model 和环境变量后才能使用。
+v1 每个任务的 live Provider 端到端时限为 90 秒，覆盖模型与工具往返以及最终 Oracle 检查前的任务执行。

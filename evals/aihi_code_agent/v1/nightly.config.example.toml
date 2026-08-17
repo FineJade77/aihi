@@ -7,7 +7,7 @@ model = "REPLACE_WITH_MODEL"
 api_key_env = "OPENAI_API_KEY"
 
 [agent]
-permission_mode = "accept_edits"
+permission_mode = "bypass"
 max_output_tokens = 8192
 
 [sandbox]

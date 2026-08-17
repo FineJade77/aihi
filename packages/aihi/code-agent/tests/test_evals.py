@@ -8,12 +8,14 @@ from pathlib import Path
 
 import pytest
 from aihi.agent import Event, InMemoryEventStore, RunResult, RunState, Session
+from aihi.agent.policy import PermissionMode
 from aihi.code_agent.config import CodeAgentConfig, ProviderSettings, SandboxSettings
 from aihi.code_agent.evals import (
     CodeAgentEvalRunner,
     CodeTask,
     CodeTaskDataset,
     TaskExecution,
+    changed_paths,
     directory_sha256,
 )
 from aihi.code_agent.evals.dataset import CodeEvalValidationError
@@ -156,6 +158,24 @@ def test_code_task_dataset_round_trips_jsonl(tmp_path: Path) -> None:
     assert restored.tasks[0].to_dict(base_dir=tmp_path) == task.to_dict(base_dir=tmp_path)
 
 
+def test_workspace_changes_ignore_python_bytecode_but_not_other_files(tmp_path: Path) -> None:
+    before = {"target.py": "before"}
+    after_root = tmp_path / "workspace"
+    after_root.mkdir()
+    (after_root / "target.py").write_text("after", encoding="utf-8")
+    cache = after_root / "__pycache__"
+    cache.mkdir()
+    (cache / "target.cpython-312.pyc").write_bytes(b"derived")
+    (cache / "unexpected.txt").write_text("must remain visible", encoding="utf-8")
+
+    from aihi.code_agent.evals.workspace import snapshot_files
+
+    assert changed_paths(before, snapshot_files(after_root)) == (
+        "__pycache__/unexpected.txt",
+        "target.py",
+    )
+
+
 def test_code_task_rejects_network_and_non_docker_execution(tmp_path: Path) -> None:
     fixture = tmp_path / "fixture"
     fixture.mkdir()
@@ -181,6 +201,7 @@ def test_live_config_validation_fails_closed_without_real_provider_or_docker(
         provider=ProviderSettings(
             name="openai", model="gpt-eval", api_key_env="OPENAI_API_KEY"
         ),
+        permission_mode=PermissionMode.BYPASS,
         sandbox=SandboxSettings(
             backend="docker",
             root=tmp_path,
@@ -194,6 +215,10 @@ def test_live_config_validation_fails_closed_without_real_provider_or_docker(
     unsafe = replace(live, sandbox=replace(live.sandbox, allow_network=True))
     with pytest.raises(ValueError, match="allow_network"):
         validate_live_config(unsafe, environment={"OPENAI_API_KEY": "test-only"})
+
+    interactive = replace(live, permission_mode=PermissionMode.ACCEPT_EDITS)
+    with pytest.raises(ValueError, match="permission_mode"):
+        validate_live_config(interactive, environment={"OPENAI_API_KEY": "test-only"})
 
 
 @pytest.mark.asyncio
@@ -247,6 +272,11 @@ async def test_v1_manifest_has_fixed_fixtures_and_reproducible_reference_baselin
 
     assert [task.case_id for task in dataset.tasks] == baseline["case_ids"]
     assert {task.category for task in dataset.tasks} == set(baseline["categories"])
+    assert {task.timeout_seconds for task in dataset.tasks} == {90}
+    instruction_task = next(
+        task for task in dataset.tasks if task.case_id == "instruction-following-report"
+    )
+    assert "第一行是 # Changelog，第二行是空行" in instruction_task.prompt
     assert report.total == baseline["summary"]["total"]
     assert report.passed == baseline["summary"]["passed"]
     assert report.failed == baseline["summary"]["failed"]

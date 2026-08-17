@@ -214,6 +214,11 @@ class CodeAgentEvalRunner:
             raise CodeAgentConfigError("benchmark execution requires the Docker sandbox")
         if self.config.sandbox.allow_network:
             raise CodeAgentConfigError("benchmark execution requires network access to be disabled")
+        if self.config.permission_mode.value != "bypass":
+            raise CodeAgentConfigError(
+                "benchmark execution requires permission_mode=bypass for non-interactive "
+                "process execution"
+            )
         scoped = replace(
             self.config,
             base_dir=workspace,

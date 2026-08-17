@@ -22,6 +22,14 @@ def snapshot_files(root: str | Path) -> dict[str, str]:
         if candidate.is_symlink():
             raise CodeEvalValidationError(f"workspace contains a symlink: {candidate}")
         if candidate.is_file():
+            # Python may compile an imported fixture into a bytecode cache while
+            # the Agent is inspecting or testing it.  Bytecode is a derived
+            # runtime artifact, not a user change, so it must not make an
+            # otherwise in-scope task fail the workspace-scope grader.  Keep
+            # other files (including files placed under __pycache__) visible so
+            # this does not become a way to hide arbitrary workspace writes.
+            if candidate.suffix in {".pyc", ".pyo"}:
+                continue
             relative = candidate.relative_to(workspace).as_posix()
             result[relative] = _file_sha256(candidate)
     return result

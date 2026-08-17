@@ -10,3 +10,5 @@ capability score.
 `nightly.config.example.toml` documents the required real-Provider, credential
 environment and Docker/no-network settings; it is a template and is not
 usable until its model and environment are supplied outside the repository.
+Each v1 task allows up to 90 seconds for a live Provider run; this bounds the
+end-to-end task, including model/tool round trips, rather than only the oracle.
