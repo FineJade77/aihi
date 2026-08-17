@@ -14,6 +14,7 @@ The repository is a Python/TypeScript monorepo. The Python packages own model co
 - Policy-aware coding tools, sandbox backends, Skills, MCP, subagents, artifacts, and redacted audit/telemetry logs.
 - A language-neutral JSON-RPC protocol shared by the Python Worker and TypeScript CLI.
 - A local Ink TUI with session recovery, model/provider selection, approvals, Skills/MCP inspection, and diagnostics.
+- A versioned Agent evaluation corpus and full CI gates; the first reviewed live DeepSeek baseline passed 26/27 attempts (96.3% empirical pass@1) across nine tasks repeated three times.
 
 ## Architecture
 
@@ -91,12 +92,22 @@ uv pip install -e packages/aihi/code-agent
 ### Run checks
 
 ```bash
+uv run python -m compileall -q packages
 uv run pytest
 uv run ruff check .
 uv run mypy
+pnpm --dir packages/aihi/code-protocol typecheck
 pnpm --filter @aihi/code-cli typecheck
 pnpm --filter @aihi/code-cli test
 ```
+
+`.github/workflows/ci.yml` runs these quality gates on Python 3.11/3.12 and
+Node.js 20, including the installed-wheel packaging tests. Deterministic and
+live Agent evaluation gates are documented in
+[`docs/EVALUATION.md`](docs/EVALUATION.md); live mode supports repeated,
+multi-model comparisons with pass@1, latency, token/tool usage and cost metrics.
+The credential-free reviewed baseline is available in
+[`evals/aihi_code_agent/v1/baselines/`](evals/aihi_code_agent/v1/baselines/).
 
 ### Run the coding CLI
 

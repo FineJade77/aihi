@@ -1,5 +1,6 @@
 # Copy this file outside the repository and replace the model/image values.
-# Never commit credentials or a file containing a real API key.
+# The API key stays in the named environment variable; never put its value in
+# this file. Pass multiple external config files to compare models/providers.
 
 [provider]
 name = "openai"

@@ -720,6 +720,7 @@ def _parse_provider_settings(
 ) -> ProviderSettings:
     provider_name = _provider_name(value.get("name", default_name), f"{key}.name")
     raw_models = value.get("models")
+    models: tuple[str, ...]
     if raw_models is None:
         models = ()
     else:

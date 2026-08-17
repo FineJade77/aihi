@@ -1,0 +1,63 @@
+name: AIHI quality gates
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Install locked workspace
+        run: uv sync --frozen
+      - name: Compile Python packages
+        run: uv run python -m compileall -q packages
+      - name: Lint
+        run: uv run ruff check .
+      - name: Strict type check
+        run: uv run mypy
+      - name: Unit, contract, integration, security and wheel tests
+        run: uv run pytest -q
+
+  typescript:
+    name: TypeScript protocol and CLI
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install locked workspace
+        run: pnpm install --frozen-lockfile
+      - name: Type-check shared protocol
+        run: pnpm --dir packages/aihi/code-protocol typecheck
+      - name: Type-check CLI
+        run: pnpm --dir apps/aihi-code-cli typecheck
+      - name: Build and test CLI
+        run: pnpm --dir apps/aihi-code-cli test

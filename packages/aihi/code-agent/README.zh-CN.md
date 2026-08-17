@@ -150,6 +150,16 @@ Tool Call 在执行前持久化，并且恰好返回一个 Result。Approval res
 客户端先解决 Approval，再调用 `run.resume`。这样可以保持 Worker Protocol 的确定性，同时让 TUI
 把两个操作呈现为一个交互。
 
+## 评测
+
+v1 Benchmark 在一次性工作区中运行固定 Fixture Hash 的任务，并根据测试、修改路径范围和导出的 Harness
+Trace 评分。真实 `nightly`/`release` 必须使用真实 Provider 与 Docker/禁网执行，默认每任务三次，并报告
+pass@1、稳定性、延迟、Token/Tool 用量及 Provider 能提供时的成本。重复传入 `--config` 可生成不含凭据的
+多模型 `live-summary.json`。命令和 CI Secret 配置见仓库[评测契约](../../../docs/EVALUATION.zh-CN.md)。
+首份审核后的真实基线记录 DeepSeek `deepseek-v4-flash` 在 9 个任务各重复 3 次时通过 26/27 次，经验
+pass@1 为 96.3%。
+Live 门禁按 Provider/Model 精确选择基线，并在 pass@1 退化时失败；模型能力不会与脚本化参考结果比较。
+
 ## 开发与测试
 
 ```bash

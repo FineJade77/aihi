@@ -9,7 +9,7 @@
 | 状态 | 基础能力完成；应用和平台路线图持续推进 |
 | 当前版本线 | Python 包已以 `0.1.0` 发布到 PyPI；Code Protocol `0.2` |
 | 架构 | [ARCHITECTURE.md](ARCHITECTURE.md) |
-| 最近完成 | 多 Provider / 多 Model catalog 与选择体验 |
+| 最近完成 | 审核真实 Provider 基线并显式分类任务超时 |
 
 `docs/adr/` 与 `docs/rfcs/` 下的 ADR/RFC 是本地工作文件，已加入 `.gitignore`，稳定决策必须同步
 到架构文档、项目 README、代码契约和测试中。
@@ -71,15 +71,16 @@ M0–M7 和 H-01–H-17 基础建设已完成，建立了多包边界、事件 S
 
 ### P-06：Coding Agent 基准
 
-**状态：In progress。** 产品任务归属于 `evals/aihi_code_agent/`，必须评估隔离工作区中的实际结果。任务可以
-额外导出 Harness Trace，但不能把 Coding Prompt、Tool 或产品 Policy 下沉到 `aihi-agent`。
+**状态：Done。** 确定性语料、真实执行路径、重复采样指标、完整 CI 门禁和一份审核后的真实 Provider
+基线均已实现。产品任务归属于 `evals/aihi_code_agent/`，必须评估隔离工作区中的实际结果。任务可以额外
+导出 Harness Trace，但不能把 Coding Prompt、Tool 或产品 Policy 下沉到 `aihi-agent`。
 
 | 切片 | 范围 | 验收 |
 | --- | --- | --- |
 | P-06.1 | Task、Fixture、Oracle 和报告契约 | `code-task.schema.json` 与 `eval-report.schema.json` 已版本化并有文档 |
 | P-06.2 | 隔离任务 Runner 和确定性评分器 | 隐藏测试、回归、路径范围、安全和 Trace 结果汇总为一个机器可读报告 |
-| P-06.3 | 基准语料和基线 | 初始任务类别、固定 Fixture Hash 和 pass@1 基线可重复 |
-| P-06.4 | Offline/PR/Nightly/Release 自动化门禁 | `scripts/evals/run.py` 使用稳定退出码并写入脱敏报告和基线对比；PR 使用确定性 Smoke 基线；Live 模式缺少显式真实 Provider + Docker/禁网配置时必须 fail closed |
+| P-06.3 | 基准语料和基线 | 初始任务类别与固定 Fixture Hash 可重复；真实 Provider pass@1 基线与脚本化 Runner 基线分开采集并审核 |
+| P-06.4 | Offline/PR/Nightly/Release 自动化门禁 | `scripts/evals/run.py` 使用稳定退出码，支持重复的多模型 Live Profile，以及 Token/Tool/成本/延迟脱敏汇总；PR 保持确定性，Live 基线精确匹配 Provider/Model，Live 模式缺少显式真实 Provider + Docker/禁网配置时 fail closed |
 
 ### H-03–H-06：平台 Adapter
 
@@ -135,6 +136,8 @@ python3 -m compileall -q packages
 python3 -m pytest
 ruff check .
 mypy
+pnpm --dir packages/aihi/code-protocol typecheck
+pnpm --dir apps/aihi-code-cli typecheck
 pnpm --dir apps/aihi-code-cli test
 ```
 

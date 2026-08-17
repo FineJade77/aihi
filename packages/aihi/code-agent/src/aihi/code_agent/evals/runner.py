@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
+import math
 import os
 import signal
 import time
@@ -26,7 +29,7 @@ from aihi.code_agent.evals.graders import (
 )
 from aihi.code_agent.evals.report import CodeEvalReport, CodeTaskResult
 from aihi.code_agent.evals.workspace import WorkspaceManager, changed_paths
-from aihi.code_agent.prompts import build_system_prompt
+from aihi.code_agent.prompts import build_system_prompt, load_builtin_prompt
 from aihi.code_agent.runtime import CodeAgentRuntime
 from aihi.models import Message
 
@@ -72,6 +75,7 @@ class CodeAgentEvalRunner:
         self.config = config
         self.workspace_manager = workspace_manager or WorkspaceManager()
         self.command_executor = command_executor or _run_command
+        self._tools_sha256: str | None = None
 
     async def run_case(self, task: CodeTask) -> CodeTaskResult:
         started = time.perf_counter()
@@ -97,6 +101,15 @@ class CodeAgentEvalRunner:
                 )
                 if not isinstance(execution, TaskExecution):
                     raise TypeError("task executor must return TaskExecution")
+                if execution.run_result is not None:
+                    run_state = execution.run_result.state.value
+                    elapsed = time.perf_counter() - started
+                    if run_state == "interrupted" and elapsed >= task.timeout_seconds:
+                        # Runtime repairs cancellation into a durable INTERRUPTED result.
+                        # asyncio.wait_for therefore returns normally after its deadline.
+                        execution_error = "execution_timeout"
+                    elif run_state != "completed":
+                        execution_error = f"execution_{run_state}"
             except TimeoutError:
                 execution_error = "execution_timeout"
             except Exception as exc:
@@ -160,6 +173,8 @@ class CodeAgentEvalRunner:
                 metrics["run_id"] = execution.run_result.run_id
                 metrics["run_state"] = execution.run_result.state.value
                 metrics["pending_tool_calls"] = len(execution.run_result.pending_tool_call_ids)
+            if execution is not None:
+                metrics.update(_session_metrics(execution))
             return CodeTaskResult(
                 case_id=task.case_id,
                 passed=execution_error is None and all(grade.passed for grade in grades),
@@ -233,6 +248,21 @@ class CodeAgentEvalRunner:
             model=scoped.provider.model,
         )
         runtime = await CodeAgentRuntime.create(scoped, store=store)
+        tool_payload = [
+            spec.model_definition.to_dict() for spec in runtime.runtime.registry.specs
+        ]
+        encoded_tools = json.dumps(
+            tool_payload,
+            ensure_ascii=False,
+            allow_nan=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        tools_sha256 = hashlib.sha256(encoded_tools).hexdigest()
+        if self._tools_sha256 is not None and self._tools_sha256 != tools_sha256:
+            await runtime.close()
+            raise CodeAgentConfigError("benchmark tool definitions changed between attempts")
+        self._tools_sha256 = tools_sha256
         try:
             result = await runtime.runtime.coordinator.run(
                 session,
@@ -251,10 +281,58 @@ class CodeAgentEvalRunner:
     def _report_config(self) -> dict[str, object]:
         if self.config is None:
             return {}
-        return {
+        result: dict[str, object] = {
             "provider": self.config.provider.name,
             "model": self.config.provider.model,
+            "prompt_sha256": hashlib.sha256(
+                load_builtin_prompt().encode("utf-8")
+            ).hexdigest(),
         }
+        if self._tools_sha256 is not None:
+            result["tools_sha256"] = self._tools_sha256
+        return result
+
+
+def _session_metrics(execution: TaskExecution) -> dict[str, object]:
+    """Aggregate durable usage/tool events for one benchmark attempt."""
+
+    run_id = execution.run_result.run_id if execution.run_result is not None else None
+    events = tuple(
+        event
+        for event in execution.session.events
+        if run_id is None or event.run_id == run_id
+    )
+    usage_events = tuple(event for event in events if event.type == "model.usage")
+
+    def token_total(name: str) -> int:
+        total = 0
+        for event in usage_events:
+            raw = event.data.get(name)
+            if isinstance(raw, int) and not isinstance(raw, bool) and raw >= 0:
+                total += raw
+        return total
+
+    input_tokens = token_total("input_tokens")
+    output_tokens = token_total("output_tokens")
+    metrics: dict[str, object] = {
+        "model_calls": len(usage_events),
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "cached_input_tokens": token_total("cached_input_tokens"),
+        "tokens": input_tokens + output_tokens,
+        "tool_calls": sum(event.type == "tool.started" for event in events),
+    }
+    costs = [
+        float(raw)
+        for event in usage_events
+        if isinstance((raw := event.data.get("cost_usd")), (int, float))
+        and not isinstance(raw, bool)
+        and math.isfinite(raw)
+        and raw >= 0
+    ]
+    if costs:
+        metrics["cost_usd"] = sum(costs)
+    return metrics
 
 
 async def _run_command(argv: tuple[str, ...], cwd: Path, timeout: float) -> CommandOutcome:

@@ -13,19 +13,39 @@ on:
           - pr
           - nightly
           - release
+      repeat:
+        description: Attempts per task for nightly/release
+        required: true
+        default: "3"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eval-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   eval:
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
       - run: uv sync --frozen
       - name: Run evaluation gate
         env:
-          AIHI_CODE_EVAL_CONFIG: ${{ vars.AIHI_CODE_EVAL_CONFIG }}
+          AIHI_CODE_EVAL_CONFIGS_B64: ${{ secrets.AIHI_CODE_EVAL_CONFIGS_B64 }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          AIHI_CODE_AGENT_API_KEY: ${{ secrets.AIHI_CODE_AGENT_API_KEY }}
         run: |
           set -euo pipefail
           export PYTHONPATH=packages/aihi/models/src:packages/aihi/agent/src:packages/aihi/code-agent/src
@@ -33,12 +53,29 @@ jobs:
           if [ "$MODE" = "pr" ]; then
             uv run python -m scripts.evals.run --mode pr --output eval-results/pr
           else
-            if [ -z "${AIHI_CODE_EVAL_CONFIG:-}" ]; then
-              echo "AIHI_CODE_EVAL_CONFIG repository variable is required for $MODE" >&2
+            if [ -z "${AIHI_CODE_EVAL_CONFIGS_B64:-}" ]; then
+              echo "AIHI_CODE_EVAL_CONFIGS_B64 repository secret is required for $MODE" >&2
+              exit 2
+            fi
+            REPEAT="${{ inputs.repeat || '3' }}"
+            umask 077
+            CONFIG_ARGS=()
+            INDEX=0
+            while IFS= read -r ENCODED_CONFIG; do
+              if [ -z "$ENCODED_CONFIG" ]; then
+                continue
+              fi
+              INDEX=$((INDEX + 1))
+              CONFIG="$RUNNER_TEMP/aihi-code-eval-$INDEX.toml"
+              printf '%s' "$ENCODED_CONFIG" | base64 --decode > "$CONFIG"
+              CONFIG_ARGS+=(--config "$CONFIG")
+            done <<< "$AIHI_CODE_EVAL_CONFIGS_B64"
+            if [ "${#CONFIG_ARGS[@]}" -eq 0 ]; then
+              echo "AIHI_CODE_EVAL_CONFIGS_B64 contains no configurations" >&2
               exit 2
             fi
             uv run python -m scripts.evals.run --mode "$MODE" \
-              --config "$AIHI_CODE_EVAL_CONFIG" --output "eval-results/$MODE"
+              "${CONFIG_ARGS[@]}" --repeat "$REPEAT" --output "eval-results/$MODE"
           fi
       - name: Upload evaluation reports
         if: always()

@@ -1,0 +1,63 @@
+{
+  "artifact_kind": "reviewed_live_baseline",
+  "baseline_version": 1,
+  "report_version": 1,
+  "dataset_id": "aihi-code-agent-benchmark-v1",
+  "generated_at": "2026-08-17T04:08:22.113400+00:00",
+  "reviewed_at": "2026-08-17",
+  "provider": "deepseek",
+  "model": "deepseek-v4-flash",
+  "case_ids": [
+    "bug-fix-bool",
+    "feature-slug",
+    "test-repair-stats",
+    "security-safe-path",
+    "refactor-name",
+    "repository-understanding-settings",
+    "instruction-following-report",
+    "interrupt-resume-checkpoint",
+    "subagent-plan"
+  ],
+  "prompt_sha256": "3697c06bb72b7362f9e58e0d04a53b18877dc7e50ba03563673c2121cca612ea",
+  "tools_sha256": "c6b17b4b81b73b8a521d7e76f7549fc457705d5b178fe2f4df01c05cc8741f29",
+  "summary": {
+    "base_cases": 9,
+    "repetitions_min": 3,
+    "repetitions_max": 3,
+    "total": 27,
+    "passed": 26,
+    "failed": 1,
+    "pass_rate": 0.9629629629629629,
+    "pass_at_1": 0.9629629629629631,
+    "pass_at_least_once": 1.0,
+    "stable_pass_rate": 0.8888888888888888,
+    "duration_seconds": 573.81961658,
+    "latency_p50_seconds": 16.00363235899931,
+    "latency_p95_seconds": 59.69440850700266,
+    "input_tokens": 539728,
+    "output_tokens": 46038,
+    "cached_input_tokens": 480896,
+    "tokens": 585766,
+    "model_calls": 189,
+    "tool_calls": 217
+  },
+  "reviewed_failures": [
+    {
+      "case_id": "repository-understanding-settings#repeat-2",
+      "base_case_id": "repository-understanding-settings",
+      "attempt": 2,
+      "report_error_code": null,
+      "reviewed_error_code": "execution_timeout",
+      "classification": "inferred_from_interrupted_run_at_task_timeout",
+      "run_state": "interrupted",
+      "duration_seconds": 90.49883536800189,
+      "changed_paths": [],
+      "score": 0.75
+    }
+  ],
+  "notes": [
+    "This is a real-Provider baseline, not the scripted reference executor result.",
+    "Credentials, configuration paths, raw prompts, traces, and model/tool output are excluded.",
+    "The original report predates explicit classification of a cancellation repaired by the Runtime into INTERRUPTED; review classified the 90-second attempt as execution_timeout."
+  ]
+}

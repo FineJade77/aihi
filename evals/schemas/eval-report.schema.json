@@ -68,16 +68,71 @@
           "minimum": 0,
           "maximum": 1
         },
+        "base_cases": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "repetitions_min": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "repetitions_max": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pass_at_1": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "pass_at_least_once": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "stable_pass_rate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
         "duration_seconds": {
           "type": "number",
+          "minimum": 0
+        },
+        "latency_p50_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "latency_p95_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "input_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "output_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cached_input_tokens": {
+          "type": "integer",
           "minimum": 0
         },
         "tokens": {
           "type": "integer",
           "minimum": 0
         },
+        "model_calls": {
+          "type": "integer",
+          "minimum": 0
+        },
         "tool_calls": {
           "type": "integer",
+          "minimum": 0
+        },
+        "cost_usd": {
+          "type": "number",
           "minimum": 0
         }
       }

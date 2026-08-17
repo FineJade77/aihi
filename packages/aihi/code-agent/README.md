@@ -131,6 +131,20 @@ Each run emits redacted, bounded observations to `audit.jsonl` by default. Files
 
 Tool calls are persisted before execution and return exactly one result. Approval resolution is separate from resume: a client resolves an approval and then calls `run.resume`. This keeps the Worker protocol deterministic while allowing the TUI to present the two operations as one interaction.
 
+## Evaluation
+
+The v1 benchmark runs fixture-hashed tasks in disposable workspaces and grades
+tests, changed-path scope and the exported Harness trace. Live `nightly` and
+`release` runs require a real Provider plus Docker/no-network execution, default
+to three attempts per task, and report pass@1, stability, latency, token/tool
+usage and Provider-reported cost. Pass multiple `--config` arguments to produce
+a credential-free multi-model `live-summary.json`. See the repository
+[evaluation contract](../../../docs/EVALUATION.md) for commands and CI secrets.
+The first reviewed live baseline records DeepSeek `deepseek-v4-flash` at 26/27
+attempts (96.3% empirical pass@1) across nine tasks repeated three times.
+Live gates select an exact Provider/Model baseline and fail on pass@1
+regression; they never compare model capability with the scripted reference.
+
 ## Development and tests
 
 ```bash

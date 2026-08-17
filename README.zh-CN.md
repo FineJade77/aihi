@@ -13,6 +13,8 @@ AIHI 是一个面向可恢复 AI Agent 的轻量、Provider-neutral 基础设施
 - 带 Policy、Sandbox、Skill、MCP、Subagent、Artifact 和脱敏审计日志的 Coding 工具链。
 - Python Worker 与 TypeScript CLI 共用的 JSON-RPC 协议和 Schema。
 - 支持 Session/Model 选择、审批、恢复、Skill/MCP 管理和诊断的 Ink TUI。
+- 版本化 Agent 评测语料与完整 CI 门禁；首份审核后的 DeepSeek 真实基线在 9 个任务各重复 3 次时通过
+  26/27 次，经验 pass@1 为 96.3%。
 
 ## 架构
 
@@ -68,11 +70,19 @@ python -m pip install aihi-code-agent==0.1.0
 ### 运行检查
 
 ```bash
+python3 -m compileall -q packages
 python3 -m pytest
 ruff check .
 mypy
+pnpm --dir packages/aihi/code-protocol typecheck
+pnpm --dir apps/aihi-code-cli typecheck
 pnpm --dir apps/aihi-code-cli test
 ```
+
+`.github/workflows/ci.yml` 会在 Python 3.11/3.12 与 Node.js 20 上运行上述质量门禁，并覆盖独立 Wheel
+安装测试。确定性和真实 Agent 评测见 [`docs/EVALUATION.zh-CN.md`](docs/EVALUATION.zh-CN.md)；Live 模式支持
+重复采样、多模型对比，以及 pass@1、延迟、Token/Tool 调用和成本指标。
+不含凭据的审核基线位于 [`evals/aihi_code_agent/v1/baselines/`](evals/aihi_code_agent/v1/baselines/)。
 
 ### 启动 Coding CLI
 

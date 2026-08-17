@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import math
+from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
@@ -12,6 +14,38 @@ from aihi.code_agent.evals.graders import average_grade
 
 class CodeEvalGateFailed(ValueError):
     """Raised when a Coding Agent evaluation report fails its gate."""
+
+
+def _number(value: object) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    result = float(value)
+    return result if math.isfinite(result) and result >= 0 else None
+
+
+def _integer_metric(results: tuple[CodeTaskResult, ...], name: str) -> int:
+    total = 0
+    for result in results:
+        value = result.metrics.get(name)
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+            total += value
+    return total
+
+
+def _float_metric(results: tuple[CodeTaskResult, ...], name: str) -> float:
+    return sum(
+        value
+        for result in results
+        if (value := _number(result.metrics.get(name))) is not None
+    )
+
+
+def _nearest_rank(values: list[float], percentile: float) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    rank = max(1, math.ceil(percentile * len(ordered)))
+    return ordered[rank - 1]
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,6 +127,65 @@ class CodeEvalReport:
                 f"Coding Agent evaluation gate failed: {', '.join(failed)}"
             )
 
+    def summary(self) -> dict[str, object]:
+        """Aggregate stochastic attempts without hiding per-task instability."""
+
+        grouped: dict[str, list[CodeTaskResult]] = defaultdict(list)
+        for result in self.results:
+            raw_base = result.metrics.get("base_case_id")
+            base_case_id = (
+                raw_base.strip()
+                if isinstance(raw_base, str) and raw_base.strip()
+                else result.case_id
+            )
+            grouped[base_case_id].append(result)
+        repetitions = [len(attempts) for attempts in grouped.values()]
+        per_case_rates = [
+            sum(attempt.passed for attempt in attempts) / len(attempts)
+            for attempts in grouped.values()
+        ]
+        durations = [
+            value
+            for result in self.results
+            if (value := _number(result.metrics.get("duration_seconds"))) is not None
+        ]
+        summary: dict[str, object] = {
+            "total": self.total,
+            "passed": self.passed,
+            "failed": self.failed,
+            "pass_rate": self.pass_rate,
+            "base_cases": len(grouped),
+            "repetitions_min": min(repetitions, default=0),
+            "repetitions_max": max(repetitions, default=0),
+            "pass_at_1": (
+                sum(per_case_rates) / len(per_case_rates) if per_case_rates else 1.0
+            ),
+            "pass_at_least_once": (
+                sum(any(attempt.passed for attempt in attempts) for attempts in grouped.values())
+                / len(grouped)
+                if grouped
+                else 1.0
+            ),
+            "stable_pass_rate": (
+                sum(all(attempt.passed for attempt in attempts) for attempts in grouped.values())
+                / len(grouped)
+                if grouped
+                else 1.0
+            ),
+            "duration_seconds": sum(durations),
+            "latency_p50_seconds": _nearest_rank(durations, 0.50),
+            "latency_p95_seconds": _nearest_rank(durations, 0.95),
+            "input_tokens": _integer_metric(self.results, "input_tokens"),
+            "output_tokens": _integer_metric(self.results, "output_tokens"),
+            "cached_input_tokens": _integer_metric(self.results, "cached_input_tokens"),
+            "tokens": _integer_metric(self.results, "tokens"),
+            "model_calls": _integer_metric(self.results, "model_calls"),
+            "tool_calls": _integer_metric(self.results, "tool_calls"),
+        }
+        if any(_number(result.metrics.get("cost_usd")) is not None for result in self.results):
+            summary["cost_usd"] = _float_metric(self.results, "cost_usd")
+        return summary
+
     def to_dict(self) -> dict[str, object]:
         return {
             "report_version": 1,
@@ -101,12 +194,7 @@ class CodeEvalReport:
             "mode": self.mode,
             "generated_at": self.generated_at,
             "config": dict(self.config),
-            "summary": {
-                "total": self.total,
-                "passed": self.passed,
-                "failed": self.failed,
-                "pass_rate": self.pass_rate,
-            },
+            "summary": self.summary(),
             "cases": [result.to_dict() for result in self.results],
         }
 

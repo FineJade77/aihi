@@ -62,12 +62,34 @@ understanding, instruction following, interruption/resume and subagent use. The
 committed scripted baseline checks the runner/oracle chain only; it is explicitly
 not a real-model capability score.
 
+## Reviewed live baseline
+
+The first reviewed live result uses DeepSeek `deepseek-v4-flash` on 2026-08-17.
+Across nine base tasks repeated three times, it passed 26/27 attempts: empirical
+pass@1 was 96.3%, at-least-once success was 100%, stable pass rate was 88.9%,
+and task latency was P50 16.0 seconds / P95 59.7 seconds. The one failed attempt
+was interrupted at the 90-second task limit; the other two attempts for that
+base task passed. The credential-free, prompt/tool-hashed artifact is stored at
+[`evals/aihi_code_agent/v1/baselines/deepseek-v4-flash-2026-08-17.json`](../evals/aihi_code_agent/v1/baselines/deepseek-v4-flash-2026-08-17.json).
+This result is a versioned project baseline for regression comparison, not a
+claim about general model capability.
+
+PR mode uses the scripted reference baseline only to verify the runner/oracle
+chain. Nightly/release select a reviewed baseline whose Provider and Model both
+match the live report; the live gate fails when empirical pass@1 drops below
+that baseline. A profile without a reviewed baseline is labeled
+`baseline unavailable` instead of falling back to the scripted score, and keeps
+the strict all-attempt gate while producing an artifact for review. An explicit
+`--baseline` overrides automatic selection for a single-profile comparison.
+
 ## Reproducibility and compatibility
 
 - Dataset versions are immutable once used as a baseline.
 - Fixtures and hidden oracles are not rewritten to fit an implementation.
 - Reports are strict JSON and contain provider/model and prompt/tool hashes when
-  a live model run is used.
+  a live model run is used. `prompt_sha256` fingerprints the packaged Coding
+  prompt template; `tools_sha256` fingerprints the actual model-visible Tool
+  definitions assembled for the run.
 - Raw credentials and unredacted model/tool output never enter the corpus or
   committed reports.
 - A schema or semantic change requires a new version rather than silently
@@ -85,6 +107,11 @@ Run the local gate with:
 ```bash
 python3 -m scripts.evals.run --mode offline
 python3 -m scripts.evals.run --mode pr
+python3 -m scripts.evals.run --mode nightly \
+  --config /secure/model-a.toml \
+  --config /secure/model-b.toml \
+  --repeat 3 \
+  --output eval-results/nightly
 ```
 
 Reports are written below `eval-results/<mode>/`. Exit code `0` means the gate
@@ -95,8 +122,37 @@ configuration failed. `nightly` and `release` require an explicit
 servers, missing credentials, placeholder models and interactive permission
 modes fail closed. The committed
 `evals/aihi_code_agent/v1/nightly.config.example.toml` is a credential-free
-template. These modes also write `baseline-comparison.json`; the baseline is a
-diagnostic comparison while the release gate still requires every task to
-pass. The CI template in
-`.github/workflows/evals.yml` runs `pr` on pull requests and exposes the other
-modes through an explicit dispatch input, without storing credentials.
+template. `nightly` and `release` default to three attempts per task; `--repeat`
+overrides that value. Repeating `--config` evaluates multiple Provider/model
+profiles only after every profile has passed fail-closed validation.
+
+Each live case records task duration, model calls, tool calls, input/output/cache
+tokens and Provider-reported cost when available. The summary reports empirical
+`pass_at_1` (the mean per-task success fraction), at-least-once success, stable
+all-attempt success and P50/P95 task latency. A single profile writes
+`code.json` and `baseline-comparison.json`; a matrix writes those files below
+`profiles/` plus a credential-free `live-summary.json` for comparison. The
+scripted baseline remains a runner/oracle diagnostic and is never presented as
+a model score. Reviewed live baselines are selected by exact Provider/Model
+identity and govern pass@1 regression; unbaselined profiles never silently use
+the scripted baseline.
+
+The CI workflow in `.github/workflows/evals.yml` runs deterministic `pr` mode on
+pull requests. Manual live runs reconstruct a mode-0600 TOML file from the
+`AIHI_CODE_EVAL_CONFIGS_B64` repository secret and read Provider credentials
+from the matching API-key secret. The secret contains one base64-encoded TOML
+per non-empty line, so one dispatch can compare multiple models. The separate
+`.github/workflows/ci.yml` workflow
+runs Python 3.11/3.12 compile, Ruff, strict Mypy, the full test/packaging suite,
+TypeScript type checks and the CLI build/tests.
+
+Create the secret payload without including API-key values in the TOML:
+
+```bash
+base64 < /secure/model-a.toml | tr -d '\n'
+base64 < /secure/model-b.toml | tr -d '\n'
+```
+
+Store the two resulting lines in `AIHI_CODE_EVAL_CONFIGS_B64`; store the actual
+keys separately as `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `DEEPSEEK_API_KEY` or
+`AIHI_CODE_AGENT_API_KEY` GitHub Secrets.

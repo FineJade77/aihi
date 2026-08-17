@@ -53,11 +53,26 @@ v1 Smoke-plus 语料目前包含九个任务，覆盖 Bug 修复、小功能、�
 指令遵循、中断/恢复和 Subagent 使用。提交的脚本化基线只验证 Runner/Oracle 链路，明确不是真实模型能力
 分数。
 
+## 已审核真实基线
+
+首份审核后的真实结果于 2026-08-17 使用 DeepSeek `deepseek-v4-flash` 采集。9 个基础任务各重复 3 次，
+27 次尝试通过 26 次：经验 pass@1 为 96.3%，至少一次成功率为 100%，稳定通过率为 88.9%，任务耗时
+P50 为 16.0 秒、P95 为 59.7 秒。唯一失败尝试在 90 秒任务上限被中断；该基础任务另外两次尝试均通过。
+不含凭据且带 Prompt/Tool Hash 的基线保存在
+[`evals/aihi_code_agent/v1/baselines/deepseek-v4-flash-2026-08-17.json`](../evals/aihi_code_agent/v1/baselines/deepseek-v4-flash-2026-08-17.json)。
+该结果用于项目回归对比，不代表对模型通用能力的断言。
+
+PR 模式只使用脚本化参考基线验证 Runner/Oracle 链路。Nightly/Release 会选择 Provider 与 Model 都和
+真实报告匹配的审核基线；经验 pass@1 低于该基线时，Live 门禁失败。没有审核基线的 Profile 会显示
+`baseline unavailable`，不会回退到脚本化分数，并在生成待审核 Artifact 的同时保持所有尝试必须通过的
+严格门禁。单 Profile 对比可用显式 `--baseline` 覆盖自动选择。
+
 ## 可复现性与兼容性
 
 - 数据集一旦作为基线使用即不可变。
 - 不为适配实现而重写 Fixture 或隐藏 Oracle。
-- 报告必须是严格 JSON；真实模型运行时记录 Provider/Model 以及 Prompt/Tool Hash。
+- 报告必须是严格 JSON；真实模型运行时记录 Provider/Model 以及 Prompt/Tool Hash。`prompt_sha256`
+  对打包的 Coding Prompt 模板取指纹，`tools_sha256` 对运行时实际组装并暴露给模型的 Tool 定义取指纹。
 - 凭据和未脱敏的模型/Tool 输出不能进入数据集或提交的报告。
 - Schema 或语义发生变化时创建新版本，不能静默改变旧案例。
 
@@ -73,12 +88,39 @@ v1 Smoke-plus 语料目前包含九个任务，覆盖 Bug 修复、小功能、�
 ```bash
 python3 -m scripts.evals.run --mode offline
 python3 -m scripts.evals.run --mode pr
+python3 -m scripts.evals.run --mode nightly \
+  --config /secure/model-a.toml \
+  --config /secure/model-b.toml \
+  --repeat 3 \
+  --output eval-results/nightly
 ```
 
 报告写入 `eval-results/<mode>/`。退出码 `0` 表示门禁通过，`1` 表示评估案例失败，`2` 表示准备或配置失败。
 `nightly` 和 `release` 必须显式传入 `--config <path>`，配置必须指定真实 Provider、`api_key_env`、Docker
 镜像、`permission_mode = "bypass"` 并关闭网络；Fake Provider、MCP Server、缺少凭据、占位 Model 或交互式
 Permission Mode 都会 fail closed。提交的
-`evals/aihi_code_agent/v1/nightly.config.example.toml` 是不含凭据的模板。这些模式还会写入
-`baseline-comparison.json`；基线对比用于诊断，发布门禁仍要求所有任务通过。`.github/workflows/evals.yml` 会在
-Pull Request 上运行 `pr`，其他模式通过显式 workflow dispatch 触发，不会在仓库中保存凭据。
+`evals/aihi_code_agent/v1/nightly.config.example.toml` 是不含凭据的模板。`nightly` 和 `release`
+默认每个任务执行三次，可用 `--repeat` 覆盖。重复传入 `--config` 可以在同一次运行中
+比较多个 Provider/Model；所有配置必须先通过 fail-closed 校验，之后才会产生真实 Provider 调用。
+
+每个真实案例记录任务耗时、模型调用数、Tool 调用数、输入/输出/缓存 Token，以及 Provider 能提供时的成本。
+汇总报告提供经验 `pass_at_1`（各任务成功比例的均值）、至少一次成功率、所有尝试稳定通过率和任务耗时
+P50/P95。单 Profile 写入 `code.json` 与 `baseline-comparison.json`；多 Profile 在 `profiles/` 下分别写入报告，
+并额外生成不含凭据的 `live-summary.json`。脚本化基线始终只用于诊断 Runner/Oracle 链路，不作为模型分数。
+审核后的真实基线按 Provider/Model 精确匹配并用于 pass@1 回归门禁；无基线 Profile 不会静默使用脚本基线。
+
+`.github/workflows/evals.yml` 在 Pull Request 上运行确定性的 `pr` 模式。手工触发真实评测时，它从
+`AIHI_CODE_EVAL_CONFIGS_B64` Repository Secret 重建权限为 0600 的 TOML，并从对应 API Key Secret 读取
+凭据。该 Secret 每个非空行保存一个 TOML 的 Base64，可在一次 Dispatch 中比较多个模型。独立的
+`.github/workflows/ci.yml` 会执行 Python 3.11/3.12 编译、Ruff、严格 Mypy、完整测试/打包测试、
+TypeScript 类型检查以及 CLI 构建和测试。
+
+生成 Secret Payload 时不要把 API Key 值写进 TOML：
+
+```bash
+base64 < /secure/model-a.toml | tr -d '\n'
+base64 < /secure/model-b.toml | tr -d '\n'
+```
+
+将两行结果保存为 `AIHI_CODE_EVAL_CONFIGS_B64`；真实 Key 分别保存到 `OPENAI_API_KEY`、
+`ANTHROPIC_API_KEY`、`DEEPSEEK_API_KEY` 或 `AIHI_CODE_AGENT_API_KEY` GitHub Secret。

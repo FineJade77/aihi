@@ -10,7 +10,7 @@
 | Status | Foundation complete; application and platform roadmap remains |
 | Current release line | Python packages 0.1.0 on PyPI; Code Protocol 0.2 |
 | Architecture | [ARCHITECTURE.md](ARCHITECTURE.md) |
-| Last completed slice | Multi-provider / multi-model catalog and selection UX |
+| Last completed slice | Reviewed real-Provider baseline and explicit timeout classification |
 
 Architecture decision records and RFC drafts in docs/adr/ and docs/rfcs/ are local-only working files.
 They are deliberately ignored by Git; stable decisions must be reflected in architecture, package
@@ -90,8 +90,10 @@ must exercise `aihi-agent` through redacted, replay-only traces.
 
 ### P-06 — Coding Agent benchmark
 
-**Status: In progress.** Product tasks belong to `evals/aihi_code_agent/` and
-must grade actual isolated workspace outcomes. They may additionally export a
+**Status: Done.** The deterministic corpus, live execution path, repeat-aware
+metrics, full CI gates and a reviewed real-Provider baseline are implemented.
+Product tasks belong to `evals/aihi_code_agent/` and must grade actual isolated
+workspace outcomes. They may additionally export a
 Harness Trace, but must not move Coding prompts, tools or product policy into
 `aihi-agent`.
 
@@ -99,8 +101,8 @@ Harness Trace, but must not move Coding prompts, tools or product policy into
 | --- | --- | --- |
 | P-06.1 | Task, fixture, oracle and report contract | `code-task.schema.json` and `eval-report.schema.json` are versioned and documented |
 | P-06.2 | Isolated task runner and deterministic graders | Hidden tests, regression, path scope, safety and trace results produce one machine-readable report |
-| P-06.3 | Benchmark corpus and baseline | Initial task categories, fixed fixture hashes and pass@1 baseline are reproducible |
-| P-06.4 | Offline/PR/nightly/release automation gates | `scripts/evals/run.py` has stable exit codes, writes redacted reports and baseline comparisons, PR uses the deterministic smoke baseline, and live modes fail closed without an explicit real-Provider Docker/no-network config |
+| P-06.3 | Benchmark corpus and baseline | Initial task categories and fixed fixture hashes are reproducible; a reviewed real-Provider pass@1 baseline is captured separately from the scripted runner baseline |
+| P-06.4 | Offline/PR/nightly/release automation gates | `scripts/evals/run.py` has stable exit codes, repeated multi-model live profiles, token/tool/cost/latency summaries and redacted comparisons; PR is deterministic, live baselines match exact Provider/Model identity, and live modes fail closed without explicit real-Provider Docker/no-network config |
 
 ### H-03–H-06 — platform adapters
 
@@ -169,6 +171,8 @@ python3 -m compileall -q packages
 python3 -m pytest
 ruff check .
 mypy
+pnpm --dir packages/aihi/code-protocol typecheck
+pnpm --dir apps/aihi-code-cli typecheck
 pnpm --dir apps/aihi-code-cli test
 ~~~
 
