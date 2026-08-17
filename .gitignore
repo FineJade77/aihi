@@ -15,8 +15,11 @@ eval-results/
 .aihi/audit.jsonl
 .DS_Store
 
-# Local legacy SQLite compatibility fixture and SQLite WAL sidecars.
-/tests/fixtures/session_schema_v1.sqlite3*
+# The legacy database itself is a frozen compatibility fixture. Ignore only
+# transient SQLite sidecars that may be created while local tests open it.
+/tests/fixtures/session_schema_v1.sqlite3-journal
+/tests/fixtures/session_schema_v1.sqlite3-shm
+/tests/fixtures/session_schema_v1.sqlite3-wal
 
 # Superpowers working documents: local process artefacts, not project docs.
 /docs/superpowers/
