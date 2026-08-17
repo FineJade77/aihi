@@ -64,6 +64,13 @@ The Worker reads and writes Content-Length framed JSON-RPC 2.0 messages on stdin
 
 The Worker is normally launched by the CLI. It can also be embedded behind another local host that implements the same protocol.
 
+## Example session
+
+The Worker can power an interactive CLI session with streamed progress, tool
+results, Skill loading, and a resumable session header:
+
+![AIHI Code Agent interactive session](docs/aihi-code-agent-session.png)
+
 ## Configuration
 
 Configuration paths are fixed by design; there is no command-line or environment-variable override for the config directory. Files are merged from low to high precedence:
