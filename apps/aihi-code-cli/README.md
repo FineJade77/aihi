@@ -76,6 +76,13 @@ aihi-code --workspace /path/to/project summarize the auth module
 
 `--workspace` is the readable alias for `--cwd`; both default to the current directory. The default event store is `~/.aihi/sessions.sqlite3`. `--store` is available for tests and advanced isolation, but it does not change the configuration directory.
 
+## Example session
+
+The CLI renders streamed progress, tool results, Skill loading, and a
+resumable session header while the Python Worker owns runtime state:
+
+![AIHI Code CLI interactive session](docs/aihi-code-cli-session.png)
+
 ### Command-line options
 
 | Option | Meaning |

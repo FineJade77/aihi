@@ -71,12 +71,6 @@ Worker 通过 stdin/stdout 读写使用 Content-Length framing 的 JSON-RPC 2.0 
 
 通常由 CLI 启动 Worker；也可以将它嵌入实现同一协议的其他本地宿主之后。
 
-## 使用示例
-
-Worker 可以驱动交互式 CLI 会话，展示流式进度、Tool Result、Skill 加载以及可恢复的 Session Header：
-
-![AIHI Code Agent 交互式会话](docs/aihi-code-agent-session.png)
-
 ## 配置
 
 配置路径是有意固定的，不支持通过命令行或环境变量覆盖配置目录。配置文件按从低到高的优先级合并：

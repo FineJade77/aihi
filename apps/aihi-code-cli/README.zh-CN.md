@@ -54,6 +54,12 @@ python -m pip install aihi-code-agent==0.1.0
 `--permission-mode`。配置文件路径固定为用户 `~/.aihi/aihi-code.toml` 与项目
 `<workspace>/.aihi/aihi-code.toml`，不能通过 CLI 改变配置目录。
 
+## 使用示例
+
+CLI 展示流式进度、Tool Result、Skill 加载和可恢复的 Session Header，运行时状态由 Python Worker 负责：
+
+![AIHI Code CLI 交互式会话](docs/aihi-code-cli-session.png)
+
 ## Slash 命令
 
 常用命令：`/help`、`/new`、`/open`、`/sessions`、`/resume`、`/cancel`、`/providers`、
