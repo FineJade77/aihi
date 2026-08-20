@@ -14,6 +14,39 @@ StopReason: TypeAlias = Literal["end_turn", "tool_use", "max_tokens", "refusal",
 
 
 @dataclass(frozen=True, slots=True)
+class CachePolicy:
+    """Provider-neutral request hint for prefix caching.
+
+    Cache support is an optimization: adapters that cannot honor the hint must
+    preserve the semantic request and omit provider-specific cache fields.
+    """
+
+    enabled: bool = True
+    key: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.enabled, bool):
+            raise TypeError("CachePolicy enabled must be a bool")
+        if self.key is not None and (
+            not isinstance(self.key, str) or not self.key.strip()
+        ):
+            raise ValueError("CachePolicy key must be a non-empty string when set")
+
+    def to_dict(self) -> JsonObject:
+        return {"enabled": self.enabled, "key": self.key}
+
+    @classmethod
+    def from_dict(cls, value: JsonObject) -> CachePolicy:
+        enabled = value.get("enabled", True)
+        key = value.get("key")
+        if not isinstance(enabled, bool):
+            raise TypeError("CachePolicy enabled must be a bool")
+        if key is not None and not isinstance(key, str):
+            raise ValueError("CachePolicy key must be a string when set")
+        return cls(enabled=enabled, key=key)
+
+
+@dataclass(frozen=True, slots=True)
 class TextBlock:
     text: str
     stable_prefix: bool = False
@@ -194,12 +227,14 @@ class Usage:
     output_tokens: int = 0
     cached_input_tokens: int = 0
     cost_usd: float | None = None
+    cache_write_input_tokens: int = 0
 
     def to_dict(self) -> JsonObject:
         return {
             "input_tokens": self.input_tokens,
             "output_tokens": self.output_tokens,
             "cached_input_tokens": self.cached_input_tokens,
+            "cache_write_input_tokens": self.cache_write_input_tokens,
             "cost_usd": self.cost_usd,
         }
 
@@ -209,6 +244,7 @@ class Usage:
             input_tokens=int(value.get("input_tokens", 0)),
             output_tokens=int(value.get("output_tokens", 0)),
             cached_input_tokens=int(value.get("cached_input_tokens", 0)),
+            cache_write_input_tokens=int(value.get("cache_write_input_tokens", 0)),
             cost_usd=(float(value["cost_usd"]) if value.get("cost_usd") is not None else None),
         )
 
@@ -254,6 +290,8 @@ class ModelRequest:
     effort: str | None = None
     metadata: JsonObject = field(default_factory=dict)
     timeout_seconds: float | None = None
+    system_blocks: tuple[TextBlock, ...] = ()
+    cache_policy: CachePolicy | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.model, str) or not self.model.strip():
@@ -271,6 +309,17 @@ class ModelRequest:
             or self.timeout_seconds <= 0
         ):
             raise ValueError("timeout_seconds must be a finite positive number")
+        if self.cache_policy is not None and not isinstance(self.cache_policy, CachePolicy):
+            raise TypeError("cache_policy must be a CachePolicy instance")
+        saw_dynamic = False
+        for block in self.system_blocks:
+            if not isinstance(block, TextBlock):
+                raise TypeError("system_blocks must contain only TextBlock values")
+            if block.stable_prefix:
+                if saw_dynamic:
+                    raise ValueError("stable system blocks must form one contiguous prefix")
+            else:
+                saw_dynamic = True
 
 
 @dataclass(frozen=True, slots=True)

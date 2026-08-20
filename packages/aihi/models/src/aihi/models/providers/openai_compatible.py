@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from aihi.models.providers.openai import OpenAIProvider
 from aihi.models.transport import JsonTransport
 from aihi.models.types import Capabilities
@@ -32,5 +34,9 @@ class OpenAICompatibleProvider(OpenAIProvider):
             capabilities=capabilities,
         )
 
+    def capabilities(self, model: str) -> Capabilities:
+        if self._capabilities_override is not None:
+            return self._capabilities_override
+        return replace(super().capabilities(model), prefix_caching=False)
 
 __all__ = ["OpenAICompatibleProvider"]

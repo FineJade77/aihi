@@ -40,6 +40,7 @@ from aihi.models.serialization import (
 from aihi.models.tokens import estimate_messages_tokens, estimate_text_tokens
 from aihi.models.transport import HttpRequest, HttpxTransport, JsonTransport
 from aihi.models.types import (
+    CachePolicy,
     Capabilities,
     ContentBlock,
     ImageBlock,
@@ -63,6 +64,7 @@ __all__ = [
     "AnthropicProvider",
     "BlockEnd",
     "BlockStart",
+    "CachePolicy",
     "Capabilities",
     "ContentBlock",
     "DeepSeekConfig",

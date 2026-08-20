@@ -20,6 +20,8 @@ from aihi.agent.context import (
     ContextCompiler,
     ContextSection,
     SummaryGenerator,
+    build_prompt_cache_key,
+    stable_system_blocks,
 )
 from aihi.agent.hooks import HookBus
 from aihi.agent.observability import Telemetry
@@ -50,6 +52,7 @@ from aihi.agent.tools.dispatcher import DispatchResult, ToolDispatcher
 from aihi.agent.tools.registry import ToolRegistry
 from aihi.agent.tools.spec import ToolSpec
 from aihi.models import (
+    CachePolicy,
     Message,
     MessageEnd,
     ModelRequest,
@@ -568,12 +571,30 @@ class RunCoordinator:
                     trigger="preflight_context_window",
                 )
             self._persist_compiled_context(session, run_id, compiled, recorded_artifacts)
+            model_tools = tuple(
+                sorted(
+                    (spec.model_definition for spec in self.registry.specs),
+                    key=lambda definition: definition.name,
+                )
+            )
+            cache_policy = None
+            if capabilities.prefix_caching and stable_system_blocks(compiled.system_blocks):
+                cache_policy = CachePolicy(
+                    key=build_prompt_cache_key(
+                        provider_family=self.provider.name,
+                        model=model,
+                        tools=model_tools,
+                        system_blocks=compiled.system_blocks,
+                    )
+                )
             request = ModelRequest(
                 model=model,
                 messages=compiled.messages,
-                tools=tuple(spec.model_definition for spec in self.registry.specs),
-                system_prompt=compiled.system_prompt,
+                tools=model_tools,
+                system_prompt="",
                 max_output_tokens=effective_output_tokens,
+                system_blocks=compiled.system_blocks,
+                cache_policy=cache_policy,
             )
             try:
                 response = await self._consume_provider(

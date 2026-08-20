@@ -21,6 +21,7 @@ class DeepSeekProvider(OpenAICompatibleProvider):
 
     name = "deepseek"
     _replay_reasoning_content = True
+    _send_prompt_cache_key = False
 
     def __init__(
         self,

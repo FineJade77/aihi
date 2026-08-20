@@ -11,6 +11,7 @@ Provider-neutral model contracts and provider adapters for AIHI.
 The package deliberately owns model-facing primitives only:
 
 - immutable request/response and content-block contracts;
+- stable system blocks and provider-neutral prompt-cache hints;
 - normalized streaming chunks for text and tool input;
 - provider adapters and transport abstractions;
 - typed provider errors and context-length classification;
@@ -84,13 +85,39 @@ Providers also expose normalized asynchronous streaming. A stream is made of typ
 
 The package root re-exports the stable building blocks:
 
-- Contracts: `Message`, `ModelRequest`, `ModelResponse`, `ModelToolDefinition`, `Capabilities`, content blocks, and `Usage`.
+- Contracts: `Message`, `ModelRequest`, `ModelResponse`, `ModelToolDefinition`, `CachePolicy`, `Capabilities`, content blocks, and `Usage`.
 - Providers: `OpenAIProvider`, `AnthropicProvider`, `DeepSeekProvider`, `OpenAICompatibleProvider`, and `FakeProvider`.
 - Errors: `ProviderError`, `ProviderHTTPError`, `ProviderProtocolError`, `ProviderTimeout`, and `ProviderContextLengthError`.
 - Serialization: `encode_message`, `decode_message`, `ModelMessageEnvelope`, and `MESSAGE_SCHEMA_VERSION`.
 - Transport: `HttpxTransport`, `JsonTransport`, and `HttpRequest`.
 
 Import from `aihi.models` rather than reaching into private modules.
+
+## Prompt caching
+
+`ModelRequest.system_blocks` separates one contiguous stable prefix from the dynamic system suffix.
+`TextBlock(stable_prefix=True)` blocks must come first. `CachePolicy` is an optimization hint; an
+adapter that does not support it sends the same semantic prompt without cache-specific fields.
+
+```python
+from aihi.models import CachePolicy, ModelRequest, TextBlock
+
+request = ModelRequest(
+    model="model-id",
+    messages=messages,
+    system_blocks=(
+        TextBlock("Stable base instructions", stable_prefix=True),
+        TextBlock("Dynamic workspace context"),
+    ),
+    cache_policy=CachePolicy(key="aihi:prompt-cache:v1:..."),
+)
+```
+
+The Agent Runtime derives the key from Provider family, Model, canonical tool definitions, and stable
+system blocks. OpenAI receives a cache-family key, Anthropic receives one cache-control breakpoint,
+DeepSeek relies on its automatic prefix cache, and unprofiled OpenAI-compatible endpoints remain a
+semantic no-op. `Usage.cached_input_tokens` and `Usage.cache_write_input_tokens` normalize cache reads
+and writes when a Provider reports them. Legacy `system_prompt` requests remain supported.
 
 ## Compatibility and errors
 

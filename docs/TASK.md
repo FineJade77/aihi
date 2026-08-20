@@ -88,6 +88,23 @@ must exercise `aihi-agent` through redacted, replay-only traces.
 | H-18.1 | Versioned evaluation directories and JSON Schemas | `evals/schemas/` validates Harness cases and reports; English/Chinese contracts agree |
 | H-18.2 | Harness conformance corpus and deterministic runner | Valid and rejected traces cover lifecycle, approval, recovery, authority and redaction; all required cases pass |
 
+### H-19 — Prompt cache and context compaction v2
+
+**Status: In progress.** This reusable Harness slice is specified in the accepted local RFC
+`docs/rfcs/0004-prompt-cache-and-context-compaction-v2.md`. Cache request contracts and Provider wire mappings belong to
+`aihi-models`; prefix compilation, token pressure, recoverable tool-result pruning, structured
+compaction, persistence and replay belong to `aihi-agent`. Product prompts and compact-model selection
+remain application-owned. H-19.1 and H-19.2 are implemented and awaiting review before H-19.3 starts.
+
+| Slice | Scope | Acceptance |
+| --- | --- | --- |
+| H-19.1 | Freeze `CachePolicy`, system blocks, `CompactionPolicy`, ContextState v2 and compatibility contracts | New contract tests fail before implementation; old ModelRequest, message, event and summary data remain decodable |
+| H-19.2 | Stable-prefix compilation and Provider cache mapping | One stable breakpoint, deterministic cache-family key, semantic no-op on unsupported Providers and normalized cache usage |
+| H-19.3 | Full-request token pressure and 65/70/85/60 hysteresis | Exact counting is used near the threshold when supported; count failure degrades conservatively; repeated small compactions are prevented |
+| H-19.4 | Recoverable old Tool Result pruning | Only durable, artifact-backed completed results are replaced; minimum reclaim is met; Tool pairing, Event history and stable prefix are unchanged |
+| H-19.5 | Evidence-backed ContextState hard compaction | Deterministic event projection precedes model enrichment; recent complete groups remain raw; repeated compactions preserve all critical facts and reach the target budget |
+| H-19.6 | Joint eval, compatibility, documentation and packaging gates | Cache/compaction golden traces, long-session evals, frozen fixture replay, installed-wheel checks and synchronized English/Chinese docs pass |
+
 ### P-06 — Coding Agent benchmark
 
 **Status: Done.** The deterministic corpus, live execution path, repeat-aware

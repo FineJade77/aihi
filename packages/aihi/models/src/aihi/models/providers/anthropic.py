@@ -86,6 +86,7 @@ class AnthropicProvider:
             reasoning=True,
             reasoning_replay=False,
             effort_levels=("low", "medium", "high"),
+            prefix_caching=True,
             token_counting=False,
             vision=True,
             max_context=200_000,
@@ -127,10 +128,11 @@ class AnthropicProvider:
 
 def _request_payload(request: ModelRequest) -> dict[str, Any]:
     messages: list[dict[str, Any]] = []
-    system_parts = [request.system_prompt] if request.system_prompt else []
+    legacy_system_parts = [request.system_prompt] if request.system_prompt else []
+    message_system_parts: list[str] = []
     for message in request.messages:
         if message.role == "system":
-            system_parts.extend(
+            message_system_parts.extend(
                 block.text for block in message.content if isinstance(block, TextBlock)
             )
             continue
@@ -181,8 +183,35 @@ def _request_payload(request: ModelRequest) -> dict[str, Any]:
         "max_tokens": request.max_output_tokens,
         "stream": True,
     }
-    if system_parts:
-        payload["system"] = "\n\n".join(system_parts)
+    stable_boundary: int | None = None
+    if request.system_blocks:
+        system_blocks: list[dict[str, Any]] = [
+            {"type": "text", "text": text}
+            for text in legacy_system_parts
+            if text
+        ]
+        offset = len(system_blocks)
+        system_blocks.extend(
+            {"type": "text", "text": block.text} for block in request.system_blocks
+        )
+        for index, block in enumerate(request.system_blocks):
+            if not block.stable_prefix:
+                break
+            stable_boundary = offset + index
+        if (
+            stable_boundary is not None
+            and request.cache_policy is not None
+            and request.cache_policy.enabled
+        ):
+            system_blocks[stable_boundary]["cache_control"] = {"type": "ephemeral"}
+        system_blocks.extend(
+            {"type": "text", "text": text} for text in message_system_parts if text
+        )
+        payload["system"] = system_blocks
+    elif legacy_system_parts or message_system_parts:
+        payload["system"] = "\n\n".join(
+            (*legacy_system_parts, *message_system_parts)
+        )
     if request.tools:
         payload["tools"] = [
             {
@@ -367,6 +396,11 @@ def _usage_from_anthropic(value: dict[str, Any], previous: Usage) -> Usage:
         output_tokens=int(value.get("output_tokens", previous.output_tokens)),
         cached_input_tokens=int(
             value.get("cache_read_input_tokens", previous.cached_input_tokens)
+        ),
+        cache_write_input_tokens=int(
+            value.get(
+                "cache_creation_input_tokens", previous.cache_write_input_tokens
+            )
         ),
     )
 

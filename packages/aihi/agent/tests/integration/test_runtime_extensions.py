@@ -26,7 +26,7 @@ from aihi.agent import (
     SkillScope,
     ToolRegistry,
 )
-from aihi.models import FakeProvider, FakeStep, Message
+from aihi.models import FakeProvider, FakeStep, Message, ModelRequest
 
 SKILL = """---
 name: release-notes
@@ -68,6 +68,12 @@ def skill_discovery(tmp_path: Path) -> SkillDiscovery:
     return SkillDiscovery([SkillRoot(path=tmp_path / "skills", scope=SkillScope.PROJECT)])
 
 
+def rendered_system(request: ModelRequest) -> str:
+    parts = [request.system_prompt] if request.system_prompt else []
+    parts.extend(block.text for block in request.system_blocks)
+    return "\n\n".join(parts)
+
+
 @pytest.mark.asyncio
 async def test_skill_index_reaches_the_model_without_the_body(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
@@ -88,7 +94,7 @@ async def test_skill_index_reaches_the_model_without_the_body(tmp_path: Path) ->
     )
 
     assert result.state == RunState.COMPLETED
-    sent = provider.requests[0].system_prompt
+    sent = rendered_system(provider.requests[0])
     assert "You are a coding agent." in sent
     assert "release-notes@1.2.0 (project): Draft release notes from a changelog" in sent
     # The index is metadata only; bodies stay behind the explicit trust flow.
@@ -133,7 +139,7 @@ async def test_memory_is_retrieved_into_context_and_new_candidates_are_proposed(
     )
 
     assert result.state == RunState.COMPLETED
-    assert "The build runs with 'make check'." in provider.requests[0].system_prompt
+    assert "The build runs with 'make check'." in rendered_system(provider.requests[0])
     # Writing stays explicit: the run only proposes candidates.
     candidates = [event for event in session.events if event.type == "memory.candidate"]
     assert candidates
@@ -198,5 +204,6 @@ async def test_sections_do_not_leak_between_runs_of_the_same_session(tmp_path: P
     await coordinator.run(session, model="fake-model", user_message=Message.text("user", "second"))
 
     assert calls == ["first", "second"]
-    assert "seen: second" in provider.requests[1].system_prompt
-    assert "seen: first" not in provider.requests[1].system_prompt
+    sent = rendered_system(provider.requests[1])
+    assert "seen: second" in sent
+    assert "seen: first" not in sent

@@ -10,7 +10,7 @@ Provider-neutral, recoverable agent runtime for AIHI.
 
 - Run bounded model/tool turns with explicit runtime composition.
 - Persist an append-only event log and recover sessions after interruption.
-- Compile context and compact it into derived summaries without rewriting history.
+- Compile stable-prefix-aware context and compact it into derived state without rewriting history.
 - Register and execute tools through policy, approvals, hooks, and a sandbox backend.
 - Integrate Skills, MCP servers, subagents, memory, artifacts, telemetry, replay, and evaluations.
 
@@ -120,7 +120,7 @@ The default coordinator turn budget is finite (`100`) and can be lowered for a p
 | --- | --- |
 | Runtime and runs | `Runtime`, `RuntimeBuilder`, `RunCoordinator`, `RunResult`, `RunState` |
 | Sessions and storage | `Session`, `EventStore`, `InMemoryEventStore`, `SQLiteEventStore`, `Event` |
-| Context | `ContextCompiler`, summaries, compaction generators |
+| Context | `ContextCompiler`, `CompactionPolicy`, `ContextState`, summaries and compaction generators |
 | Tools | `Tool`, `ToolSpec`, `ToolContext`, `ToolRegistry`, built-in file/shell tools |
 | Policy and approval | `PermissionMode`, `DefaultPolicyEngine`, `Approval`, approval resolvers |
 | Sandbox | `HostBackend`, `LocalIsolatedBackend`, `DockerBackend` |
@@ -137,6 +137,14 @@ Use the built-in tools only with a sandbox and policy appropriate for the worksp
 ## Observability
 
 Telemetry is an observation stream, not the event log. `JsonlTelemetrySink` emits redacted, bounded records and creates owner-only files by default. Use the event store for recovery and audit the telemetry stream for operational diagnosis; do not use UI output as a source of truth.
+
+## Stable context prefix
+
+`ContextCompiler` keeps the application-owned base system prompt in a stable `TextBlock` and places
+runtime `ContextSection` values in the dynamic suffix. `RunCoordinator` derives one cache-family key
+from that stable prefix and canonical model-visible tool definitions. Dynamic memory, skills,
+compaction state and current turns remain after the cache boundary. Cache availability never changes
+Event replay, policy, approval, sandbox or tool persistence semantics.
 
 ## Development
 

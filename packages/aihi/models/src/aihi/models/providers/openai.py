@@ -49,6 +49,7 @@ class OpenAIConfig:
 class OpenAIProvider:
     name = "openai"
     _replay_reasoning_content = False
+    _send_prompt_cache_key = True
 
     def __init__(
         self,
@@ -83,7 +84,7 @@ class OpenAIProvider:
             reasoning=True,
             reasoning_replay=False,
             effort_levels=("low", "medium", "high"),
-            prefix_caching=False,
+            prefix_caching=True,
             token_counting=False,
             vision=True,
             max_context=128_000,
@@ -106,6 +107,10 @@ class OpenAIProvider:
             request,
             replay_reasoning_content=self._replay_reasoning_content,
             reasoning_provider=self.name,
+            enable_prompt_cache_key=(
+                self._send_prompt_cache_key
+                and self.capabilities(request.model).prefix_caching
+            ),
         )
         http_request = HttpRequest(
             method="POST",
@@ -135,10 +140,12 @@ def _request_payload(
     *,
     replay_reasoning_content: bool = False,
     reasoning_provider: str | None = None,
+    enable_prompt_cache_key: bool = True,
 ) -> dict[str, Any]:
     messages = []
-    if request.system_prompt:
-        messages.append({"role": "system", "content": request.system_prompt})
+    system_text = _system_text(request)
+    if system_text:
+        messages.append({"role": "system", "content": system_text})
     for message in request.messages:
         messages.extend(
             _message_to_wire(
@@ -168,7 +175,20 @@ def _request_payload(
             }
             for tool in request.tools
         ]
+    if (
+        enable_prompt_cache_key
+        and request.cache_policy is not None
+        and request.cache_policy.enabled
+        and request.cache_policy.key is not None
+    ):
+        payload["prompt_cache_key"] = request.cache_policy.key
     return payload
+
+
+def _system_text(request: ModelRequest) -> str:
+    parts = [request.system_prompt] if request.system_prompt else []
+    parts.extend(block.text for block in request.system_blocks if block.text)
+    return "\n\n".join(parts)
 
 
 def _message_to_wire(

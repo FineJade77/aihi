@@ -11,7 +11,7 @@ Approval、Sandbox 边界、Context 管理、集成能力和可观测性，供�
 
 - 通过显式 Runtime 组合运行有界的 model/tool turns。
 - 持久化只追加的 Event Log，并在中断后恢复 Session。
-- 编译 Context，并生成不改写历史的派生摘要和 Compaction。
+- 编译支持 Stable Prefix 的 Context，并生成不改写历史的派生状态和 Compaction。
 - 通过 Policy、Approval、Hook 和 Sandbox backend 注册、治理和执行 Tool。
 - 集成 Skill、MCP Server、Subagent、Memory、Artifact、Telemetry、Replay 和 Eval。
 
@@ -122,7 +122,7 @@ Coordinator 的默认 turn budget 是有限的（\`100\`），应用可以进一
 | --- | --- |
 | Runtime 与 Run | \`Runtime\`、\`RuntimeBuilder\`、\`RunCoordinator\`、\`RunResult\`、\`RunState\` |
 | Session 与存储 | \`Session\`、\`EventStore\`、\`InMemoryEventStore\`、\`SQLiteEventStore\`、\`Event\` |
-| Context | \`ContextCompiler\`、摘要、Compaction Generator |
+| Context | \`ContextCompiler\`、`CompactionPolicy`、`ContextState`、摘要和 Compaction Generator |
 | Tool | \`Tool\`、\`ToolSpec\`、\`ToolContext\`、\`ToolRegistry\`、内置文件/Shell Tool |
 | Policy 与 Approval | \`PermissionMode\`、\`DefaultPolicyEngine\`、\`Approval\`、Approval Resolver |
 | Sandbox | \`HostBackend\`、\`LocalIsolatedBackend\`、\`DockerBackend\` |
@@ -142,6 +142,14 @@ Approval。Approval Lease 可以根据应用 Policy，将决定限定到一次�
 
 Telemetry 是观察流，不是 Event Log。\`JsonlTelemetrySink\` 输出脱敏、有界的记录，并默认创建
 仅 Owner 可读写的文件。恢复使用 Event Store；运维诊断查看 Telemetry Stream，不要把 UI 输出当作事实源。
+
+## 稳定 Context 前缀
+
+`ContextCompiler` 将应用提供的 Base System Prompt 编译为稳定 `TextBlock`，并把 Runtime
+`ContextSection` 放在动态后缀。`RunCoordinator` 使用该稳定前缀和规范化的模型可见 Tool
+Definition 派生唯一 Cache Family Key。Memory、Skill、Compaction State 和当前 Turn 保持在缓存
+断点之后。Cache 是否可用都不会改变 Event Replay、Policy、Approval、Sandbox 或 Tool Result
+持久化语义。
 
 ## 开发
 

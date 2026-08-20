@@ -6,10 +6,18 @@ from aihi.agent.artifacts import FileArtifactStore
 from aihi.agent.context import (
     ContextBudget,
     ContextCompiler,
+    ContextSection,
     StructuredSummary,
     SummaryRequest,
+    build_prompt_cache_key,
 )
-from aihi.models import Message, TextBlock, ToolCallBlock, ToolResultBlock
+from aihi.models import (
+    Message,
+    ModelToolDefinition,
+    TextBlock,
+    ToolCallBlock,
+    ToolResultBlock,
+)
 
 
 def test_artifact_store_is_content_addressed_and_integrity_checked(tmp_path: Path) -> None:
@@ -46,6 +54,52 @@ def test_context_compiler_externalizes_large_tool_results(tmp_path: Path) -> Non
     assert result.metadata["artifact_id"] == compiled.artifacts[0].artifact_id
     assert "Full tool output stored as an artifact" in result.content
     assert store.read_text(compiled.artifacts[0].artifact_id) == "output " * 100
+
+
+def test_context_compiler_separates_stable_base_prompt_from_dynamic_sections() -> None:
+    compiled = ContextCompiler().compile(
+        (Message.text("user", "hello"),),
+        system_prompt="base instructions",
+        tools=(),
+        budget=ContextBudget(context_window=4_096, reserved_output=100),
+        sections=(ContextSection("Workspace", "dynamic rules", source="test"),),
+    )
+
+    assert compiled.system_prompt == "base instructions\n\n## Workspace\ndynamic rules"
+    assert compiled.system_blocks == (
+        TextBlock("base instructions", stable_prefix=True),
+        TextBlock("## Workspace\ndynamic rules"),
+    )
+
+
+def test_prompt_cache_key_uses_only_the_canonical_stable_family() -> None:
+    tool = ModelToolDefinition(
+        name="read_file",
+        description="Read a file",
+        input_schema={"type": "object", "properties": {"path": {"type": "string"}}},
+    )
+    first = build_prompt_cache_key(
+        provider_family="openai",
+        model="gpt-test",
+        tools=(tool,),
+        system_blocks=(TextBlock("base", stable_prefix=True), TextBlock("dynamic one")),
+    )
+    second = build_prompt_cache_key(
+        provider_family="openai",
+        model="gpt-test",
+        tools=(tool,),
+        system_blocks=(TextBlock("base", stable_prefix=True), TextBlock("dynamic two")),
+    )
+    changed = build_prompt_cache_key(
+        provider_family="openai",
+        model="gpt-test-2",
+        tools=(tool,),
+        system_blocks=(TextBlock("base", stable_prefix=True),),
+    )
+
+    assert first == second
+    assert first.startswith("aihi:prompt-cache:v1:")
+    assert changed != first
 
 
 def test_compaction_never_splits_tool_call_and_result_pair() -> None:

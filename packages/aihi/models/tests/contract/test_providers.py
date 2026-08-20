@@ -6,6 +6,7 @@ import aihi.models.providers.openai as openai_adapter
 import pytest
 from aihi.models import (
     AnthropicProvider,
+    CachePolicy,
     Capabilities,
     DeepSeekProvider,
     HttpRequest,
@@ -25,6 +26,7 @@ from aihi.models import (
     ToolCallBlock,
     ToolInputDelta,
     ToolResultBlock,
+    Usage,
 )
 
 
@@ -360,3 +362,136 @@ def test_provider_wire_formats_preserve_mixed_text_and_images() -> None:
         "media_type": "image/png",
         "data": "aW1hZ2U=",
     }
+
+
+def test_openai_cache_request_preserves_a_stable_wire_prefix() -> None:
+    model_request = ModelRequest(
+        model="gpt-test",
+        messages=(Message.text("user", "hello"),),
+        system_blocks=(
+            TextBlock("base", stable_prefix=True),
+            TextBlock("dynamic"),
+        ),
+        cache_policy=CachePolicy(key="aihi:prompt-cache:v1:test"),
+    )
+
+    payload = openai_adapter._request_payload(model_request)
+
+    assert payload["messages"][0] == {"role": "system", "content": "base\n\ndynamic"}
+    assert payload["prompt_cache_key"] == "aihi:prompt-cache:v1:test"
+
+
+def test_anthropic_emits_exactly_one_cache_control_at_the_stable_boundary() -> None:
+    model_request = ModelRequest(
+        model="claude-test",
+        messages=(
+            Message.text("system", "compaction summary"),
+            Message.text("user", "hello"),
+        ),
+        tools=request().tools,
+        system_blocks=(
+            TextBlock("base", stable_prefix=True),
+            TextBlock("dynamic"),
+        ),
+        cache_policy=CachePolicy(key="ignored-by-anthropic"),
+    )
+
+    payload = anthropic_adapter._request_payload(model_request)
+    system = payload["system"]
+
+    assert isinstance(system, list)
+    assert system[0] == {
+        "type": "text",
+        "text": "base",
+        "cache_control": {"type": "ephemeral"},
+    }
+    assert system[1] == {"type": "text", "text": "dynamic"}
+    assert system[2] == {"type": "text", "text": "compaction summary"}
+    assert sum("cache_control" in block for block in system) == 1
+
+
+def test_cache_policy_can_disable_all_explicit_provider_hints() -> None:
+    model_request = ModelRequest(
+        model="test-model",
+        messages=(),
+        system_blocks=(TextBlock("base", stable_prefix=True),),
+        cache_policy=CachePolicy(enabled=False, key="unused"),
+    )
+
+    assert "prompt_cache_key" not in openai_adapter._request_payload(model_request)
+    system = anthropic_adapter._request_payload(model_request)["system"]
+    assert isinstance(system, list)
+    assert all("cache_control" not in block for block in system)
+
+
+@pytest.mark.asyncio
+async def test_compatible_and_deepseek_do_not_send_undeclared_cache_extensions() -> None:
+    cached_request = ModelRequest(
+        model="test-model",
+        messages=(Message.text("user", "hello"),),
+        system_blocks=(TextBlock("base", stable_prefix=True),),
+        cache_policy=CachePolicy(key="aihi:prompt-cache:v1:test"),
+    )
+    events = [{"choices": [{"delta": {"content": "ok"}, "finish_reason": "stop"}]}]
+    compatible_transport = FakeTransport(events)
+    deepseek_transport = FakeTransport(events)
+
+    _ = [
+        chunk
+        async for chunk in OpenAICompatibleProvider(
+            "secret",
+            base_url="https://provider.example/v1/chat/completions",
+            transport=compatible_transport,
+        ).stream(cached_request)
+    ]
+    _ = [
+        chunk
+        async for chunk in DeepSeekProvider(
+            "secret", transport=deepseek_transport
+        ).stream(cached_request)
+    ]
+
+    assert "prompt_cache_key" not in compatible_transport.requests[0].json_body
+    assert "prompt_cache_key" not in deepseek_transport.requests[0].json_body
+
+
+@pytest.mark.asyncio
+async def test_compatible_provider_sends_cache_key_only_when_explicitly_profiled() -> None:
+    transport = FakeTransport(
+        [{"choices": [{"delta": {"content": "ok"}, "finish_reason": "stop"}]}]
+    )
+    model_request = ModelRequest(
+        model="test-model",
+        messages=(Message.text("user", "hello"),),
+        system_blocks=(TextBlock("base", stable_prefix=True),),
+        cache_policy=CachePolicy(key="aihi:prompt-cache:v1:test"),
+    )
+
+    _ = [
+        chunk
+        async for chunk in OpenAICompatibleProvider(
+            "secret",
+            base_url="https://provider.example/v1/chat/completions",
+            transport=transport,
+            capabilities=Capabilities(prefix_caching=True),
+        ).stream(model_request)
+    ]
+
+    assert transport.requests[0].json_body["prompt_cache_key"] == (
+        "aihi:prompt-cache:v1:test"
+    )
+
+
+def test_anthropic_usage_normalizes_cache_writes() -> None:
+    usage = anthropic_adapter._usage_from_anthropic(
+        {
+            "input_tokens": 20,
+            "output_tokens": 3,
+            "cache_read_input_tokens": 12,
+            "cache_creation_input_tokens": 8,
+        },
+        Usage(),
+    )
+
+    assert usage.cached_input_tokens == 12
+    assert usage.cache_write_input_tokens == 8

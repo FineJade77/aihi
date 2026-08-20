@@ -122,9 +122,23 @@ def compose_system_prompt(
 ) -> str:
     """Join the base prompt with section blocks in the order they were given."""
 
-    blocks = [system_prompt.strip()] if system_prompt.strip() else []
-    blocks.extend(section.render() for section in sections if section.body.strip())
-    return "\n\n".join(blocks)
+    return "\n\n".join(
+        block.text for block in compose_system_blocks(system_prompt, sections)
+    )
+
+
+def compose_system_blocks(
+    system_prompt: str, sections: tuple[ContextSection, ...] | list[ContextSection]
+) -> tuple[TextBlock, ...]:
+    """Keep the base prompt stable and extension sections in the dynamic suffix."""
+
+    blocks: list[TextBlock] = []
+    if system_prompt.strip():
+        blocks.append(TextBlock(system_prompt.strip(), stable_prefix=True))
+    blocks.extend(
+        TextBlock(section.render()) for section in sections if section.body.strip()
+    )
+    return tuple(blocks)
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,6 +147,7 @@ class CompiledContext:
     messages: tuple[Message, ...]
     estimated_tokens: int
     budget: ContextBudget
+    system_blocks: tuple[TextBlock, ...] = ()
     artifacts: tuple[ArtifactRef, ...] = ()
     compaction: CompactionRecord | None = None
 
@@ -169,7 +184,8 @@ class ContextCompiler:
         sections: tuple[ContextSection, ...] = (),
     ) -> CompiledContext:
         original = tuple(messages)
-        system_prompt = compose_system_prompt(system_prompt, sections)
+        system_blocks = compose_system_blocks(system_prompt, sections)
+        system_prompt = "\n\n".join(block.text for block in system_blocks)
         materialized, artifacts = self._artifactize(original, artifact_store, artifact_policy)
         before_tokens = self._total_tokens(system_prompt, materialized, budget)
         if before_tokens <= budget.usable_input:
@@ -178,6 +194,7 @@ class ContextCompiler:
                 messages=materialized,
                 estimated_tokens=before_tokens,
                 budget=budget,
+                system_blocks=system_blocks,
                 artifacts=artifacts,
             )
 
@@ -197,6 +214,7 @@ class ContextCompiler:
                 messages=compacted,
                 estimated_tokens=after_tokens,
                 budget=budget,
+                system_blocks=system_blocks,
                 artifacts=artifacts,
             )
         summary = compacted[0]
@@ -223,6 +241,7 @@ class ContextCompiler:
             messages=compacted,
             estimated_tokens=after_tokens,
             budget=budget,
+            system_blocks=system_blocks,
             artifacts=artifacts,
             compaction=record,
         )
@@ -248,7 +267,8 @@ class ContextCompiler:
         """
 
         original = tuple(messages)
-        system_prompt = compose_system_prompt(system_prompt, sections)
+        system_blocks = compose_system_blocks(system_prompt, sections)
+        system_prompt = "\n\n".join(block.text for block in system_blocks)
         materialized, artifacts = self._artifactize(original, artifact_store, artifact_policy)
         before_tokens = self._total_tokens(system_prompt, materialized, budget)
         groups = _message_groups(materialized)
@@ -298,6 +318,7 @@ class ContextCompiler:
             messages=candidate,
             estimated_tokens=record.after_tokens,
             budget=budget,
+            system_blocks=system_blocks,
             artifacts=artifacts,
             compaction=record,
         )

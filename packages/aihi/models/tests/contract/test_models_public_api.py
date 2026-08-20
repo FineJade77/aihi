@@ -12,6 +12,7 @@ def test_models_public_exports_are_sorted_and_resolvable() -> None:
 def test_models_public_api_contains_contracts_and_supported_providers() -> None:
     required = {
         "AnthropicProvider",
+        "CachePolicy",
         "DeepSeekProvider",
         "FakeProvider",
         "Message",

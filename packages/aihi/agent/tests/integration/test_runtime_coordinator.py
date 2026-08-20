@@ -153,6 +153,37 @@ async def test_runtime_projects_only_model_visible_tool_fields(
 
 
 @pytest.mark.asyncio
+async def test_runtime_builds_one_stable_cache_family_for_the_base_prompt(
+    session_tmp_path: Path,
+) -> None:
+    provider = FakeProvider(
+        [FakeStep(text="done")],
+        capabilities=Capabilities(prefix_caching=True, token_counting=True),
+    )
+    session = make_session(session_tmp_path, "ses-cache-prefix")
+    coordinator = RunCoordinator(
+        provider,
+        registry=ToolRegistry([ReadFileTool()]),
+        sandbox=HostBackend(session_tmp_path, unsafe=True),
+    )
+
+    result = await coordinator.run(
+        session,
+        model="fake-model",
+        user_message=Message.text("user", "inspect"),
+        system_prompt="base instructions",
+    )
+
+    assert result.state == RunState.COMPLETED
+    sent = provider.requests[0]
+    assert sent.system_prompt == ""
+    assert sent.system_blocks[0].text == "base instructions"
+    assert sent.system_blocks[0].stable_prefix is True
+    assert sent.cache_policy is not None
+    assert sent.cache_policy.key is not None
+
+
+@pytest.mark.asyncio
 async def test_runtime_never_retries_a_provider_after_its_first_chunk(
     session_tmp_path: Path,
 ) -> None:
