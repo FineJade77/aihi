@@ -75,7 +75,7 @@ M0–M7 和 H-01–H-17 基础建设已完成，建立了多包边界、事件 S
 `docs/rfcs/0004-prompt-cache-and-context-compaction-v2.md`。Cache 请求契约和 Provider wire 映射属于
 `aihi-models`；稳定前缀编译、Token 压力、可恢复
 Tool Result 清理、结构化压缩、持久化和 Replay 属于 `aihi-agent`；产品 Prompt 和 Compact Model
-选择仍由应用层负责。H-19.1 至 H-19.4 已实现，等待评审后再开始 H-19.5。
+选择仍由应用层负责。H-19.1 至 H-19.5 已实现，等待评审后再开始 H-19.6。
 
 | 切片 | 范围 | 验收 |
 | --- | --- | --- |

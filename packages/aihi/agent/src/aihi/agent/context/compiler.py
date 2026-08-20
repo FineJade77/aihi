@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 from hashlib import sha256
 from typing import Any
 
 from aihi.agent._core.errors import ContextWindowExceeded
+from aihi.agent._core.events import Event
 from aihi.agent.artifacts import ArtifactAccess, ArtifactPolicy, ArtifactRef, ArtifactStore
 from aihi.agent.context.policy import CompactionPolicy, ContextPressure
+from aihi.agent.context.projector import legacy_summary_state, project_context_state
+from aihi.agent.context.state import ContextState
 from aihi.agent.context.summary import (
     DeterministicSummaryGenerator,
     SummaryGenerator,
@@ -89,9 +92,19 @@ class CompactionRecord:
     artifact_ids: tuple[str, ...] = ()
     prompt_hash: str = ""
     trigger: str = "budget"
+    retained_message_ids: tuple[str, ...] = ()
+    context_state: ContextState | None = None
+    source_message_ids: tuple[str, ...] = ()
+    source_event_seqs: tuple[int, ...] = ()
+    policy_snapshot: dict[str, object] | None = None
+    token_count_method: str = "estimate"
+    stable_prefix_hash: str = ""
+    cache_epoch_hash: str = ""
+    summary_generator: str = ""
+    fallback_reason: str | None = None
 
     def to_event_data(self) -> dict[str, object]:
-        return {
+        value: dict[str, object] = {
             "strategy": self.strategy,
             "version": self.version,
             "replaced_message_ids": list(self.replaced_message_ids),
@@ -103,6 +116,25 @@ class CompactionRecord:
             "prompt_hash": self.prompt_hash,
             "trigger": self.trigger,
         }
+        if self.version >= 2:
+            value.update(
+                {
+                    "strategy_version": self.version,
+                    "retained_message_ids": list(self.retained_message_ids),
+                    "context_state": (
+                        self.context_state.to_dict() if self.context_state is not None else None
+                    ),
+                    "source_message_ids": list(self.source_message_ids),
+                    "source_event_seqs": list(self.source_event_seqs),
+                    "policy_snapshot": dict(self.policy_snapshot or {}),
+                    "token_count_method": self.token_count_method,
+                    "stable_prefix_hash": self.stable_prefix_hash,
+                    "cache_epoch_hash": self.cache_epoch_hash,
+                    "summary_generator": self.summary_generator,
+                    "fallback_reason": self.fallback_reason,
+                }
+            )
+        return value
 
 
 @dataclass(frozen=True, slots=True)
@@ -413,6 +445,163 @@ class ContextCompiler:
             return None
         return ref
 
+    async def compact_context_state(
+        self,
+        messages: tuple[Message, ...] | list[Message],
+        *,
+        system_prompt: str,
+        tools: tuple[ToolSpec, ...],
+        budget: ContextBudget,
+        policy: CompactionPolicy | None = None,
+        events: tuple[Event, ...] | list[Event] = (),
+        artifact_store: ArtifactStore | None = None,
+        artifact_policy: ArtifactPolicy | None = None,
+        known_artifacts: tuple[ArtifactRef, ...] = (),
+        sections: tuple[ContextSection, ...] = (),
+        summary_generator: SummaryGenerator | None = None,
+        trigger: str = "hard_threshold",
+    ) -> CompiledContext:
+        """Create an evidence-backed cumulative state plus a recent raw tail."""
+
+        resolved_policy = policy or CompactionPolicy()
+        original = tuple(messages)
+        system_blocks = compose_system_blocks(system_prompt, sections)
+        system_prompt = "\n\n".join(block.text for block in system_blocks)
+        materialized, discovered_artifacts = self._artifactize(
+            original,
+            artifact_store,
+            artifact_policy,
+        )
+        artifacts = tuple(
+            {
+                artifact.artifact_id: artifact
+                for artifact in (*known_artifacts, *discovered_artifacts)
+            }.values()
+        )
+        before_tokens = self._full_input_tokens(system_prompt, materialized, budget)
+        previous, state_message_ids = _previous_context_state(materialized)
+        raw_messages = tuple(
+            message for message in materialized if message.id not in state_message_ids
+        )
+        groups = _message_groups(raw_messages)
+        if len(groups) <= resolved_policy.recent_tail_min_groups and not state_message_ids:
+            raise ContextWindowExceeded(
+                "Context cannot be reduced while preserving the minimum recent raw tail",
+                details={
+                    "estimated_tokens": before_tokens,
+                    "target_tokens": int(
+                        budget.input_capacity * resolved_policy.target_ratio
+                    ),
+                    "recent_tail_min_groups": resolved_policy.recent_tail_min_groups,
+                },
+            )
+
+        protected = _recent_group_indexes(groups, budget.input_capacity, resolved_policy)
+        retained_groups = [
+            group for index, group in enumerate(groups) if index in protected
+        ]
+        omitted_groups = [
+            group for index, group in enumerate(groups) if index not in protected
+        ]
+        if not omitted_groups and len(retained_groups) > resolved_policy.recent_tail_min_groups:
+            omitted_groups.append(retained_groups.pop(0))
+        previous_compaction_id = _previous_compaction_event_id(events, state_message_ids)
+        generator = summary_generator or self.summary_generator
+        fallback_reason: str | None = None
+        target_tokens = int(budget.input_capacity * resolved_policy.target_ratio)
+
+        while True:
+            omitted = tuple(message for group in omitted_groups for message in group)
+            retained = tuple(message for group in retained_groups for message in group)
+            try:
+                enrichment = await generator.generate(
+                    SummaryRequest(
+                        omitted_messages=omitted,
+                        retained_messages=retained,
+                        system_prompt=system_prompt,
+                        artifact_ids=tuple(ref.artifact_id for ref in artifacts),
+                    )
+                )
+            except Exception as error:  # noqa: BLE001 - semantic enrichment is optional.
+                fallback_reason = type(error).__name__
+                enrichment = await DeterministicSummaryGenerator().generate(
+                    SummaryRequest(
+                        omitted_messages=omitted,
+                        retained_messages=retained,
+                        system_prompt=system_prompt,
+                        artifact_ids=tuple(ref.artifact_id for ref in artifacts),
+                    )
+                )
+                enrichment = replace(enrichment, strategy="l2_model_fallback")
+
+            strategy = _context_state_strategy(enrichment.strategy)
+            state = project_context_state(
+                messages=raw_messages,
+                events=events,
+                tools=tools,
+                artifacts=artifacts,
+                previous=previous,
+                enrichment=enrichment,
+                enrichment_source_message_ids=tuple(message.id for message in omitted),
+                previous_compaction_id=previous_compaction_id,
+                omitted_message_count=len(omitted),
+                strategy=strategy,
+            )
+            summary_message = state.to_message(strategy=strategy)
+            candidate = (summary_message, *retained)
+            after_tokens = self._full_input_tokens(system_prompt, candidate, budget)
+            if after_tokens <= target_tokens:
+                break
+            if len(retained_groups) <= resolved_policy.recent_tail_min_groups:
+                raise ContextWindowExceeded(
+                    "ContextState and the minimum recent raw tail exceed the compaction target",
+                    details={
+                        "estimated_tokens": after_tokens,
+                        "target_tokens": target_tokens,
+                        "recent_tail_groups": len(retained_groups),
+                    },
+                )
+            omitted_groups.append(retained_groups.pop(0))
+            omitted_groups.sort(key=lambda group: raw_messages.index(group[0]))
+
+        replaced_ids = (
+            *state_message_ids,
+            *(message.id for group in omitted_groups for message in group),
+        )
+        stable_hash = _stable_prefix_hash(system_blocks, tools)
+        record = CompactionRecord(
+            strategy=strategy,
+            version=2,
+            replaced_message_ids=tuple(replaced_ids),
+            retained_message_ids=tuple(message.id for message in retained),
+            summary=summary_message,
+            context_state=state,
+            before_tokens=before_tokens,
+            after_tokens=after_tokens,
+            artifact_ids=tuple(ref.artifact_id for ref in artifacts),
+            prompt_hash=_prompt_hash(system_prompt, materialized, tools, budget),
+            trigger=trigger,
+            source_message_ids=state.source_message_ids,
+            source_event_seqs=state.source_event_seqs,
+            policy_snapshot=asdict(resolved_policy),
+            stable_prefix_hash=stable_hash,
+            cache_epoch_hash=stable_hash,
+            summary_generator=type(generator).__name__,
+            fallback_reason=(
+                fallback_reason
+                or ("model_summary_invalid" if enrichment.strategy == "l2_model_fallback" else None)
+            ),
+        )
+        return CompiledContext(
+            system_prompt=system_prompt,
+            messages=candidate,
+            estimated_tokens=after_tokens,
+            budget=budget,
+            system_blocks=system_blocks,
+            artifacts=artifacts,
+            compaction=record,
+        )
+
     async def compact_l2(
         self,
         messages: tuple[Message, ...] | list[Message],
@@ -574,6 +763,18 @@ class ContextCompiler:
     ) -> int:
         return estimate_text_tokens(system_prompt) + estimate_messages_tokens(messages)
 
+    @staticmethod
+    def _full_input_tokens(
+        system_prompt: str,
+        messages: tuple[Message, ...],
+        budget: ContextBudget,
+    ) -> int:
+        return (
+            estimate_text_tokens(system_prompt)
+            + budget.tool_schema_tokens
+            + estimate_messages_tokens(messages)
+        )
+
 
 def _message_groups(messages: tuple[Message, ...]) -> list[tuple[Message, ...]]:
     """Group each assistant tool call with all following results atomically."""
@@ -627,6 +828,72 @@ def _tool_result_placeholder(tool_name: str, artifact: ArtifactRef) -> str:
             "summary=Tool result retained as a recoverable artifact.",
         )
     )
+
+
+def _previous_context_state(
+    messages: tuple[Message, ...],
+) -> tuple[ContextState | None, tuple[str, ...]]:
+    previous: ContextState | None = None
+    state_message_ids: list[str] = []
+    for message in messages:
+        candidate: ContextState | None = None
+        if message.metadata.get("context_state_schema_version") == 2:
+            try:
+                candidate = ContextState.from_message(message)
+            except ValueError:
+                candidate = None
+        if candidate is None:
+            candidate = legacy_summary_state(message)
+        if candidate is not None:
+            previous = candidate
+            state_message_ids.append(message.id)
+    return previous, tuple(state_message_ids)
+
+
+def _previous_compaction_event_id(
+    events: tuple[Event, ...] | list[Event],
+    state_message_ids: tuple[str, ...],
+) -> str | None:
+    candidates = set(state_message_ids)
+    for event in reversed(events):
+        if event.type != "compaction.created":
+            continue
+        raw = event.data.get("summary")
+        if isinstance(raw, dict) and raw.get("id") in candidates:
+            return event.id
+    return None
+
+
+def _context_state_strategy(summary_strategy: str) -> str:
+    if summary_strategy == "l2_model":
+        return "l2_model_context_state"
+    if summary_strategy == "l2_model_fallback":
+        return "l2_model_fallback"
+    return "l2_context_state"
+
+
+def _stable_prefix_hash(
+    system_blocks: tuple[TextBlock, ...],
+    tools: tuple[ToolSpec, ...],
+) -> str:
+    stable_blocks: list[str] = []
+    for block in system_blocks:
+        if not block.stable_prefix:
+            break
+        stable_blocks.append(block.text)
+    material = json.dumps(
+        {
+            "system_blocks": stable_blocks,
+            "tools": sorted(
+                (tool.model_definition.to_dict() for tool in tools),
+                key=lambda item: str(item["name"]),
+            ),
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return sha256(material.encode("utf-8")).hexdigest()
 
 
 def _summary_message(omitted: list[Message], all_messages: tuple[Message, ...]) -> Message:

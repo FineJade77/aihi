@@ -23,6 +23,7 @@
 - [包职责](#包职责)
 - [Runtime 与事件模型](#runtime-与事件模型)
 - [模型与 Provider](#模型与-provider)
+- [Context Cache 与 Compaction](#context-cache-与-compaction)
 - [工具与安全](#工具与安全)
 - [Skill、MCP 与扩展](#skillmcp-与扩展)
 - [Coding Worker 与 TUI 协议](#coding-worker-与-tui-协议)
@@ -155,6 +156,18 @@ OpenAI-compatible 实现，但必须使用明确 endpoint。
 
 多个 Provider 和 Model 属于应用层决策。`aihi-code-agent` 从配置加载 catalog、校验所选 Model 并
 提供 CLI 切换；CLI 不实现 Router 或 Fallback。首个 stream chunk 产生后不得静默重试或切换 Provider。
+
+## Context Cache 与 Compaction
+
+应用提供的 Base System Block 与规范化的模型可见 Tool Definition 构成稳定 Prompt Cache 前缀。
+动态 Section、`ContextState`、Tool Result 占位符和当前 Turn 位于该边界之后，因此 Compaction
+不会改变稳定 Cache Family。
+
+Runtime 衡量完整的规范化请求，使用 70%/85% Soft/Hard 水位和 60% Target。Soft Pruning 只移除
+已持久化、通过完整性校验且有 Artifact 的只读 Tool Result 正文。Hard Compaction 从不可变 Event、
+Tool Metadata 和 Artifact Manifest 投影带证据的 Schema v2 `ContextState`，与旧状态逐字段合并，
+并按 Token 保留完整 Tool Group 的近期原文 Tail。模型补充不能创建文件或验证收据。
+`compaction.created` v2 只增加字段；v1 Record 与冻结 Store 继续可 Replay。
 
 ## 工具与安全
 

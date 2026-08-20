@@ -94,7 +94,7 @@ must exercise `aihi-agent` through redacted, replay-only traces.
 `docs/rfcs/0004-prompt-cache-and-context-compaction-v2.md`. Cache request contracts and Provider wire mappings belong to
 `aihi-models`; prefix compilation, token pressure, recoverable tool-result pruning, structured
 compaction, persistence and replay belong to `aihi-agent`. Product prompts and compact-model selection
-remain application-owned. H-19.1 through H-19.4 are implemented and awaiting review before H-19.5
+remain application-owned. H-19.1 through H-19.5 are implemented and awaiting review before H-19.6
 starts.
 
 | Slice | Scope | Acceptance |

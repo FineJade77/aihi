@@ -562,6 +562,9 @@ class RunCoordinator:
                     sections=sections,
                 )
             except ContextWindowExceeded:
+                # Keep the legacy emergency preflight path decodable and
+                # writer-compatible. Normal 85%/predicted hard compaction and
+                # Provider context retries use ContextState v2 below.
                 compiled = await self.context_compiler.compact_l2(
                     session.messages,
                     system_prompt=system_prompt,
@@ -621,17 +624,21 @@ class RunCoordinator:
                         ),
                         force_exact=used_exact_count,
                     )
-            if pressure.input_tokens > budget.input_capacity:
-                compiled = await self.context_compiler.compact_l2(
-                    session.messages,
+            legacy_compaction = (
+                compiled.compaction is not None
+                and compiled.compaction.version == 1
+            )
+            if pressure.input_tokens > budget.input_capacity or (
+                pressure.trigger == "hard" and not legacy_compaction
+            ):
+                compiled = await self._compact_hard(
+                    session,
+                    compiled.messages,
                     system_prompt=system_prompt,
-                    tools=self.registry.specs,
                     budget=budget,
-                    artifact_store=self.artifact_store,
-                    artifact_policy=self._artifact_policy(session),
-                    summary_generator=self.summary_generator,
                     sections=sections,
-                    trigger="preflight_context_window",
+                    trigger=pressure.trigger_reason,
+                    known_artifacts=compiled.artifacts,
                 )
                 request = self._model_request(
                     model=model,
@@ -647,14 +654,15 @@ class RunCoordinator:
                     exact_counter=(
                         self.provider.count_tokens if capabilities.token_counting else None
                     ),
-                    force_exact=(pressure.count_method == "provider"),
+                    force_exact=capabilities.token_counting,
                 )
-                if pressure.input_tokens > budget.input_capacity:
+                if pressure.input_tokens > pressure.target_tokens:
                     raise ContextWindowExceeded(
-                        "Context cannot be reduced below the measured input capacity",
+                        "Context cannot be reduced below the measured compaction target",
                         details={
                             "input_tokens": pressure.input_tokens,
                             "input_capacity": budget.input_capacity,
+                            "target_tokens": pressure.target_tokens,
                             "count_method": pressure.count_method,
                         },
                     )
@@ -662,27 +670,72 @@ class RunCoordinator:
                 compiled,
                 estimated_tokens=pressure.input_tokens,
                 pressure=pressure,
+                compaction=(
+                    replace(
+                        compiled.compaction,
+                        after_tokens=pressure.input_tokens,
+                        token_count_method=pressure.count_method,
+                    )
+                    if compiled.compaction is not None
+                    and compiled.compaction.version >= 2
+                    else compiled.compaction
+                ),
             )
             self._persist_compiled_context(session, run_id, compiled, recorded_artifacts)
             try:
                 response = await self._consume_provider(
                     session, run_id, request, cancel_event=cancel_event
                 )
-            except ProviderContextLengthError:
+            except ProviderContextLengthError as context_error:
                 if provider_context_retry_used:
                     raise
                 provider_context_retry_used = True
                 session.refresh()
-                retry_compiled = await self.context_compiler.compact_l2(
+                retry_compiled = await self._compact_hard(
+                    session,
                     session.messages,
                     system_prompt=system_prompt,
-                    tools=self.registry.specs,
                     budget=budget,
-                    artifact_store=self.artifact_store,
-                    artifact_policy=self._artifact_policy(session),
-                    summary_generator=self.summary_generator,
                     sections=sections,
                     trigger="provider_context_length",
+                )
+                retry_request = self._model_request(
+                    model=model,
+                    compiled=retry_compiled,
+                    model_tools=model_tools,
+                    max_output_tokens=effective_output_tokens,
+                    prefix_caching=capabilities.prefix_caching,
+                )
+                retry_pressure = await self.context_pressure.measure(
+                    retry_request,
+                    input_capacity=budget.input_capacity,
+                    predicted_growth_tokens=effective_output_tokens,
+                    exact_counter=(
+                        self.provider.count_tokens if capabilities.token_counting else None
+                    ),
+                    force_exact=capabilities.token_counting,
+                )
+                if retry_pressure.input_tokens > retry_pressure.target_tokens:
+                    raise ContextWindowExceeded(
+                        "Provider-error compaction did not reach the measured target",
+                        details={
+                            "input_tokens": retry_pressure.input_tokens,
+                            "target_tokens": retry_pressure.target_tokens,
+                            "count_method": retry_pressure.count_method,
+                        },
+                    ) from context_error
+                retry_compaction = retry_compiled.compaction
+                if retry_compaction is not None:
+                    retry_compaction = replace(
+                        retry_compaction,
+                        after_tokens=retry_pressure.input_tokens,
+                        token_count_method=retry_pressure.count_method,
+                    )
+                retry_compiled = replace(
+                    retry_compiled,
+                    estimated_tokens=retry_pressure.input_tokens,
+                    pressure=retry_pressure,
+                    compaction=retry_compaction,
                 )
                 self._persist_compiled_context(session, run_id, retry_compiled, recorded_artifacts)
                 continue
@@ -1192,6 +1245,32 @@ class RunCoordinator:
             for event in session.events
             if isinstance(event.data.get("message"), dict)
             and "id" in event.data["message"]
+        )
+
+    async def _compact_hard(
+        self,
+        session: Session,
+        messages: tuple[Message, ...],
+        *,
+        system_prompt: str,
+        budget: ContextBudget,
+        sections: tuple[ContextSection, ...],
+        trigger: str,
+        known_artifacts: tuple[ArtifactRef, ...] = (),
+    ) -> CompiledContext:
+        return await self.context_compiler.compact_context_state(
+            messages,
+            system_prompt=system_prompt,
+            tools=self.registry.specs,
+            budget=budget,
+            policy=self.compaction_policy,
+            events=session.events,
+            artifact_store=self.artifact_store,
+            artifact_policy=self._artifact_policy(session),
+            known_artifacts=known_artifacts,
+            summary_generator=self.summary_generator,
+            sections=sections,
+            trigger=trigger,
         )
 
     def _persist_compiled_context(

@@ -162,6 +162,14 @@ Definition 派生唯一 Cache Family Key。Memory、Skill、Compaction State 和
 和 Payload 完整性校验。Tool Call、Result 标识与错误状态、Artifact 引用、近期完整 Group Tail 以及
 稳定 Cache Prefix 均保持不变。未达到最小回收量时整批放弃；不可变 Event 历史永不改写。
 
+压力达到 85%，或保留输出预测后续请求将超限时，Runtime 会用 Schema v2 `ContextState` 替换较旧的
+完整 Group，并保留按 Token 选择的近期原文 Tail（20%、最大 32K、至少四个完整 Group）。文件状态、
+验证收据、失败、Pending Approval、Subagent 和 Artifact 会先从不可变 Event、Tool Result Metadata 与
+Artifact Manifest 确定性投影，再执行可选的模型语义补充。模型只能补充约束、决策、开放问题和下一步，
+不能宣称文件已修改或验证已成功。每个 `compaction.created` v2 Event 都记录证据引用、Policy/计数元数据
+和保留 Tail；v1 Event 继续可 Replay。Hard Compaction 必须达到 60% Target，否则返回
+`context_window_exceeded`。
+
 ## 开发
 
 ~~~bash

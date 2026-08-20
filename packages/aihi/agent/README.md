@@ -160,6 +160,16 @@ Tool calls, result identity/error state, Artifact references, the recent complet
 stable cache prefix remain unchanged. A batch is discarded unless it reclaims the configured minimum;
 the immutable Event history is never rewritten.
 
+At 85% pressure, or when reserved output predicts exhaustion, the Runtime replaces older complete
+groups with a schema-v2 `ContextState` and keeps a token-bounded recent raw tail (20%, capped at 32K,
+with at least four complete groups). Files, verification receipts, failures, pending approvals,
+subagents and Artifacts are projected deterministically from immutable Events, Tool Result metadata
+and Artifact manifests before optional model enrichment. Model output may add semantic constraints,
+decisions, questions and next steps, but cannot assert file changes or successful verification. Each
+`compaction.created` v2 event records evidence references, policy/count metadata and the retained tail;
+v1 events remain replayable. Hard compaction must reach the 60% target or fail with
+`context_window_exceeded`.
+
 ## Development
 
 ```bash

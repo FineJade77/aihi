@@ -5,13 +5,14 @@ from pathlib import Path
 
 import pytest
 from aihi.agent.artifacts import ArtifactAccess, ArtifactPolicy, FileArtifactStore
+from aihi.agent.context import CompactionPolicy, ContextState
 from aihi.agent.hooks import HookBus
 from aihi.agent.runtime import RunCoordinator, RunState
 from aihi.agent.sandbox import HostBackend
 from aihi.agent.sessions import InMemoryEventStore, Session
 from aihi.agent.tools import ToolExecutionResult, ToolRegistry, ToolSpec
 from aihi.agent.tools.base import ToolContext
-from aihi.agent.tools.builtin import ReadFileTool
+from aihi.agent.tools.builtin import ReadFileTool, WriteFileTool
 from aihi.models import (
     Capabilities,
     FakeProvider,
@@ -247,26 +248,29 @@ async def test_exact_over_capacity_count_forces_preflight_compaction_and_recount
 ) -> None:
     provider = SequencedTokenCountProvider([FakeStep(text="done")], [600, 200])
     session = make_session(session_tmp_path, "ses-pressure-exact-preflight")
-    session.add_message(Message.text("user", "o" * 450))
+    for index in range(5):
+        session.add_message(Message.text("user", f"history-{index}"))
     coordinator = RunCoordinator(
         provider,
         registry=ToolRegistry(),
         sandbox=HostBackend(session_tmp_path, unsafe=True),
         context_window=512,
         context_safety_margin=0,
+        compaction_policy=CompactionPolicy(exact_count_ratio=0.01),
     )
 
     result = await coordinator.run(
         session,
         model="fake-model",
-        user_message=Message.text("user", "n" * 450),
+        user_message=Message.text("user", "latest"),
         max_output_tokens=32,
     )
 
     assert result.state == RunState.COMPLETED, result.error
     assert provider.count_calls == 2
     compaction = next(event for event in session.events if event.type == "compaction.created")
-    assert compaction.data["trigger"] == "preflight_context_window"
+    assert compaction.data["trigger"] == "hard_threshold"
+    assert compaction.data["version"] == 2
     usage = next(event for event in session.events if event.type == "model.usage")
     assert usage.data["context_tokens"] == 200
     assert usage.data["context_count_method"] == "provider"
@@ -301,13 +305,16 @@ async def test_runtime_compacts_history_without_dropping_raw_events(
 ) -> None:
     session = make_session(session_tmp_path, "ses-context-compact")
     for index in range(20):
-        session.add_message(Message.text("user", f"historical objective {index} " + "x" * 80))
+        session.add_message(Message.text("user", f"historical objective {index} " + "x" * 230))
+    raw_before = [
+        event.to_dict() for event in session.events if event.type == "user.message"
+    ]
     provider = FakeProvider([FakeStep(text="done")])
     coordinator = RunCoordinator(
         provider,
         registry=ToolRegistry(),
         sandbox=HostBackend(session_tmp_path, unsafe=True),
-        context_window=600,
+        context_window=2_000,
         context_safety_margin=0,
     )
 
@@ -316,8 +323,115 @@ async def test_runtime_compacts_history_without_dropping_raw_events(
     assert result.state == RunState.COMPLETED
     assert any(event.type == "compaction.created" for event in session.events)
     assert sum(event.type == "user.message" for event in session.events) == 20
-    assert session.messages[0].metadata["compaction"] == "l1_deterministic"
+    assert session.messages[0].metadata["compaction"] == "l2_context_state"
+    compaction = next(event for event in session.events if event.type == "compaction.created")
+    assert compaction.data["version"] == 2
+    assert compaction.data["context_state"]["schema_version"] == 2
+    assert [
+        event.to_dict() for event in session.events if event.type == "user.message"
+    ] == raw_before
+    usage = next(event for event in session.events if event.type == "model.usage")
+    assert usage.data["context_pressure"] <= 0.60
     assert provider.requests[0].messages[0].role == "system"
+
+
+@pytest.mark.asyncio
+async def test_context_state_survives_reload_fork_and_provider_switch(
+    session_tmp_path: Path,
+) -> None:
+    store = InMemoryEventStore()
+    session = Session.create(
+        store,
+        cwd=session_tmp_path,
+        provider="fake-a",
+        model="model-a",
+        session_id="ses-context-portable",
+    )
+    for index in range(20):
+        session.add_message(Message.text("user", f"history-{index} " + "x" * 230))
+    first_provider = FakeProvider([FakeStep(text="first complete")])
+    first = RunCoordinator(
+        first_provider,
+        registry=ToolRegistry(),
+        sandbox=HostBackend(session_tmp_path, unsafe=True),
+        context_window=2_000,
+        context_safety_margin=0,
+    )
+
+    result = await first.run(session, model="model-a", max_output_tokens=64)
+
+    assert result.state == RunState.COMPLETED
+    reloaded = Session.load(store, session.id)
+    original_state = ContextState.from_message(reloaded.messages[0])
+    child = reloaded.fork(at_seq=reloaded.head_seq, session_id="ses-context-child")
+    assert ContextState.from_message(child.messages[0]) == original_state
+
+    second_provider = FakeProvider([FakeStep(text="continued elsewhere")])
+    second = RunCoordinator(
+        second_provider,
+        registry=ToolRegistry(),
+        sandbox=HostBackend(session_tmp_path, unsafe=True),
+        context_window=2_000,
+        context_safety_margin=0,
+    )
+    continued = await second.run(
+        child,
+        model="model-b",
+        user_message=Message.text("user", "continue with another provider"),
+        max_output_tokens=64,
+    )
+
+    assert continued.state == RunState.COMPLETED
+    assert ContextState.from_message(second_provider.requests[0].messages[0]) == original_state
+
+
+@pytest.mark.asyncio
+async def test_resume_after_context_state_compaction_executes_tool_once(
+    session_tmp_path: Path,
+) -> None:
+    session = make_session(session_tmp_path, "ses-context-resume")
+    for index in range(20):
+        session.add_message(Message.text("user", f"history-{index} " + "x" * 230))
+    provider = FakeProvider(
+        [
+            FakeStep.call_tool("write_file", {"path": "resume.txt", "content": "ok"}),
+            FakeStep(text="resumed"),
+        ]
+    )
+    coordinator = RunCoordinator(
+        provider,
+        registry=ToolRegistry([WriteFileTool()]),
+        sandbox=HostBackend(session_tmp_path, unsafe=True),
+        context_window=2_000,
+        context_safety_margin=0,
+    )
+
+    suspended = await coordinator.run(session, model="fake-model", max_output_tokens=64)
+
+    assert suspended.state == RunState.WAITING_APPROVAL
+    assert any(
+        event.type == "compaction.created" and event.data["version"] == 2
+        for event in session.events
+    )
+    assert suspended.pending_approval_id is not None
+    session.resolve_approval(
+        suspended.pending_approval_id,
+        approved=True,
+        resolved_by="test",
+        run_id=suspended.run_id,
+    )
+
+    resumed = await coordinator.resume(session, run_id=suspended.run_id, model="fake-model")
+
+    assert resumed.state == RunState.COMPLETED
+    assert (session_tmp_path / "resume.txt").read_text(encoding="utf-8") == "ok"
+    completed = [
+        event
+        for event in session.events
+        if event.type == "tool.completed"
+        and event.data.get("tool_name") == "write_file"
+    ]
+    assert len(completed) == 1
 
 
 @pytest.mark.asyncio
@@ -499,7 +613,8 @@ async def test_runtime_retries_once_after_provider_context_length_error(
     session_tmp_path: Path,
 ) -> None:
     session = make_session(session_tmp_path, "ses-context-retry")
-    session.add_message(Message.text("user", "historical objective"))
+    for index in range(5):
+        session.add_message(Message.text("user", f"historical objective {index}"))
     provider = FakeProvider(
         [
             FakeStep(error=ProviderContextLengthError("context too large")),
@@ -520,9 +635,10 @@ async def test_runtime_retries_once_after_provider_context_length_error(
     assert len(provider.requests) == 2
     compactions = [event for event in session.events if event.type == "compaction.created"]
     assert len(compactions) == 1
-    assert compactions[0].data["strategy"] == "l2_deterministic"
+    assert compactions[0].data["strategy"] == "l2_context_state"
+    assert compactions[0].data["version"] == 2
     assert compactions[0].data["trigger"] == "provider_context_length"
-    assert provider.requests[1].messages[0].metadata["compaction"] == "l2_deterministic"
+    assert provider.requests[1].messages[0].metadata["compaction"] == "l2_context_state"
 
 
 @pytest.mark.asyncio
@@ -530,7 +646,8 @@ async def test_runtime_does_not_retry_context_length_error_more_than_once(
     session_tmp_path: Path,
 ) -> None:
     session = make_session(session_tmp_path, "ses-context-retry-once")
-    session.add_message(Message.text("user", "historical objective"))
+    for index in range(5):
+        session.add_message(Message.text("user", f"historical objective {index}"))
     provider = FakeProvider(
         [
             FakeStep(error=ProviderContextLengthError("context too large")),

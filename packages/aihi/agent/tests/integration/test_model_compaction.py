@@ -97,8 +97,10 @@ async def test_a_provider_failure_degrades_too() -> None:
 
 
 @pytest.mark.asyncio
-async def test_the_compact_input_is_bounded_before_it_is_sent() -> None:
-    provider = FakeProvider([FakeStep(text=json.dumps(SUMMARY))])
+async def test_the_compact_input_is_chunked_without_dropping_early_groups() -> None:
+    provider = FakeProvider(
+        [FakeStep(text=json.dumps(SUMMARY)) for _ in range(20)]
+    )
     generator = ModelSummaryGenerator(provider, "compact-model", max_input_chars=200)
     request = SummaryRequest(
         omitted_messages=tuple(
@@ -110,9 +112,12 @@ async def test_the_compact_input_is_bounded_before_it_is_sent() -> None:
 
     await generator.generate(request)
 
-    sent = provider.requests[0].messages[0].text_content
-    assert len(sent) < 400
-    assert sent.startswith("[earlier turns omitted]")
+    sent = "\n".join(
+        item.messages[0].text_content for item in provider.requests
+    )
+    assert len(provider.requests) == 20
+    assert sent.count("x" * 500) == 20
+    assert "[earlier turns omitted]" not in sent
 
 
 def test_construction_rejects_meaningless_bounds() -> None:
@@ -131,7 +136,7 @@ async def test_the_run_records_which_generator_produced_the_summary(tmp_path: Pa
         session_id="ses-compact",
     )
     for index in range(20):
-        session.add_message(Message.text("user", f"historical objective {index} " + "x" * 80))
+        session.add_message(Message.text("user", f"historical objective {index} " + "x" * 540))
     compact_provider = FakeProvider([FakeStep(text=json.dumps(SUMMARY))])
     coordinator = RunCoordinator(
         FakeProvider([FakeStep(text="done")]),
@@ -140,7 +145,7 @@ async def test_the_run_records_which_generator_produced_the_summary(tmp_path: Pa
         context_compiler=ContextCompiler(
             summary_generator=ModelSummaryGenerator(compact_provider, "compact-model")
         ),
-        context_window=600,
+        context_window=4_000,
         context_safety_margin=0,
     )
 
@@ -148,8 +153,8 @@ async def test_the_run_records_which_generator_produced_the_summary(tmp_path: Pa
 
     assert result.state == RunState.COMPLETED
     compaction = next(event for event in session.events if event.type == "compaction.created")
-    # L1 handled it deterministically; the compact model is only for L2.
-    assert compaction.data["strategy"] == "l1_deterministic"
+    assert compaction.data["strategy"] == "l2_model_context_state"
+    assert compaction.data["version"] == 2
 
 
 @pytest.mark.asyncio

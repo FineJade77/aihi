@@ -24,6 +24,7 @@ and are intentionally not published to Git.
 - [Package responsibilities](#package-responsibilities)
 - [Runtime and event model](#runtime-and-event-model)
 - [Models and providers](#models-and-providers)
+- [Context cache and compaction](#context-cache-and-compaction)
 - [Tools and safety](#tools-and-safety)
 - [Skills, MCP and extensions](#skills-mcp-and-extensions)
 - [Coding worker and TUI protocol](#coding-worker-and-tui-protocol)
@@ -178,6 +179,19 @@ never implements routing or fallback.
 Provider errors include a stable code and retryable flag. After the first stream chunk an attempt must
 not silently retry or switch provider. Providers never execute tools. Credentials, endpoints, timeouts,
 defaults and any future Gateway decorator are injected by the application.
+
+## Context cache and compaction
+
+The application-owned base system block and canonical model-visible Tool definitions form the stable
+prompt-cache prefix. Dynamic sections, `ContextState`, Tool Result placeholders and current turns stay
+after that boundary, so compaction never changes the stable cache family.
+
+The Runtime measures the complete normalized request and uses 70%/85% soft/hard watermarks with a 60%
+target. Soft pruning removes only durable, integrity-checked, Artifact-backed read-only Tool Result
+bodies. Hard compaction projects evidence-backed schema-v2 `ContextState` from immutable Events, Tool
+metadata and Artifact manifests, merges older state field by field, and retains a token-bounded raw tail
+of complete Tool groups. Model enrichment cannot create file or verification receipts. Version-2
+`compaction.created` records are additive; version-1 records and frozen stores remain replayable.
 
 ## Tools and safety
 

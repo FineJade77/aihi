@@ -75,12 +75,14 @@ class ModelSummaryGenerator:
 
     async def generate(self, request: SummaryRequest) -> StructuredSummary:
         try:
-            text = await self._ask(request)
-            summary = self._parse(text, request)
+            summaries = [
+                self._parse(await self._ask(chunk), chunk)
+                for chunk in self._chunks(request)
+            ]
         except Exception:  # noqa: BLE001 - any fault degrades, never fails the run.
             degraded = await self.fallback.generate(request)
             return StructuredSummary(**{**_as_kwargs(degraded), "strategy": STRATEGY_FALLBACK})
-        return summary
+        return _merge_summaries(summaries, request)
 
     async def _ask(self, request: SummaryRequest) -> str:
         transcript = self._render(request)
@@ -106,18 +108,36 @@ class ModelSummaryGenerator:
         return response.message.text_content
 
     def _render(self, request: SummaryRequest) -> str:
-        """Bound the input before it is sent: compaction must not need compaction."""
+        """Render complete groups; chunk selection happens before this call."""
 
-        parts = [
-            f"{message.role}: {message.text_content}"
-            for message in request.omitted_messages
-            if message.text_content.strip()
-        ]
-        body = "\n\n".join(parts)
-        if len(body) > self.max_input_chars:
-            # Keep the tail: recent turns carry the state that must survive.
-            body = "[earlier turns omitted]\n" + body[-self.max_input_chars :]
-        return body or "(no textual messages to summarize)"
+        return _render_messages(request.omitted_messages)
+
+    def _chunks(self, request: SummaryRequest) -> tuple[SummaryRequest, ...]:
+        """Pack complete tool groups without truncating early history."""
+
+        groups = _message_groups(request.omitted_messages)
+        if not groups:
+            return (request,)
+        chunks: list[tuple[Message, ...]] = []
+        current: list[Message] = []
+        for group in groups:
+            candidate = (*current, *group)
+            if current and len(_render_messages(candidate)) > self.max_input_chars:
+                chunks.append(tuple(current))
+                current = list(group)
+            else:
+                current.extend(group)
+        if current:
+            chunks.append(tuple(current))
+        return tuple(
+            SummaryRequest(
+                omitted_messages=chunk,
+                retained_messages=request.retained_messages,
+                system_prompt=request.system_prompt,
+                artifact_ids=request.artifact_ids,
+            )
+            for chunk in chunks
+        )
 
     def _parse(self, text: str, request: SummaryRequest) -> StructuredSummary:
         payload = json.loads(_json_span(text))
@@ -165,6 +185,63 @@ def _as_kwargs(summary: StructuredSummary) -> dict[str, Any]:
         "artifacts": summary.artifacts,
         "omitted_message_count": summary.omitted_message_count,
     }
+
+
+def _render_messages(messages: tuple[Message, ...]) -> str:
+    parts = [
+        f"{message.role}: {message.text_content}"
+        for message in messages
+        if message.text_content.strip()
+    ]
+    return "\n\n".join(parts) or "(no textual messages to summarize)"
+
+
+def _message_groups(messages: tuple[Message, ...]) -> tuple[tuple[Message, ...], ...]:
+    groups: list[tuple[Message, ...]] = []
+    index = 0
+    while index < len(messages):
+        start = index
+        pending = {call.id for call in messages[index].tool_calls}
+        pending.difference_update(
+            result.tool_call_id for result in messages[index].tool_results
+        )
+        index += 1
+        while pending and index < len(messages):
+            pending.difference_update(
+                result.tool_call_id for result in messages[index].tool_results
+            )
+            pending.update(call.id for call in messages[index].tool_calls)
+            index += 1
+        groups.append(messages[start:index])
+    return tuple(groups)
+
+
+def _merge_summaries(
+    summaries: list[StructuredSummary],
+    request: SummaryRequest,
+) -> StructuredSummary:
+    def merged(field: str) -> tuple[str, ...]:
+        return tuple(
+            dict.fromkeys(
+                item for summary in summaries for item in getattr(summary, field)
+            )
+        )
+
+    return StructuredSummary(
+        strategy=STRATEGY_MODEL,
+        objective=next(
+            (summary.objective for summary in reversed(summaries) if summary.objective),
+            "",
+        ),
+        constraints=merged("constraints"),
+        decisions=merged("decisions"),
+        files_changed=merged("files_changed"),
+        verified_state=merged("verified_state"),
+        open_questions=merged("open_questions"),
+        next_steps=merged("next_steps"),
+        artifacts=request.artifact_ids,
+        omitted_message_count=len(request.omitted_messages),
+    )
 
 
 __all__ = ["STRATEGY_FALLBACK", "STRATEGY_MODEL", "ModelSummaryGenerator"]
