@@ -91,6 +91,10 @@ Prefix Cache；未显式声明能力的 OpenAI-compatible Endpoint 保持 no-op�
 `Usage.cached_input_tokens` 和 `Usage.cache_write_input_tokens` 分别规范化 Cache Read/Write。
 旧 `system_prompt` 调用继续兼容。
 
+`estimate_model_request_tokens` 覆盖兼容 System Prompt、System Block、模型可见 Tool Definition
+和 Messages。Provider 的 `count_tokens()` 使用相同的完整请求边界，Runtime 不再只按历史消息
+判断上下文压力。
+
 ## 开发
 
 ```bash

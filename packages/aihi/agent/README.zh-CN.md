@@ -151,6 +151,12 @@ Definition 派生唯一 Cache Family Key。Memory、Skill、Compaction State 和
 断点之后。Cache 是否可用都不会改变 Event Replay、Policy、Approval、Sandbox 或 Tool Result
 持久化语义。
 
+`ContextPressureController` 使用 `ContextBudget.input_capacity` 衡量完整的规范化请求。默认使用
+保守的本地估算；达到 65% 且 Provider 声明能力时请求精确计数；计数不可用时只做降级，不使 Run
+失败。`CompactionPolicy` 使用 60% 目标、70% Soft Trigger 和 85% Hard Trigger；只有预测保留的
+下一轮输出会耗尽后续请求容量时，才允许在 85% 以下产生 Hard 决策。每个持久化
+`model.usage` Event 都记录计数方法、当前/预测压力、Trigger、Reason 和 Target。
+
 ## 开发
 
 ~~~bash

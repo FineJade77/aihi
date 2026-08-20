@@ -9,6 +9,7 @@ from typing import Any
 
 from aihi.agent._core.errors import ContextWindowExceeded
 from aihi.agent.artifacts import ArtifactPolicy, ArtifactRef, ArtifactStore
+from aihi.agent.context.policy import ContextPressure
 from aihi.agent.context.summary import (
     DeterministicSummaryGenerator,
     SummaryGenerator,
@@ -43,10 +44,17 @@ class ContextBudget:
 
     @property
     def usable_input(self) -> int:
+        """Legacy message capacity after reserving the tool schema."""
+
+        return self.input_capacity - self.tool_schema_tokens
+
+    @property
+    def input_capacity(self) -> int:
+        """Prompt capacity after output and safety reservations."""
+
         return (
             self.context_window
             - self.reserved_output
-            - self.tool_schema_tokens
             - self.safety_margin
         )
 
@@ -150,6 +158,7 @@ class CompiledContext:
     system_blocks: tuple[TextBlock, ...] = ()
     artifacts: tuple[ArtifactRef, ...] = ()
     compaction: CompactionRecord | None = None
+    pressure: ContextPressure | None = None
 
     @property
     def over_budget(self) -> bool:
@@ -275,7 +284,10 @@ class ContextCompiler:
         if len(groups) < 2:
             raise ContextWindowExceeded(
                 "Context cannot be reduced because it has fewer than two message groups",
-                details={"estimated_tokens": before_tokens, "usable_input": budget.usable_input},
+                details={
+                    "estimated_tokens": before_tokens,
+                    "usable_input": budget.usable_input,
+                },
             )
 
         message_limit = max(1, budget.usable_input - estimate_text_tokens(system_prompt))
@@ -298,7 +310,10 @@ class ContextCompiler:
         if after_tokens > message_limit:
             raise ContextWindowExceeded(
                 "Structured context compaction cannot fit the configured input budget",
-                details={"estimated_tokens": before_tokens, "usable_input": budget.usable_input},
+                details={
+                    "estimated_tokens": before_tokens,
+                    "usable_input": budget.usable_input,
+                },
             )
         record = CompactionRecord(
             # The record names the generator that actually produced the summary,

@@ -146,6 +146,13 @@ from that stable prefix and canonical model-visible tool definitions. Dynamic me
 compaction state and current turns remain after the cache boundary. Cache availability never changes
 Event replay, policy, approval, sandbox or tool persistence semantics.
 
+`ContextPressureController` measures the complete normalized request against `ContextBudget.input_capacity`.
+It uses the conservative local estimate by default, asks a capable Provider for an exact count at 65%,
+and falls back without failing the run when counting is unavailable. `CompactionPolicy` applies the
+60% target, 70% soft trigger and 85% hard trigger; a hard decision below 85% is allowed only when the
+reserved next output would exhaust the following request. Each durable `model.usage` event records the
+count method, current/projected pressure, trigger, reason and target.
+
 ## Development
 
 ```bash

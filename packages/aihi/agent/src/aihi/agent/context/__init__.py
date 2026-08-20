@@ -19,7 +19,11 @@ from aihi.agent.context.model_summary import (
     STRATEGY_MODEL,
     ModelSummaryGenerator,
 )
-from aihi.agent.context.policy import CompactionPolicy
+from aihi.agent.context.policy import (
+    CompactionPolicy,
+    ContextPressure,
+    ContextPressureController,
+)
 from aihi.agent.context.state import (
     CONTEXT_STATE_SCHEMA_VERSION,
     ArtifactState,
@@ -42,6 +46,8 @@ __all__ = [
     "ContextBudget",
     "ContextCompiler",
     "ContextFact",
+    "ContextPressure",
+    "ContextPressureController",
     "ContextSection",
     "ContextState",
     "DeterministicSummaryGenerator",

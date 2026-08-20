@@ -82,6 +82,8 @@ def test_composition_root_needs_nothing_beyond_the_public_api() -> None:
         "ApprovalRequest",
         "ApprovalOutcome",
         "CompactionPolicy",
+        "ContextPressure",
+        "ContextPressureController",
         "ContextState",
     }
     assert required <= set(agent.__all__)

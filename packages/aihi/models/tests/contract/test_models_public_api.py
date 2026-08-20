@@ -24,6 +24,7 @@ def test_models_public_api_contains_contracts_and_supported_providers() -> None:
         "Provider",
         "decode_message",
         "encode_message",
+        "estimate_model_request_tokens",
     }
 
     assert required <= set(models.__all__)

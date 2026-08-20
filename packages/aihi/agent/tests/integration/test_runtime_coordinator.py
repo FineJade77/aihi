@@ -46,6 +46,33 @@ class FailingAfterFirstChunkProvider:
         raise ProviderTimeout("stream failed after output started")
 
 
+class FailingTokenCountProvider(FakeProvider):
+    def __init__(self, steps: list[FakeStep]) -> None:
+        super().__init__(
+            steps,
+            capabilities=Capabilities(token_counting=True, max_context=256, max_output=32),
+        )
+        self.count_calls = 0
+
+    async def count_tokens(self, request: ModelRequest) -> int:
+        self.count_calls += 1
+        raise RuntimeError("token count unavailable")
+
+
+class SequencedTokenCountProvider(FakeProvider):
+    def __init__(self, steps: list[FakeStep], counts: list[int]) -> None:
+        super().__init__(
+            steps,
+            capabilities=Capabilities(token_counting=True, max_context=512, max_output=32),
+        )
+        self.counts = counts
+        self.count_calls = 0
+
+    async def count_tokens(self, request: ModelRequest) -> int:
+        self.count_calls += 1
+        return self.counts.pop(0)
+
+
 def make_session(tmp_path: Path, name: str) -> Session:
     return Session.create(
         InMemoryEventStore(),
@@ -181,6 +208,68 @@ async def test_runtime_builds_one_stable_cache_family_for_the_base_prompt(
     assert sent.system_blocks[0].stable_prefix is True
     assert sent.cache_policy is not None
     assert sent.cache_policy.key is not None
+
+
+@pytest.mark.asyncio
+async def test_runtime_records_pressure_and_count_fallback_without_failing(
+    session_tmp_path: Path,
+) -> None:
+    provider = FailingTokenCountProvider([FakeStep(text="done")])
+    session = make_session(session_tmp_path, "ses-pressure-fallback")
+    coordinator = RunCoordinator(
+        provider,
+        registry=ToolRegistry(),
+        sandbox=HostBackend(session_tmp_path, unsafe=True),
+        context_window=256,
+        context_safety_margin=0,
+    )
+
+    result = await coordinator.run(
+        session,
+        model="fake-model",
+        user_message=Message.text("user", "x" * 440),
+        system_prompt="base",
+        max_output_tokens=32,
+    )
+
+    assert result.state == RunState.COMPLETED
+    assert provider.count_calls == 1
+    usage = next(event for event in session.events if event.type == "model.usage")
+    assert usage.data["context_count_method"] == "estimate_fallback"
+    assert usage.data["context_count_fallback"] == "RuntimeError"
+    assert usage.data["context_trigger"] == "none"
+    assert usage.data["context_target_ratio"] == 0.60
+
+
+@pytest.mark.asyncio
+async def test_exact_over_capacity_count_forces_preflight_compaction_and_recount(
+    session_tmp_path: Path,
+) -> None:
+    provider = SequencedTokenCountProvider([FakeStep(text="done")], [600, 200])
+    session = make_session(session_tmp_path, "ses-pressure-exact-preflight")
+    session.add_message(Message.text("user", "o" * 450))
+    coordinator = RunCoordinator(
+        provider,
+        registry=ToolRegistry(),
+        sandbox=HostBackend(session_tmp_path, unsafe=True),
+        context_window=512,
+        context_safety_margin=0,
+    )
+
+    result = await coordinator.run(
+        session,
+        model="fake-model",
+        user_message=Message.text("user", "n" * 450),
+        max_output_tokens=32,
+    )
+
+    assert result.state == RunState.COMPLETED, result.error
+    assert provider.count_calls == 2
+    compaction = next(event for event in session.events if event.type == "compaction.created")
+    assert compaction.data["trigger"] == "preflight_context_window"
+    usage = next(event for event in session.events if event.type == "model.usage")
+    assert usage.data["context_tokens"] == 200
+    assert usage.data["context_count_method"] == "provider"
 
 
 @pytest.mark.asyncio

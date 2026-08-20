@@ -20,7 +20,7 @@ from aihi.models.base import (
     ToolInputDelta,
 )
 from aihi.models.errors import ProviderProtocolError
-from aihi.models.tokens import estimate_messages_tokens, estimate_text_tokens
+from aihi.models.tokens import estimate_model_request_tokens, estimate_text_tokens
 from aihi.models.types import (
     Capabilities,
     Message,
@@ -86,7 +86,7 @@ class FakeProvider:
         )
 
     async def count_tokens(self, request: ModelRequest) -> int:
-        return estimate_messages_tokens(request.messages)
+        return estimate_model_request_tokens(request)
 
     async def stream(self, request: ModelRequest) -> AsyncIterator[StreamChunk]:
         self.requests.append(request)
@@ -121,7 +121,7 @@ class FakeProvider:
             step.stop_reason or ("tool_use" if step.tool_calls else "end_turn")
         )
         usage = step.usage or Usage(
-            input_tokens=estimate_messages_tokens(request.messages),
+            input_tokens=estimate_model_request_tokens(request),
             output_tokens=estimate_text_tokens(step.text) + len(step.tool_calls) * 8,
         )
         message = Message(

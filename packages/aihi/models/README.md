@@ -90,6 +90,9 @@ The package root re-exports the stable building blocks:
 - Errors: `ProviderError`, `ProviderHTTPError`, `ProviderProtocolError`, `ProviderTimeout`, and `ProviderContextLengthError`.
 - Serialization: `encode_message`, `decode_message`, `ModelMessageEnvelope`, and `MESSAGE_SCHEMA_VERSION`.
 - Transport: `HttpxTransport`, `JsonTransport`, and `HttpRequest`.
+- Token accounting: `estimate_model_request_tokens` covers compatibility/system blocks, model-visible
+  tool definitions, and messages; Provider `count_tokens()` implementations use the same complete
+  request boundary.
 
 Import from `aihi.models` rather than reaching into private modules.
 

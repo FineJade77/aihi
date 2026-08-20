@@ -72,6 +72,18 @@ def test_context_compiler_separates_stable_base_prompt_from_dynamic_sections() -
     )
 
 
+def test_context_budget_exposes_full_capacity_and_legacy_message_capacity() -> None:
+    budget = ContextBudget(
+        context_window=1_000,
+        reserved_output=100,
+        tool_schema_tokens=200,
+        safety_margin=50,
+    )
+
+    assert budget.input_capacity == 850
+    assert budget.usable_input == 650
+
+
 def test_prompt_cache_key_uses_only_the_canonical_stable_family() -> None:
     tool = ModelToolDefinition(
         name="read_file",

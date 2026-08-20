@@ -352,6 +352,18 @@ def without_additive_v1_fields(payload: object) -> object:
                     for volatile in ("input_tokens", "context_tokens"):
                         if volatile in data:
                             data[volatile] = 0
+                    for additive in (
+                        "context_input_capacity",
+                        "context_count_method",
+                        "context_count_fallback",
+                        "context_pressure",
+                        "context_projected_pressure",
+                        "context_trigger",
+                        "context_trigger_reason",
+                        "context_target_tokens",
+                        "context_target_ratio",
+                    ):
+                        data.pop(additive, None)
                 data.pop("message_schema_version", None)
                 data.pop("summary_message_schema_version", None)
                 if event.get("type") == "approval.requested":

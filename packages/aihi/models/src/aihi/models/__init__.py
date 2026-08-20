@@ -37,7 +37,11 @@ from aihi.models.serialization import (
     decode_message,
     encode_message,
 )
-from aihi.models.tokens import estimate_messages_tokens, estimate_text_tokens
+from aihi.models.tokens import (
+    estimate_messages_tokens,
+    estimate_model_request_tokens,
+    estimate_text_tokens,
+)
 from aihi.models.transport import HttpRequest, HttpxTransport, JsonTransport
 from aihi.models.types import (
     CachePolicy,
@@ -111,6 +115,7 @@ __all__ = [
     "decode_message",
     "encode_message",
     "estimate_messages_tokens",
+    "estimate_model_request_tokens",
     "estimate_text_tokens",
 ]
 

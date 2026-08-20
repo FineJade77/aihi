@@ -23,7 +23,7 @@ from aihi.models.errors import (
     ProviderProtocolError,
     is_context_length_message,
 )
-from aihi.models.tokens import estimate_messages_tokens
+from aihi.models.tokens import estimate_model_request_tokens
 from aihi.models.transport import HttpRequest, HttpxTransport, JsonTransport
 from aihi.models.types import (
     Capabilities,
@@ -94,7 +94,7 @@ class AnthropicProvider:
         )
 
     async def count_tokens(self, request: ModelRequest) -> int:
-        return estimate_messages_tokens(request.messages)
+        return estimate_model_request_tokens(request)
 
     def stream(self, request: ModelRequest) -> AsyncIterator[StreamChunk]:
         return self._stream(request)

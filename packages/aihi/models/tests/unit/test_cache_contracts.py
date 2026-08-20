@@ -1,5 +1,14 @@
 import pytest
-from aihi.models import CachePolicy, Message, ModelRequest, TextBlock, Usage
+from aihi.models import (
+    CachePolicy,
+    FakeProvider,
+    Message,
+    ModelRequest,
+    ModelToolDefinition,
+    TextBlock,
+    Usage,
+    estimate_model_request_tokens,
+)
 
 
 def test_cache_policy_round_trips_and_rejects_ambiguous_keys() -> None:
@@ -63,3 +72,24 @@ def test_usage_cache_write_tokens_are_additive_and_legacy_safe() -> None:
         cache_write_input_tokens=8,
     )
     assert Usage.from_dict(usage.to_dict()) == usage
+
+
+@pytest.mark.asyncio
+async def test_request_token_count_covers_system_tools_and_messages() -> None:
+    message = Message.text("user", "inspect the workspace")
+    tool = ModelToolDefinition(
+        name="read_file",
+        description="Read one file",
+        input_schema={"type": "object", "properties": {"path": {"type": "string"}}},
+    )
+    message_only = ModelRequest(model="model", messages=(message,))
+    complete = ModelRequest(
+        model="model",
+        messages=(message,),
+        tools=(tool,),
+        system_prompt="compatibility system",
+        system_blocks=(TextBlock("stable", stable_prefix=True), TextBlock("dynamic")),
+    )
+
+    assert estimate_model_request_tokens(complete) > estimate_model_request_tokens(message_only)
+    assert await FakeProvider().count_tokens(complete) == estimate_model_request_tokens(complete)

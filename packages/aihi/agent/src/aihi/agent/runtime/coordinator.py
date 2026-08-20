@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 from collections.abc import Coroutine
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 from typing import Any
 
@@ -15,9 +15,11 @@ from aihi.agent._core.events import Event
 from aihi.agent._core.ids import new_id
 from aihi.agent.artifacts import ArtifactAccess, ArtifactPolicy, ArtifactRef, ArtifactStore
 from aihi.agent.context import (
+    CompactionPolicy,
     CompiledContext,
     ContextBudget,
     ContextCompiler,
+    ContextPressureController,
     ContextSection,
     SummaryGenerator,
     build_prompt_cache_key,
@@ -57,6 +59,7 @@ from aihi.models import (
     MessageEnd,
     ModelRequest,
     ModelResponse,
+    ModelToolDefinition,
     Provider,
     ProviderContextLengthError,
     ProviderProtocolError,
@@ -132,6 +135,7 @@ class RunCoordinator:
         capability_lease_ttl_seconds: float = 300.0,
         context_window: int | None = None,
         context_safety_margin: int = 256,
+        compaction_policy: CompactionPolicy | None = None,
         max_turns: int = DEFAULT_MAX_TURNS,
     ) -> None:
         if context_window is not None and context_window <= 0:
@@ -163,6 +167,8 @@ class RunCoordinator:
         self.capability_lease_ttl_seconds = capability_lease_ttl_seconds
         self.context_window = context_window
         self.context_safety_margin = context_safety_margin
+        self.compaction_policy = compaction_policy or CompactionPolicy()
+        self.context_pressure = ContextPressureController(self.compaction_policy)
         self.max_turns = max_turns
 
     async def run(
@@ -496,7 +502,7 @@ class RunCoordinator:
         cancel_event: asyncio.Event | None,
         pending_tool_call_ids: tuple[str, ...] = (),
     ) -> ModelResponse:
-        context_retry_used = False
+        provider_context_retry_used = False
         # Built once per run: re-deriving it from the whole event log on every
         # model turn made a long run quadratic in its own history.
         recorded_artifacts = self._recorded_artifact_ids(session)
@@ -556,9 +562,6 @@ class RunCoordinator:
                     sections=sections,
                 )
             except ContextWindowExceeded:
-                if context_retry_used:
-                    raise
-                context_retry_used = True
                 compiled = await self.context_compiler.compact_l2(
                     session.messages,
                     system_prompt=system_prompt,
@@ -570,40 +573,76 @@ class RunCoordinator:
                     sections=sections,
                     trigger="preflight_context_window",
                 )
-            self._persist_compiled_context(session, run_id, compiled, recorded_artifacts)
             model_tools = tuple(
                 sorted(
                     (spec.model_definition for spec in self.registry.specs),
                     key=lambda definition: definition.name,
                 )
             )
-            cache_policy = None
-            if capabilities.prefix_caching and stable_system_blocks(compiled.system_blocks):
-                cache_policy = CachePolicy(
-                    key=build_prompt_cache_key(
-                        provider_family=self.provider.name,
-                        model=model,
-                        tools=model_tools,
-                        system_blocks=compiled.system_blocks,
-                    )
-                )
-            request = ModelRequest(
+            request = self._model_request(
                 model=model,
-                messages=compiled.messages,
-                tools=model_tools,
-                system_prompt="",
+                compiled=compiled,
+                model_tools=model_tools,
                 max_output_tokens=effective_output_tokens,
-                system_blocks=compiled.system_blocks,
-                cache_policy=cache_policy,
+                prefix_caching=capabilities.prefix_caching,
             )
+            pressure = await self.context_pressure.measure(
+                request,
+                input_capacity=budget.input_capacity,
+                predicted_growth_tokens=effective_output_tokens,
+                exact_counter=(self.provider.count_tokens if capabilities.token_counting else None),
+            )
+            if pressure.input_tokens > budget.input_capacity:
+                compiled = await self.context_compiler.compact_l2(
+                    session.messages,
+                    system_prompt=system_prompt,
+                    tools=self.registry.specs,
+                    budget=budget,
+                    artifact_store=self.artifact_store,
+                    artifact_policy=self._artifact_policy(session),
+                    summary_generator=self.summary_generator,
+                    sections=sections,
+                    trigger="preflight_context_window",
+                )
+                request = self._model_request(
+                    model=model,
+                    compiled=compiled,
+                    model_tools=model_tools,
+                    max_output_tokens=effective_output_tokens,
+                    prefix_caching=capabilities.prefix_caching,
+                )
+                pressure = await self.context_pressure.measure(
+                    request,
+                    input_capacity=budget.input_capacity,
+                    predicted_growth_tokens=effective_output_tokens,
+                    exact_counter=(
+                        self.provider.count_tokens if capabilities.token_counting else None
+                    ),
+                    force_exact=(pressure.count_method == "provider"),
+                )
+                if pressure.input_tokens > budget.input_capacity:
+                    raise ContextWindowExceeded(
+                        "Context cannot be reduced below the measured input capacity",
+                        details={
+                            "input_tokens": pressure.input_tokens,
+                            "input_capacity": budget.input_capacity,
+                            "count_method": pressure.count_method,
+                        },
+                    )
+            compiled = replace(
+                compiled,
+                estimated_tokens=pressure.input_tokens,
+                pressure=pressure,
+            )
+            self._persist_compiled_context(session, run_id, compiled, recorded_artifacts)
             try:
                 response = await self._consume_provider(
                     session, run_id, request, cancel_event=cancel_event
                 )
             except ProviderContextLengthError:
-                if context_retry_used:
+                if provider_context_retry_used:
                     raise
-                context_retry_used = True
+                provider_context_retry_used = True
                 session.refresh()
                 retry_compiled = await self.context_compiler.compact_l2(
                     session.messages,
@@ -1294,6 +1333,11 @@ class RunCoordinator:
         """
 
         usage = response.usage
+        pressure = compiled.pressure or self.context_pressure.evaluate(
+            input_tokens=compiled.estimated_tokens,
+            input_capacity=compiled.budget.input_capacity,
+            predicted_growth_tokens=compiled.budget.reserved_output,
+        )
         return Event(
             type="model.usage",
             session_id=session.id,
@@ -1307,8 +1351,46 @@ class RunCoordinator:
                 "cost_usd": usage.cost_usd,
                 "context_tokens": compiled.estimated_tokens,
                 "context_limit": compiled.budget.usable_input,
+                "context_input_capacity": compiled.budget.input_capacity,
                 "context_window": compiled.budget.context_window,
+                "context_count_method": pressure.count_method,
+                "context_count_fallback": pressure.count_fallback_reason,
+                "context_pressure": pressure.ratio,
+                "context_projected_pressure": pressure.projected_ratio,
+                "context_trigger": pressure.trigger,
+                "context_trigger_reason": pressure.trigger_reason,
+                "context_target_tokens": pressure.target_tokens,
+                "context_target_ratio": pressure.target_ratio,
             },
+        )
+
+    def _model_request(
+        self,
+        *,
+        model: str,
+        compiled: CompiledContext,
+        model_tools: tuple[ModelToolDefinition, ...],
+        max_output_tokens: int,
+        prefix_caching: bool,
+    ) -> ModelRequest:
+        cache_policy = None
+        if prefix_caching and stable_system_blocks(compiled.system_blocks):
+            cache_policy = CachePolicy(
+                key=build_prompt_cache_key(
+                    provider_family=self.provider.name,
+                    model=model,
+                    tools=model_tools,
+                    system_blocks=compiled.system_blocks,
+                )
+            )
+        return ModelRequest(
+            model=model,
+            messages=compiled.messages,
+            tools=model_tools,
+            system_prompt="",
+            max_output_tokens=max_output_tokens,
+            system_blocks=compiled.system_blocks,
+            cache_policy=cache_policy,
         )
 
     async def _append_tool_event(

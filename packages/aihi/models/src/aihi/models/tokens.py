@@ -2,7 +2,16 @@
 
 from __future__ import annotations
 
-from aihi.models.types import Message, TextBlock, ThinkingBlock, ToolCallBlock, ToolResultBlock
+import json
+
+from aihi.models.types import (
+    Message,
+    ModelRequest,
+    TextBlock,
+    ThinkingBlock,
+    ToolCallBlock,
+    ToolResultBlock,
+)
 
 
 def estimate_text_tokens(text: str) -> int:
@@ -30,3 +39,36 @@ def estimate_messages_tokens(messages: tuple[Message, ...] | list[Message]) -> i
             else:
                 total += 3_072
     return int(total * 4 / 3)
+
+
+def estimate_model_request_tokens(request: ModelRequest) -> int:
+    """Estimate every model-visible part of a normalized request.
+
+    The estimate intentionally excludes transport metadata and cache keys: they
+    are not prompt input. The compatibility system prompt and system blocks are
+    both counted because adapters lower both when callers use the mixed path.
+    """
+
+    system_tokens = estimate_text_tokens(
+        "\n\n".join(
+            part
+            for part in (
+                request.system_prompt,
+                *(block.text for block in request.system_blocks),
+            )
+            if part
+        )
+    )
+    tool_tokens = (
+        estimate_text_tokens(
+            json.dumps(
+                [tool.to_dict() for tool in request.tools],
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+        )
+        if request.tools
+        else 0
+    )
+    return system_tokens + tool_tokens + estimate_messages_tokens(request.messages)
