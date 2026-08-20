@@ -2,8 +2,9 @@ from pathlib import Path
 
 import pytest
 from aihi.agent._core.errors import ContextWindowExceeded
-from aihi.agent.artifacts import FileArtifactStore
+from aihi.agent.artifacts import ArtifactAccess, ArtifactPolicy, FileArtifactStore
 from aihi.agent.context import (
+    CompactionPolicy,
     ContextBudget,
     ContextCompiler,
     ContextSection,
@@ -11,6 +12,7 @@ from aihi.agent.context import (
     SummaryRequest,
     build_prompt_cache_key,
 )
+from aihi.agent.tools import ToolSpec
 from aihi.models import (
     Message,
     ModelToolDefinition,
@@ -54,6 +56,330 @@ def test_context_compiler_externalizes_large_tool_results(tmp_path: Path) -> Non
     assert result.metadata["artifact_id"] == compiled.artifacts[0].artifact_id
     assert "Full tool output stored as an artifact" in result.content
     assert store.read_text(compiled.artifacts[0].artifact_id) == "output " * 100
+
+
+def _tool_group(
+    index: int,
+    *,
+    tool_name: str = "read_file",
+    is_error: bool = False,
+) -> tuple[Message, Message]:
+    call_id = f"call-{index}"
+    return (
+        Message(
+            role="assistant",
+            content=(ToolCallBlock(id=call_id, name=tool_name, input={"index": index}),),
+        ),
+        Message(
+            role="user",
+            content=(
+                ToolResultBlock(
+                    tool_call_id=call_id,
+                    content=f"result-{index}:" + "x" * 8_000,
+                    is_error=is_error,
+                ),
+            ),
+        ),
+    )
+
+
+def _pruning_policy() -> CompactionPolicy:
+    return CompactionPolicy(
+        recent_tail_ratio=0.01,
+        recent_tail_max_tokens=1_000,
+        min_reclaim_ratio=0.001,
+        min_reclaim_floor_tokens=50,
+        min_reclaim_cap_tokens=100,
+    )
+
+
+def test_soft_pruning_replaces_old_artifact_backed_results_as_one_batch(
+    tmp_path: Path,
+) -> None:
+    store = FileArtifactStore(tmp_path / "artifacts")
+    read = ToolSpec.define(
+        name="read_file",
+        description="Read a file",
+        input_schema={"type": "object"},
+        concurrency_safe=True,
+        mutates=False,
+    )
+    messages = tuple(message for index in range(6) for message in _tool_group(index))
+    compiler = ContextCompiler(artifact_threshold_tokens=10, artifact_preview_chars=4_000)
+    compiled = compiler.compile(
+        messages,
+        system_prompt="stable base",
+        tools=(read,),
+        budget=ContextBudget.for_request(
+            context_window=100_000,
+            reserved_output=1_000,
+            safety_margin=0,
+            tools=(read,),
+        ),
+        artifact_store=store,
+        artifact_policy=ArtifactPolicy(session_id="ses-prune", retention="session"),
+    )
+
+    pruned = compiler.prune_tool_results(
+        compiled,
+        artifact_store=store,
+        artifact_access=ArtifactAccess(session_id="ses-prune"),
+        tools=(read,),
+        policy=_pruning_policy(),
+        durable_message_ids=frozenset(message.id for message in messages),
+    )
+
+    assert pruned.pruning is not None
+    assert pruned.pruning.reclaimed_tokens >= _pruning_policy().min_reclaim_tokens(
+        compiled.budget.input_capacity
+    )
+    results = [result for message in pruned.messages for result in message.tool_results]
+    assert [result.metadata.get("context_pruned", False) for result in results] == [
+        True,
+        True,
+        False,
+        False,
+        False,
+        False,
+    ]
+    assert results[0].content.startswith("[tool result body removed from active context]")
+    assert pruned.system_blocks == compiled.system_blocks
+    assert build_prompt_cache_key(
+        provider_family="fake",
+        model="model",
+        tools=(read.model_definition,),
+        system_blocks=pruned.system_blocks,
+    ) == build_prompt_cache_key(
+        provider_family="fake",
+        model="model",
+        tools=(read.model_definition,),
+        system_blocks=compiled.system_blocks,
+    )
+    assert messages[1].tool_results[0].content.endswith("x" * 8_000)
+    artifact_id = str(results[0].metadata["artifact_id"])
+    assert store.read_text(
+        artifact_id,
+        access=ArtifactAccess(session_id="ses-prune"),
+    ).startswith("result-0:")
+    repeated = compiler.prune_tool_results(
+        compiled,
+        artifact_store=store,
+        artifact_access=ArtifactAccess(session_id="ses-prune"),
+        tools=(read,),
+        policy=_pruning_policy(),
+        durable_message_ids=frozenset(message.id for message in messages),
+    )
+    assert repeated.messages == pruned.messages
+
+
+def test_soft_pruning_protects_errors_mutations_and_recent_groups(tmp_path: Path) -> None:
+    store = FileArtifactStore(tmp_path / "artifacts")
+    read = ToolSpec.define(
+        name="read_file",
+        description="Read a file",
+        input_schema={"type": "object"},
+        concurrency_safe=True,
+        mutates=False,
+    )
+    write = ToolSpec.define(
+        name="write_file",
+        description="Write a file",
+        input_schema={"type": "object"},
+        concurrency_safe=False,
+        mutates=True,
+    )
+    groups = (
+        _tool_group(0, is_error=True),
+        _tool_group(1, tool_name="write_file"),
+        *(_tool_group(index) for index in range(2, 8)),
+    )
+    messages = tuple(message for group in groups for message in group)
+    compiler = ContextCompiler(artifact_threshold_tokens=10, artifact_preview_chars=4_000)
+    compiled = compiler.compile(
+        messages,
+        system_prompt="",
+        tools=(read, write),
+        budget=ContextBudget.for_request(
+            context_window=120_000,
+            reserved_output=1_000,
+            safety_margin=0,
+            tools=(read, write),
+        ),
+        artifact_store=store,
+        artifact_policy=ArtifactPolicy(session_id="ses-protected", retention="session"),
+    )
+
+    pruned = compiler.prune_tool_results(
+        compiled,
+        artifact_store=store,
+        artifact_access=ArtifactAccess(session_id="ses-protected"),
+        tools=(read, write),
+        policy=_pruning_policy(),
+        durable_message_ids=frozenset(message.id for message in messages),
+    )
+
+    results = [result for message in pruned.messages for result in message.tool_results]
+    assert results[0].is_error is True
+    assert results[0].metadata.get("context_pruned") is None
+    assert results[1].metadata.get("context_pruned") is None
+    assert all(result.metadata.get("context_pruned") is None for result in results[-4:])
+    assert any(result.metadata.get("context_pruned") is True for result in results[2:4])
+
+
+@pytest.mark.parametrize("failure", ["corrupt", "scope", "not_durable"])
+def test_soft_pruning_fails_closed_without_recovery_evidence(
+    tmp_path: Path,
+    failure: str,
+) -> None:
+    store = FileArtifactStore(tmp_path / "artifacts")
+    read = ToolSpec.define(
+        name="read_file",
+        description="Read a file",
+        input_schema={"type": "object"},
+        concurrency_safe=True,
+        mutates=False,
+    )
+    messages = tuple(message for index in range(5) for message in _tool_group(index))
+    compiler = ContextCompiler(artifact_threshold_tokens=10, artifact_preview_chars=4_000)
+    compiled = compiler.compile(
+        messages,
+        system_prompt="",
+        tools=(read,),
+        budget=ContextBudget.for_request(
+            context_window=100_000,
+            reserved_output=1_000,
+            safety_margin=0,
+            tools=(read,),
+        ),
+        artifact_store=store,
+        artifact_policy=ArtifactPolicy(session_id="ses-corrupt", retention="session"),
+    )
+    oldest = compiled.messages[1].tool_results[0]
+    artifact_id = str(oldest.metadata["artifact_id"])
+    access = ArtifactAccess(session_id="ses-corrupt")
+    durable_message_ids = frozenset(message.id for message in messages)
+    if failure == "corrupt":
+        (store.root / f"{artifact_id}.data").write_text("corrupt", encoding="utf-8")
+    elif failure == "scope":
+        access = ArtifactAccess(session_id="ses-other")
+    else:
+        durable_message_ids = frozenset(
+            message.id for message in messages if message.id != compiled.messages[1].id
+        )
+
+    pruned = compiler.prune_tool_results(
+        compiled,
+        artifact_store=store,
+        artifact_access=access,
+        tools=(read,),
+        policy=_pruning_policy(),
+        durable_message_ids=durable_message_ids,
+    )
+
+    assert pruned.pruning is None
+    assert pruned.messages == compiled.messages
+
+
+def test_soft_pruning_preserves_parallel_result_order(tmp_path: Path) -> None:
+    store = FileArtifactStore(tmp_path / "artifacts")
+    read = ToolSpec.define(
+        name="read_file",
+        description="Read a file",
+        input_schema={"type": "object"},
+        concurrency_safe=True,
+        mutates=False,
+    )
+    parallel_calls = Message(
+        role="assistant",
+        content=(
+            ToolCallBlock(id="parallel-a", name="read_file", input={"path": "a"}),
+            ToolCallBlock(id="parallel-b", name="read_file", input={"path": "b"}),
+        ),
+    )
+    parallel_results = Message(
+        role="user",
+        content=(
+            ToolResultBlock(tool_call_id="parallel-a", content="a" * 8_000),
+            ToolResultBlock(tool_call_id="parallel-b", content="b" * 8_000),
+        ),
+    )
+    messages = (
+        parallel_calls,
+        parallel_results,
+        *(message for index in range(4) for message in _tool_group(index + 10)),
+    )
+    compiler = ContextCompiler(artifact_threshold_tokens=10, artifact_preview_chars=4_000)
+    compiled = compiler.compile(
+        messages,
+        system_prompt="",
+        tools=(read,),
+        budget=ContextBudget.for_request(
+            context_window=100_000,
+            reserved_output=1_000,
+            safety_margin=0,
+            tools=(read,),
+        ),
+        artifact_store=store,
+        artifact_policy=ArtifactPolicy(session_id="ses-parallel", retention="session"),
+    )
+
+    pruned = compiler.prune_tool_results(
+        compiled,
+        artifact_store=store,
+        artifact_access=ArtifactAccess(session_id="ses-parallel"),
+        tools=(read,),
+        policy=_pruning_policy(),
+        durable_message_ids=frozenset(message.id for message in messages),
+    )
+
+    results = pruned.messages[1].tool_results
+    assert [result.tool_call_id for result in results] == ["parallel-a", "parallel-b"]
+    assert all(result.metadata["context_pruned"] is True for result in results)
+
+
+def test_soft_pruning_skips_batches_below_the_minimum_reclaim(tmp_path: Path) -> None:
+    store = FileArtifactStore(tmp_path / "artifacts")
+    read = ToolSpec.define(
+        name="read_file",
+        description="Read a file",
+        input_schema={"type": "object"},
+        concurrency_safe=True,
+        mutates=False,
+    )
+    messages = tuple(message for index in range(5) for message in _tool_group(index))
+    compiler = ContextCompiler(artifact_threshold_tokens=10, artifact_preview_chars=4_000)
+    compiled = compiler.compile(
+        messages,
+        system_prompt="",
+        tools=(read,),
+        budget=ContextBudget.for_request(
+            context_window=100_000,
+            reserved_output=1_000,
+            safety_margin=0,
+            tools=(read,),
+        ),
+        artifact_store=store,
+        artifact_policy=ArtifactPolicy(session_id="ses-small", retention="session"),
+    )
+    policy = CompactionPolicy(
+        recent_tail_ratio=0.01,
+        recent_tail_max_tokens=1_000,
+        min_reclaim_ratio=0.10,
+        min_reclaim_floor_tokens=10_000,
+        min_reclaim_cap_tokens=10_000,
+    )
+
+    pruned = compiler.prune_tool_results(
+        compiled,
+        artifact_store=store,
+        artifact_access=ArtifactAccess(session_id="ses-small"),
+        tools=(read,),
+        policy=policy,
+        durable_message_ids=frozenset(message.id for message in messages),
+    )
+
+    assert pruned.pruning is None
+    assert pruned.messages == compiled.messages
 
 
 def test_context_compiler_separates_stable_base_prompt_from_dynamic_sections() -> None:

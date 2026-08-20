@@ -592,6 +592,35 @@ class RunCoordinator:
                 predicted_growth_tokens=effective_output_tokens,
                 exact_counter=(self.provider.count_tokens if capabilities.token_counting else None),
             )
+            if pressure.trigger != "none" and self.artifact_store is not None:
+                pruned = self.context_compiler.prune_tool_results(
+                    compiled,
+                    artifact_store=self.artifact_store,
+                    artifact_access=ArtifactAccess(session_id=session.id, run_id=run_id),
+                    tools=self.registry.specs,
+                    policy=self.compaction_policy,
+                    durable_message_ids=self._durable_message_ids(session),
+                    trigger=pressure.trigger,
+                )
+                if pruned.pruning is not None:
+                    used_exact_count = pressure.count_method == "provider"
+                    compiled = pruned
+                    request = self._model_request(
+                        model=model,
+                        compiled=compiled,
+                        model_tools=model_tools,
+                        max_output_tokens=effective_output_tokens,
+                        prefix_caching=capabilities.prefix_caching,
+                    )
+                    pressure = await self.context_pressure.measure(
+                        request,
+                        input_capacity=budget.input_capacity,
+                        predicted_growth_tokens=effective_output_tokens,
+                        exact_counter=(
+                            self.provider.count_tokens if capabilities.token_counting else None
+                        ),
+                        force_exact=used_exact_count,
+                    )
             if pressure.input_tokens > budget.input_capacity:
                 compiled = await self.context_compiler.compact_l2(
                     session.messages,
@@ -1156,6 +1185,15 @@ class RunCoordinator:
             and "artifact_id" in event.data["artifact"]
         }
 
+    @staticmethod
+    def _durable_message_ids(session: Session) -> frozenset[str]:
+        return frozenset(
+            str(event.data["message"]["id"])
+            for event in session.events
+            if isinstance(event.data.get("message"), dict)
+            and "id" in event.data["message"]
+        )
+
     def _persist_compiled_context(
         self,
         session: Session,
@@ -1338,6 +1376,7 @@ class RunCoordinator:
             input_capacity=compiled.budget.input_capacity,
             predicted_growth_tokens=compiled.budget.reserved_output,
         )
+        pruning = compiled.pruning
         return Event(
             type="model.usage",
             session_id=session.id,
@@ -1361,6 +1400,15 @@ class RunCoordinator:
                 "context_trigger_reason": pressure.trigger_reason,
                 "context_target_tokens": pressure.target_tokens,
                 "context_target_ratio": pressure.target_ratio,
+                "context_pruned_tool_results": (
+                    len(pruning.tool_call_ids) if pruning is not None else 0
+                ),
+                "context_reclaimed_tokens": (
+                    pruning.reclaimed_tokens if pruning is not None else 0
+                ),
+                "context_pruning_trigger": (
+                    pruning.trigger if pruning is not None else None
+                ),
             },
         )
 

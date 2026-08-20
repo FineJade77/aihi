@@ -153,6 +153,13 @@ and falls back without failing the run when counting is unavailable. `Compaction
 reserved next output would exhaust the following request. Each durable `model.usage` event records the
 count method, current/projected pressure, trigger, reason and target.
 
+At 70% pressure or above, the Runtime makes at most one batched soft-pruning attempt before the
+Provider call. It removes only old, successful, read-only Tool Result bodies whose original Messages
+are durable and whose session-scoped Artifacts pass access, manifest and payload-integrity checks.
+Tool calls, result identity/error state, Artifact references, the recent complete-group tail and the
+stable cache prefix remain unchanged. A batch is discarded unless it reclaims the configured minimum;
+the immutable Event history is never rewritten.
+
 ## Development
 
 ```bash

@@ -8,8 +8,8 @@ from hashlib import sha256
 from typing import Any
 
 from aihi.agent._core.errors import ContextWindowExceeded
-from aihi.agent.artifacts import ArtifactPolicy, ArtifactRef, ArtifactStore
-from aihi.agent.context.policy import ContextPressure
+from aihi.agent.artifacts import ArtifactAccess, ArtifactPolicy, ArtifactRef, ArtifactStore
+from aihi.agent.context.policy import CompactionPolicy, ContextPressure
 from aihi.agent.context.summary import (
     DeterministicSummaryGenerator,
     SummaryGenerator,
@@ -106,6 +106,19 @@ class CompactionRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class ToolResultPruningRecord:
+    """One deterministic batch of recoverable Tool Result body removals."""
+
+    tool_call_ids: tuple[str, ...]
+    artifact_ids: tuple[str, ...]
+    before_tokens: int
+    after_tokens: int
+    reclaimed_tokens: int
+    trigger: str = "soft"
+    version: int = 1
+
+
+@dataclass(frozen=True, slots=True)
 class ContextSection:
     """A named block prepended to the system prompt by a runtime extension.
 
@@ -159,6 +172,7 @@ class CompiledContext:
     artifacts: tuple[ArtifactRef, ...] = ()
     compaction: CompactionRecord | None = None
     pressure: ContextPressure | None = None
+    pruning: ToolResultPruningRecord | None = None
 
     @property
     def over_budget(self) -> bool:
@@ -254,6 +268,150 @@ class ContextCompiler:
             artifacts=artifacts,
             compaction=record,
         )
+
+    def prune_tool_results(
+        self,
+        compiled: CompiledContext,
+        *,
+        artifact_store: ArtifactStore,
+        artifact_access: ArtifactAccess,
+        tools: tuple[ToolSpec, ...],
+        policy: CompactionPolicy,
+        durable_message_ids: frozenset[str],
+        trigger: str = "soft",
+    ) -> CompiledContext:
+        """Batch-remove old recoverable read-only Tool Result bodies.
+
+        This edits only the model-input projection. The durable Message Events
+        and Artifact payloads remain untouched and are the recovery source.
+        """
+
+        groups = _message_groups(compiled.messages)
+        protected = _recent_group_indexes(groups, compiled.budget.input_capacity, policy)
+        specs = {tool.name: tool for tool in tools}
+        message_indexes = {message.id: index for index, message in enumerate(compiled.messages)}
+        replacements: dict[int, dict[int, ToolResultBlock]] = {}
+        tool_call_ids: list[str] = []
+        artifact_ids: list[str] = []
+
+        for group_index, group in enumerate(groups):
+            if group_index in protected:
+                continue
+            calls = {call.id: call for message in group for call in message.tool_calls}
+            call_message_ids = {
+                call.id: message.id for message in group for call in message.tool_calls
+            }
+            result_counts: dict[str, int] = {}
+            for message in group:
+                for result in message.tool_results:
+                    result_counts[result.tool_call_id] = (
+                        result_counts.get(result.tool_call_id, 0) + 1
+                    )
+            for message in group:
+                message_index = message_indexes[message.id]
+                for block_index, block in enumerate(message.content):
+                    if not isinstance(block, ToolResultBlock):
+                        continue
+                    call = calls.get(block.tool_call_id)
+                    spec = specs.get(call.name) if call is not None else None
+                    if (
+                        call is None
+                        or spec is None
+                        or spec.mutates
+                        or block.is_error
+                        or result_counts.get(block.tool_call_id) != 1
+                        or message.id not in durable_message_ids
+                        or call_message_ids.get(block.tool_call_id) not in durable_message_ids
+                        or block.metadata.get("context_pruned") is True
+                    ):
+                        continue
+                    artifact = self._recoverable_artifact(
+                        block,
+                        artifact_store=artifact_store,
+                        artifact_access=artifact_access,
+                    )
+                    if artifact is None:
+                        continue
+                    placeholder = _tool_result_placeholder(call.name, artifact)
+                    if estimate_text_tokens(placeholder) >= estimate_text_tokens(block.content):
+                        continue
+                    replacements.setdefault(message_index, {})[block_index] = replace(
+                        block,
+                        content=placeholder,
+                        metadata={
+                            **block.metadata,
+                            "context_pruned": True,
+                            "context_pruning_version": 1,
+                        },
+                    )
+                    tool_call_ids.append(block.tool_call_id)
+                    artifact_ids.append(artifact.artifact_id)
+
+        if not replacements:
+            return compiled
+        messages = list(compiled.messages)
+        for message_index, block_replacements in replacements.items():
+            message = messages[message_index]
+            blocks = list(message.content)
+            for block_index, replacement in block_replacements.items():
+                blocks[block_index] = replacement
+            messages[message_index] = replace(message, content=tuple(blocks))
+        pruned_messages = tuple(messages)
+        before_tokens = self._total_tokens(
+            compiled.system_prompt,
+            compiled.messages,
+            compiled.budget,
+        )
+        after_tokens = self._total_tokens(
+            compiled.system_prompt,
+            pruned_messages,
+            compiled.budget,
+        )
+        reclaimed_tokens = max(0, before_tokens - after_tokens)
+        if reclaimed_tokens < policy.min_reclaim_tokens(compiled.budget.input_capacity):
+            return compiled
+        return replace(
+            compiled,
+            messages=pruned_messages,
+            estimated_tokens=after_tokens,
+            pruning=ToolResultPruningRecord(
+                tool_call_ids=tuple(tool_call_ids),
+                artifact_ids=tuple(dict.fromkeys(artifact_ids)),
+                before_tokens=before_tokens,
+                after_tokens=after_tokens,
+                reclaimed_tokens=reclaimed_tokens,
+                trigger=trigger,
+            ),
+        )
+
+    @staticmethod
+    def _recoverable_artifact(
+        block: ToolResultBlock,
+        *,
+        artifact_store: ArtifactStore,
+        artifact_access: ArtifactAccess,
+    ) -> ArtifactRef | None:
+        artifact_id = block.metadata.get("artifact_id")
+        expected_sha = block.metadata.get("artifact_sha256")
+        expected_size = block.metadata.get("artifact_size_bytes")
+        if (
+            not isinstance(artifact_id, str)
+            or not artifact_id
+            or not isinstance(expected_sha, str)
+            or not expected_sha
+            or isinstance(expected_size, bool)
+            or not isinstance(expected_size, int)
+            or expected_size < 0
+        ):
+            return None
+        try:
+            ref = artifact_store.get_ref(artifact_id, access=artifact_access)
+            artifact_store.read_text(artifact_id, access=artifact_access)
+        except Exception:  # noqa: BLE001 - an optional context edit must fail closed.
+            return None
+        if ref.sha256 != expected_sha or ref.size_bytes != expected_size:
+            return None
+        return ref
 
     async def compact_l2(
         self,
@@ -435,6 +593,40 @@ def _message_groups(messages: tuple[Message, ...]) -> list[tuple[Message, ...]]:
             index += 1
         groups.append(messages[start:index])
     return groups
+
+
+def _recent_group_indexes(
+    groups: list[tuple[Message, ...]],
+    input_capacity: int,
+    policy: CompactionPolicy,
+) -> set[int]:
+    protected: set[int] = set()
+    retained_tokens = 0
+    recent_budget = policy.recent_tail_budget(input_capacity)
+    for group_index in range(len(groups) - 1, -1, -1):
+        group_tokens = estimate_messages_tokens(groups[group_index])
+        if (
+            len(protected) < policy.recent_tail_min_groups
+            or retained_tokens + group_tokens <= recent_budget
+        ):
+            protected.add(group_index)
+            retained_tokens += group_tokens
+            continue
+        break
+    return protected
+
+
+def _tool_result_placeholder(tool_name: str, artifact: ArtifactRef) -> str:
+    return "\n".join(
+        (
+            "[tool result body removed from active context]",
+            f"tool={tool_name}",
+            f"artifact_id={artifact.artifact_id}",
+            f"sha256={artifact.sha256}",
+            f"size_bytes={artifact.size_bytes}",
+            "summary=Tool result retained as a recoverable artifact.",
+        )
+    )
 
 
 def _summary_message(omitted: list[Message], all_messages: tuple[Message, ...]) -> Message:

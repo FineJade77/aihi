@@ -11,6 +11,7 @@ from aihi.agent.context.compiler import (
     ContextBudget,
     ContextCompiler,
     ContextSection,
+    ToolResultPruningRecord,
     compose_system_blocks,
     compose_system_prompt,
 )
@@ -58,6 +59,7 @@ __all__ = [
     "StructuredSummary",
     "SummaryGenerator",
     "SummaryRequest",
+    "ToolResultPruningRecord",
     "build_prompt_cache_key",
     "compose_system_blocks",
     "compose_system_prompt",

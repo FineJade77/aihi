@@ -362,6 +362,9 @@ def without_additive_v1_fields(payload: object) -> object:
                         "context_trigger_reason",
                         "context_target_tokens",
                         "context_target_ratio",
+                        "context_pruned_tool_results",
+                        "context_reclaimed_tokens",
+                        "context_pruning_trigger",
                     ):
                         data.pop(additive, None)
                 data.pop("message_schema_version", None)

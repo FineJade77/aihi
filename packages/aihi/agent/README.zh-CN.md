@@ -157,6 +157,11 @@ Definition 派生唯一 Cache Family Key。Memory、Skill、Compaction State 和
 下一轮输出会耗尽后续请求容量时，才允许在 85% 以下产生 Hard 决策。每个持久化
 `model.usage` Event 都记录计数方法、当前/预测压力、Trigger、Reason 和 Target。
 
+压力达到 70% 后，Runtime 在调用 Provider 前最多尝试一次批量 Soft Pruning。它只移除旧的、成功的、
+只读 Tool Result 正文，并要求原始 Message 已持久化，且 Session Scope Artifact 通过访问权限、Manifest
+和 Payload 完整性校验。Tool Call、Result 标识与错误状态、Artifact 引用、近期完整 Group Tail 以及
+稳定 Cache Prefix 均保持不变。未达到最小回收量时整批放弃；不可变 Event 历史永不改写。
+
 ## 开发
 
 ~~~bash

@@ -364,6 +364,81 @@ async def test_runtime_records_artifact_reference_for_large_tool_result(
 
 
 @pytest.mark.asyncio
+async def test_runtime_soft_prunes_old_results_without_rewriting_raw_events(
+    session_tmp_path: Path,
+) -> None:
+    session = make_session(session_tmp_path, "ses-context-soft-prune")
+    for index in range(8):
+        call = ToolCallBlock(
+            id=f"call-soft-{index}",
+            name="read_file",
+            input={"path": f"file-{index}.txt"},
+        )
+        session.add_message(Message(role="assistant", content=(call,)))
+        session.add_message(
+            Message(
+                role="user",
+                content=(
+                    ToolResultBlock(
+                        tool_call_id=call.id,
+                        content=f"result-{index}:" + "x" * 8_000,
+                        metadata={"tool_name": "read_file"},
+                    ),
+                ),
+            )
+        )
+    raw_result_event = next(event for event in session.events if event.type == "tool.result")
+    raw_message = raw_result_event.data["message"]
+    assert isinstance(raw_message, dict)
+    raw_content = raw_message["content"]
+    assert isinstance(raw_content, list)
+    original_body = str(raw_content[0]["content"])
+    original_events = [event.to_dict() for event in session.events]
+
+    provider = FakeProvider(
+        [FakeStep(text="done")],
+        capabilities=Capabilities(
+            prefix_caching=True,
+            token_counting=False,
+            max_context=15_000,
+            max_output=64,
+        ),
+    )
+    artifact_store = FileArtifactStore(session_tmp_path / "soft-prune-artifacts")
+    coordinator = RunCoordinator(
+        provider,
+        registry=ToolRegistry([ReadFileTool()]),
+        sandbox=HostBackend(session_tmp_path, unsafe=True),
+        artifact_store=artifact_store,
+        context_window=15_000,
+        context_safety_margin=0,
+    )
+
+    result = await coordinator.run(
+        session,
+        model="fake-model",
+        user_message=Message.text("user", "continue"),
+        system_prompt="stable base",
+        max_output_tokens=64,
+    )
+
+    assert result.state == RunState.COMPLETED, result.error
+    sent = provider.requests[0]
+    results = [result for message in sent.messages for result in message.tool_results]
+    assert any(result.metadata.get("context_pruned") is True for result in results[:-4])
+    assert all(result.metadata.get("context_pruned") is None for result in results[-3:])
+    assert sent.system_blocks[0].stable_prefix is True
+    assert sent.cache_policy is not None
+    usage = next(event for event in session.events if event.type == "model.usage")
+    assert usage.data["context_pruned_tool_results"] > 0
+    assert usage.data["context_reclaimed_tokens"] >= 4_096
+    assert usage.data["context_pruning_trigger"] == "soft"
+    assert str(raw_content[0]["content"]) == original_body
+    assert len(original_body) > 8_000
+    assert [event.to_dict() for event in session.events[: len(original_events)]] == original_events
+
+
+@pytest.mark.asyncio
 async def test_runtime_cleanup_expired_artifacts_appends_audit_event(
     session_tmp_path: Path,
 ) -> None:
