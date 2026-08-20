@@ -193,6 +193,13 @@ metadata and Artifact manifests, merges older state field by field, and retains 
 of complete Tool groups. Model enrichment cannot create file or verification receipts. Version-2
 `compaction.created` records are additive; version-1 records and frozen stores remain replayable.
 
+Cache observability is durable but contains no prompt or cache key: each `model.usage` event records
+Provider-reported cache read/write tokens, a SHA-256 of the cache-family key, full-request pressure and
+any pruning decision. Evaluation aggregates cache-hit ratio, cache-key changes and soft/hard
+compaction counts. The replay-only golden Trace and the application-owned
+`aihi-code-agent-context-v1` comparison require unchanged cache-family identity, 100% critical-state
+recall and task success before accepting a token reduction; wall-clock latency is diagnostic only.
+
 ## Tools and safety
 
 aihi.models.ModelToolDefinition contains only model-visible name, description and JSON Schema.

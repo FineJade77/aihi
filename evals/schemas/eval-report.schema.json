@@ -119,6 +119,31 @@
           "type": "integer",
           "minimum": 0
         },
+        "cache_write_input_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cache_hit_ratio": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "cache_key_change_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "compaction_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "hard_compaction_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "soft_compaction_count": {
+          "type": "integer",
+          "minimum": 0
+        },
         "tokens": {
           "type": "integer",
           "minimum": 0

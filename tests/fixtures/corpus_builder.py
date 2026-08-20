@@ -353,6 +353,9 @@ def without_additive_v1_fields(payload: object) -> object:
                         if volatile in data:
                             data[volatile] = 0
                     for additive in (
+                        "cache_write_input_tokens",
+                        "cache_enabled",
+                        "cache_key_hash",
                         "context_input_capacity",
                         "context_count_method",
                         "context_count_fallback",

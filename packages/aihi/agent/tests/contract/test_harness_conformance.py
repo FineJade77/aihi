@@ -286,7 +286,7 @@ def test_versioned_mvp_manifest_is_replayable() -> None:
 
     report = HarnessConformanceRunner().run_dataset(dataset)
 
-    assert report.total == 9
+    assert report.total == 10
     assert report.is_gate_pass is True
     assert "sk-1234567890abcdef" not in raw
     approval = next(case for case in dataset.cases if case.case_id == "approval-resume-completed")

@@ -3,7 +3,7 @@
 This document freezes the first evaluation boundary. It defines data ownership,
 case formats, release semantics and the local automation gates.
 
-## Two datasets, one report contract
+## Three datasets, one report contract
 
 `aihi-agent` and `aihi-code-agent` are evaluated together but not by the same
 oracle:
@@ -12,6 +12,7 @@ oracle:
 | --- | --- | --- | --- | --- |
 | `aihi-agent-conformance-v1` | `aihi-agent` | Redacted `TraceBundle` | Replay, event and security invariants | 100% required |
 | `aihi-code-agent-benchmark-v1` | `aihi-code-agent` | Isolated workspace and task prompt | Hidden tests, regression, scope and safety | Compare pass@1 baseline |
+| `aihi-code-agent-context-v1` | `aihi-code-agent` | Paired deterministic long sessions | Cache/compaction invariants plus task outcome | 100% required |
 
 One Coding Agent run may produce both a product result and a redacted Harness
 trace. The two scores remain separate so a correct patch cannot hide a runtime
@@ -23,7 +24,8 @@ The canonical data directories are:
 evals/
 ├── schemas/
 ├── aihi_agent/v1/
-└── aihi_code_agent/v1/
+├── aihi_code_agent/v1/
+└── aihi_code_agent/context-v1/
 ```
 
 The JSON Schemas in `evals/schemas/` are the serialization contract:
@@ -62,6 +64,19 @@ understanding, instruction following, interruption/resume and subagent use. The
 committed scripted baseline checks the runner/oracle chain only; it is explicitly
 not a real-model capability score.
 
+## Joint cache/compaction evaluation
+
+`aihi-code-agent-context-v1` runs the same packaged-prompt task against an uncompacted long-session
+baseline and a ContextState v2 hard-compaction profile. Both workspace outcomes and exported Harness
+Traces must pass. The comparison additionally gates on 100% critical-state recall, identical hashed
+cache-family identity, zero in-task cache-key changes, at least one hard compaction, a cache hit and
+fewer input tokens after compaction. It records task latency but does not gate on wall-clock timing.
+
+The Harness corpus also contains a replay-only `cache-compaction-v2` golden Trace with cache read/write
+usage, stable-prefix identity, pressure metadata and a schema-v2 compaction record. This leaves the
+existing Coding benchmark and its reviewed live baseline immutable while making the joint behavior a
+required PR and release preflight.
+
 ## Reviewed live baseline
 
 The first reviewed live result uses DeepSeek `deepseek-v4-flash` on 2026-08-17.
@@ -90,6 +105,8 @@ the strict all-attempt gate while producing an artifact for review. An explicit
   a live model run is used. `prompt_sha256` fingerprints the packaged Coding
   prompt template; `tools_sha256` fingerprints the actual model-visible Tool
   definitions assembled for the run.
+- Numeric cache/token/compaction metrics remain available after Trace redaction; credential-like keys
+  such as `access_token` are still redacted. Full cache keys and prompts never enter reports.
 - Raw credentials and unredacted model/tool output never enter the corpus or
   committed reports.
 - A schema or semantic change requires a new version rather than silently
@@ -98,7 +115,7 @@ the strict all-attempt gate while producing an artifact for review. An explicit
 ## Execution modes
 
 - `offline`: replay-only Harness conformance; no external calls.
-- `pr`: Harness corpus plus a small deterministic Coding Agent smoke set.
+- `pr`: Harness corpus, the deterministic cache/compaction comparison and the Coding Agent smoke set.
 - `nightly`: full benchmark, repeated runs and baseline comparison.
 - `release`: the same as nightly with the release gate applied.
 
@@ -126,12 +143,14 @@ template. `nightly` and `release` default to three attempts per task; `--repeat`
 overrides that value. Repeating `--config` evaluates multiple Provider/model
 profiles only after every profile has passed fail-closed validation.
 
-Each live case records task duration, model calls, tool calls, input/output/cache
-tokens and Provider-reported cost when available. The summary reports empirical
+Each live case records task duration, model calls, tool calls, input/output/cache-read/cache-write
+tokens, cache-hit ratio, cache-key changes, soft/hard compaction counts and Provider-reported cost when
+available. The summary reports empirical
 `pass_at_1` (the mean per-task success fraction), at-least-once success, stable
-all-attempt success and P50/P95 task latency. A single profile writes
-`code.json` and `baseline-comparison.json`; a matrix writes those files below
-`profiles/` plus a credential-free `live-summary.json` for comparison. The
+all-attempt success and P50/P95 task latency. Every non-offline gate writes `context.json` and
+`context-comparison.json`. A single live profile writes `code.json` and `baseline-comparison.json`; a
+matrix writes those live files below `profiles/` plus a credential-free `live-summary.json` for
+comparison. The
 scripted baseline remains a runner/oracle diagnostic and is never presented as
 a model score. Reviewed live baselines are selected by exact Provider/Model
 identity and govern pass@1 regression; unbaselined profiles never silently use

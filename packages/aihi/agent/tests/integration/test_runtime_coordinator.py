@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -26,6 +27,7 @@ from aihi.models import (
     StreamChunk,
     ToolCallBlock,
     ToolResultBlock,
+    Usage,
 )
 
 
@@ -209,6 +211,48 @@ async def test_runtime_builds_one_stable_cache_family_for_the_base_prompt(
     assert sent.system_blocks[0].stable_prefix is True
     assert sent.cache_policy is not None
     assert sent.cache_policy.key is not None
+
+
+@pytest.mark.asyncio
+async def test_runtime_persists_redacted_cache_observability(
+    session_tmp_path: Path,
+) -> None:
+    provider = FakeProvider(
+        [
+            FakeStep(
+                text="done",
+                usage=Usage(
+                    input_tokens=120,
+                    output_tokens=8,
+                    cached_input_tokens=80,
+                    cache_write_input_tokens=20,
+                ),
+            )
+        ],
+        capabilities=Capabilities(prefix_caching=True, token_counting=True),
+    )
+    session = make_session(session_tmp_path, "ses-cache-observability")
+
+    result = await RunCoordinator(
+        provider,
+        registry=ToolRegistry([ReadFileTool()]),
+        sandbox=HostBackend(session_tmp_path, unsafe=True),
+    ).run(
+        session,
+        model="fake-model",
+        user_message=Message.text("user", "inspect"),
+        system_prompt="base instructions",
+    )
+
+    assert result.state == RunState.COMPLETED
+    usage = next(event for event in session.events if event.type == "model.usage")
+    assert usage.data["cache_write_input_tokens"] == 20
+    assert usage.data["cached_input_tokens"] == 80
+    assert usage.data["cache_enabled"] is True
+    assert usage.data["cache_key_hash"] == hashlib.sha256(
+        provider.requests[0].cache_policy.key.encode("utf-8")  # type: ignore[union-attr]
+    ).hexdigest()
+    assert provider.requests[0].cache_policy.key not in str(usage.data)  # type: ignore[union-attr]
 
 
 @pytest.mark.asyncio

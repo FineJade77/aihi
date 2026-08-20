@@ -24,11 +24,14 @@ from aihi.code_agent.evals import (
 )
 from aihi.code_agent.evals.dataset import CodeEvalValidationError
 
+from scripts.evals.context_baseline import context_reference_executor
 from scripts.evals.reference_baseline import reference_executor
 from scripts.evals.run import (
     assert_baseline_gate,
+    assert_context_gate,
     build_live_summary,
     compare_baseline,
+    compare_context_report,
     repeat_dataset,
     select_baseline,
     validate_docker_daemon,
@@ -140,6 +143,12 @@ async def test_code_eval_runner_grades_workspace_tests_scope_and_trace(tmp_path:
         "input_tokens": 0,
         "output_tokens": 0,
         "cached_input_tokens": 0,
+        "cache_write_input_tokens": 0,
+        "cache_hit_ratio": 0.0,
+        "cache_key_change_count": 0,
+        "compaction_count": 0,
+        "hard_compaction_count": 0,
+        "soft_compaction_count": 0,
         "tokens": 0,
         "model_calls": 0,
         "tool_calls": 0,
@@ -355,8 +364,16 @@ async def test_code_eval_runner_records_usage_cost_and_tool_metrics(tmp_path: Pa
                         "input_tokens": 120,
                         "output_tokens": 30,
                         "cached_input_tokens": 10,
+                        "cache_write_input_tokens": 40,
+                        "cache_key_hash": "a" * 64,
                         "cost_usd": 0.0125,
                     },
+                ),
+                Event(
+                    type="compaction.created",
+                    session_id=session.id,
+                    run_id="run-live",
+                    data={"version": 2, "trigger": "hard_threshold"},
                 ),
                 Event(
                     type="tool.started",
@@ -390,6 +407,13 @@ async def test_code_eval_runner_records_usage_cost_and_tool_metrics(tmp_path: Pa
     assert result.metrics["input_tokens"] == 120
     assert result.metrics["output_tokens"] == 30
     assert result.metrics["cached_input_tokens"] == 10
+    assert result.metrics["cache_write_input_tokens"] == 40
+    assert result.metrics["cache_hit_ratio"] == pytest.approx(10 / 120)
+    assert result.metrics["cache_key_change_count"] == 0
+    assert result.metrics["cache_key_hash"] == "a" * 64
+    assert result.metrics["compaction_count"] == 1
+    assert result.metrics["hard_compaction_count"] == 1
+    assert result.metrics["soft_compaction_count"] == 0
     assert result.metrics["tokens"] == 150
     assert result.metrics["cost_usd"] == pytest.approx(0.0125)
     assert result.metrics["tool_calls"] == 1
@@ -407,6 +431,11 @@ def test_code_eval_report_summarizes_repeated_live_attempts() -> None:
                 "input_tokens": 100,
                 "output_tokens": 20,
                 "cached_input_tokens": 5,
+                "cache_write_input_tokens": 95,
+                "cache_key_change_count": 0,
+                "compaction_count": 1,
+                "hard_compaction_count": 1,
+                "soft_compaction_count": 0,
                 "tokens": 120,
                 "model_calls": 2,
                 "tool_calls": 1,
@@ -423,6 +452,11 @@ def test_code_eval_report_summarizes_repeated_live_attempts() -> None:
                 "input_tokens": 110,
                 "output_tokens": 30,
                 "cached_input_tokens": 0,
+                "cache_write_input_tokens": 0,
+                "cache_key_change_count": 1,
+                "compaction_count": 0,
+                "hard_compaction_count": 0,
+                "soft_compaction_count": 1,
                 "tokens": 140,
                 "model_calls": 2,
                 "tool_calls": 2,
@@ -459,6 +493,12 @@ def test_code_eval_report_summarizes_repeated_live_attempts() -> None:
     assert summary["latency_p50_seconds"] == 2.0
     assert summary["latency_p95_seconds"] == 4.0
     assert summary["tokens"] == 260
+    assert summary["cache_write_input_tokens"] == 95
+    assert summary["cache_hit_ratio"] == pytest.approx(5 / 210)
+    assert summary["cache_key_change_count"] == 1
+    assert summary["compaction_count"] == 1
+    assert summary["hard_compaction_count"] == 1
+    assert summary["soft_compaction_count"] == 1
     assert summary["model_calls"] == 4
     assert summary["tool_calls"] == 3
     assert summary["cost_usd"] == pytest.approx(0.03)
@@ -664,6 +704,31 @@ async def test_v1_manifest_has_fixed_fixtures_and_reproducible_reference_baselin
     assert comparison["delta"] == {"pass_at_1": 0.0}
 
 
+@pytest.mark.asyncio
+async def test_context_v1_manifest_runs_joint_cache_compaction_gate() -> None:
+    repository_root = Path(__file__).resolve().parents[4]
+    benchmark_root = repository_root / "evals" / "aihi_code_agent" / "context-v1"
+    dataset = CodeTaskDataset.from_jsonl(
+        "aihi-code-agent-context-v1",
+        (benchmark_root / "manifest.jsonl").read_text(encoding="utf-8"),
+        base_dir=benchmark_root,
+    )
+
+    report = await CodeAgentEvalRunner(executor=context_reference_executor).run_dataset(
+        dataset, mode="pr"
+    )
+    comparison = compare_context_report(report)
+
+    assert [task.case_id for task in dataset.tasks] == [
+        "long-session-uncompacted",
+        "long-session-compacted",
+    ]
+    assert report.passed == report.total == 2
+    assert comparison["stable_cache_family"] is True
+    assert comparison["compacted"]["critical_state_recall"] == 1.0
+    assert_context_gate(report, comparison)
+
+
 def test_report_is_strict_json() -> None:
     # Keep this small smoke assertion close to the task contract: report data
     # must be serializable before a CI artifact is written.
@@ -686,3 +751,85 @@ def test_report_summary_fields_are_declared_by_the_v1_schema() -> None:
 
     declared = set(schema["properties"]["summary"]["properties"])
     assert set(report.summary()) <= declared
+
+
+def test_context_comparison_gates_cache_compaction_and_task_success() -> None:
+    report = CodeEvalReport(
+        "aihi-code-agent-context-v1",
+        "pr",
+        (
+            CodeTaskResult(
+                "long-session-uncompacted",
+                True,
+                metrics={
+                    "duration_seconds": 0.4,
+                    "input_tokens": 4_000,
+                    "cached_input_tokens": 1_000,
+                    "cache_hit_ratio": 0.25,
+                    "cache_key_hash": "a" * 64,
+                    "cache_key_change_count": 0,
+                    "compaction_count": 0,
+                    "hard_compaction_count": 0,
+                    "critical_state_recall": 1.0,
+                },
+            ),
+            CodeTaskResult(
+                "long-session-compacted",
+                True,
+                metrics={
+                    "duration_seconds": 0.3,
+                    "input_tokens": 1_600,
+                    "cached_input_tokens": 800,
+                    "cache_hit_ratio": 0.5,
+                    "cache_key_hash": "a" * 64,
+                    "cache_key_change_count": 0,
+                    "compaction_count": 1,
+                    "hard_compaction_count": 1,
+                    "critical_state_recall": 1.0,
+                },
+            ),
+        ),
+    )
+
+    comparison = compare_context_report(report)
+
+    assert comparison["task_success_rate"] == 1.0
+    assert comparison["input_token_delta"] == -2_400
+    assert comparison["input_token_reduction_ratio"] == 0.6
+    assert comparison["stable_cache_family"] is True
+    assert comparison["compacted"]["cache_hit_ratio"] == 0.5
+    assert comparison["compacted"]["hard_compaction_count"] == 1
+    assert_context_gate(report, comparison)
+
+
+def test_context_gate_rejects_cache_family_drift() -> None:
+    report = CodeEvalReport(
+        "aihi-code-agent-context-v1",
+        "pr",
+        (
+            CodeTaskResult(
+                "long-session-uncompacted",
+                True,
+                metrics={
+                    "input_tokens": 2_000,
+                    "cache_key_hash": "a" * 64,
+                    "critical_state_recall": 1.0,
+                },
+            ),
+            CodeTaskResult(
+                "long-session-compacted",
+                True,
+                metrics={
+                    "input_tokens": 1_000,
+                    "cached_input_tokens": 500,
+                    "cache_key_hash": "b" * 64,
+                    "hard_compaction_count": 1,
+                    "critical_state_recall": 1.0,
+                },
+            ),
+        ),
+    )
+    comparison = compare_context_report(report)
+
+    with pytest.raises(CodeEvalGateFailed, match="cache family changed"):
+        assert_context_gate(report, comparison)

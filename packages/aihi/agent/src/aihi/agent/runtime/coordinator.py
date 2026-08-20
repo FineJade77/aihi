@@ -743,7 +743,7 @@ class RunCoordinator:
             # deliberate invariant, and usage is metadata about this very message.
             session.append_many(
                 [
-                    self._usage_event(session, run_id, request.model, response, compiled),
+                    self._usage_event(session, run_id, request, response, compiled),
                     session.message_event(response.message, run_id=run_id),
                 ]
             )
@@ -1439,7 +1439,7 @@ class RunCoordinator:
         self,
         session: Session,
         run_id: str,
-        model: str,
+        request: ModelRequest,
         response: ModelResponse,
         compiled: CompiledContext,
     ) -> Event:
@@ -1456,16 +1456,29 @@ class RunCoordinator:
             predicted_growth_tokens=compiled.budget.reserved_output,
         )
         pruning = compiled.pruning
+        cache_policy = request.cache_policy
+        cache_key = (
+            cache_policy.key
+            if cache_policy is not None and cache_policy.enabled and cache_policy.key
+            else None
+        )
         return Event(
             type="model.usage",
             session_id=session.id,
             run_id=run_id,
             data={
                 "provider": self.provider.name,
-                "model": model,
+                "model": request.model,
                 "input_tokens": usage.input_tokens,
                 "output_tokens": usage.output_tokens,
                 "cached_input_tokens": usage.cached_input_tokens,
+                "cache_write_input_tokens": usage.cache_write_input_tokens,
+                "cache_enabled": bool(cache_policy is not None and cache_policy.enabled),
+                "cache_key_hash": (
+                    hashlib.sha256(cache_key.encode("utf-8")).hexdigest()
+                    if cache_key is not None
+                    else None
+                ),
                 "cost_usd": usage.cost_usd,
                 "context_tokens": compiled.estimated_tokens,
                 "context_limit": compiled.budget.usable_input,

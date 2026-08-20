@@ -9,7 +9,7 @@
 | 状态 | 基础能力完成；应用和平台路线图持续推进 |
 | 当前版本线 | Python 包已以 `0.1.0` 发布到 PyPI；Code Protocol `0.2` |
 | 架构 | [ARCHITECTURE.md](ARCHITECTURE.md) |
-| 最近完成 | 审核真实 Provider 基线并显式分类任务超时 |
+| 最近完成 | H-19 Prompt Cache 与 ContextState v2 Compaction |
 
 `docs/adr/` 与 `docs/rfcs/` 下的 ADR/RFC 是本地工作文件，已加入 `.gitignore`，稳定决策必须同步
 到架构文档、项目 README、代码契约和测试中。
@@ -71,11 +71,13 @@ M0–M7 和 H-01–H-17 基础建设已完成，建立了多包边界、事件 S
 
 ### H-19：Prompt Cache 与 Context Compaction v2
 
-**状态：In progress。** 可复用 Harness 需求记录在已确认的本地 RFC
+**状态：Done。** Cache 契约、稳定 Provider Prefix、Token 压力控制、可恢复 Tool Result Pruning、
+带证据的 ContextState v2 和联合评估/发布门禁均已实现。可复用 Harness 需求记录在已确认的本地 RFC
 `docs/rfcs/0004-prompt-cache-and-context-compaction-v2.md`。Cache 请求契约和 Provider wire 映射属于
 `aihi-models`；稳定前缀编译、Token 压力、可恢复
 Tool Result 清理、结构化压缩、持久化和 Replay 属于 `aihi-agent`；产品 Prompt 和 Compact Model
-选择仍由应用层负责。H-19.1 至 H-19.5 已实现，等待评审后再开始 H-19.6。
+选择仍由应用层负责。发布证据包括 Cache/Compaction Golden Trace、独立的
+`aihi-code-agent-context-v1` 长 Session 对比、冻结兼容测试和 installed-wheel PEP 420 Smoke 覆盖。
 
 | 切片 | 范围 | 验收 |
 | --- | --- | --- |

@@ -140,6 +140,23 @@ class Redactor:
         r"xox[baprs]-[A-Za-z0-9-]{8,}|AKIA[0-9A-Z]{12,})",
         re.IGNORECASE,
     )
+    _safe_metric_keys = frozenset(
+        {
+            "after_tokens",
+            "before_tokens",
+            "cache_write_input_tokens",
+            "cached_input_tokens",
+            "context_pruned_tool_results",
+            "context_reclaimed_tokens",
+            "context_target_tokens",
+            "context_tokens",
+            "input_tokens",
+            "output_tokens",
+            "target_tokens",
+            "token_count_method",
+        }
+    )
+    _safe_count_methods = frozenset({"estimate", "estimate_fallback", "provider"})
 
     def __init__(
         self, *, max_string: int = 4_096, max_items: int = 100, max_depth: int = 8
@@ -161,7 +178,11 @@ class Redactor:
         self.max_depth = max_depth
 
     def redact(self, value: object, *, key: str | None = None, _depth: int = 0) -> object:
-        if key is not None and self._secret_key.search(key):
+        if (
+            key is not None
+            and not self._is_safe_metric(key, value)
+            and self._secret_key.search(key)
+        ):
             return "[REDACTED]"
         if _depth >= self.max_depth:
             return "[TRUNCATED]"
@@ -191,6 +212,18 @@ class Redactor:
                 values.append(f"[TRUNCATED {len(value) - self.max_items} items]")
             return values
         return "[UNSERIALIZABLE]"
+
+    def _is_safe_metric(self, key: str, value: object) -> bool:
+        if key not in self._safe_metric_keys:
+            return False
+        if key == "token_count_method":
+            return isinstance(value, str) and value in self._safe_count_methods
+        return (
+            isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and (not isinstance(value, float) or math.isfinite(value))
+            and value >= 0
+        )
 
 
 @dataclass(frozen=True, slots=True)

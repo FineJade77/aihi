@@ -10,7 +10,7 @@ import os
 import signal
 import time
 from collections.abc import Awaitable, Callable, Iterable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Protocol
 
@@ -42,6 +42,10 @@ class TaskExecution:
 
     session: Session
     run_result: RunResult | None = None
+    metrics: dict[str, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        json.dumps(self.metrics, ensure_ascii=False, allow_nan=False)
 
 
 class TaskExecutor(Protocol):
@@ -174,6 +178,7 @@ class CodeAgentEvalRunner:
                 metrics["run_state"] = execution.run_result.state.value
                 metrics["pending_tool_calls"] = len(execution.run_result.pending_tool_call_ids)
             if execution is not None:
+                metrics.update(execution.metrics)
                 metrics.update(_session_metrics(execution))
             return CodeTaskResult(
                 case_id=task.case_id,
@@ -303,6 +308,9 @@ def _session_metrics(execution: TaskExecution) -> dict[str, object]:
         if run_id is None or event.run_id == run_id
     )
     usage_events = tuple(event for event in events if event.type == "model.usage")
+    compaction_events = tuple(
+        event for event in events if event.type == "compaction.created"
+    )
 
     def token_total(name: str) -> int:
         total = 0
@@ -314,14 +322,40 @@ def _session_metrics(execution: TaskExecution) -> dict[str, object]:
 
     input_tokens = token_total("input_tokens")
     output_tokens = token_total("output_tokens")
+    cached_input_tokens = token_total("cached_input_tokens")
+    cache_key_hashes = tuple(
+        value
+        for event in usage_events
+        if isinstance((value := event.data.get("cache_key_hash")), str) and value
+    )
+    cache_key_change_count = sum(
+        current != previous
+        for previous, current in zip(cache_key_hashes, cache_key_hashes[1:], strict=False)
+    )
     metrics: dict[str, object] = {
         "model_calls": len(usage_events),
         "input_tokens": input_tokens,
         "output_tokens": output_tokens,
-        "cached_input_tokens": token_total("cached_input_tokens"),
+        "cached_input_tokens": cached_input_tokens,
+        "cache_write_input_tokens": token_total("cache_write_input_tokens"),
+        "cache_hit_ratio": (
+            cached_input_tokens / input_tokens if input_tokens else 0.0
+        ),
+        "cache_key_change_count": cache_key_change_count,
+        "compaction_count": len(compaction_events),
+        "hard_compaction_count": sum(
+            event.data.get("version") == 2 for event in compaction_events
+        ),
+        "soft_compaction_count": sum(
+            isinstance(event.data.get("context_pruned_tool_results"), int)
+            and event.data.get("context_pruned_tool_results", 0) > 0
+            for event in usage_events
+        ),
         "tokens": input_tokens + output_tokens,
         "tool_calls": sum(event.type == "tool.started" for event in events),
     }
+    if cache_key_hashes:
+        metrics["cache_key_hash"] = cache_key_hashes[-1]
     costs = [
         float(raw)
         for event in usage_events

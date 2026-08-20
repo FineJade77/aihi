@@ -122,6 +122,19 @@ DeepSeek relies on its automatic prefix cache, and unprofiled OpenAI-compatible 
 semantic no-op. `Usage.cached_input_tokens` and `Usage.cache_write_input_tokens` normalize cache reads
 and writes when a Provider reports them. Legacy `system_prompt` requests remain supported.
 
+Cache counters are additive compatibility fields, so old persisted usage remains decodable:
+
+```python
+from aihi.models import Usage
+
+usage = Usage.from_dict({"input_tokens": 120, "cached_input_tokens": 80})
+assert usage.cache_write_input_tokens == 0
+```
+
+`estimate_model_request_tokens` covers the compatibility system prompt, system blocks, model-visible
+tool definitions and messages. Runtime pressure decisions therefore use the whole normalized request,
+not message history alone.
+
 ## Compatibility and errors
 
 Provider adapters map vendor responses into one common response/stream vocabulary and classify failures into stable error types. Callers should handle `ProviderTimeout`, HTTP failures, protocol failures, and context-length failures separately when deciding whether to retry, compact context, or surface an error.

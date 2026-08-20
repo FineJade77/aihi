@@ -169,6 +169,12 @@ Tool Metadata 和 Artifact Manifest 投影带证据的 Schema v2 `ContextState`�
 并按 Token 保留完整 Tool Group 的近期原文 Tail。模型补充不能创建文件或验证收据。
 `compaction.created` v2 只增加字段；v1 Record 与冻结 Store 继续可 Replay。
 
+Cache 可观测数据会持久化，但不包含 Prompt 或完整 Cache Key：每个 `model.usage` Event 记录 Provider
+上报的 Cache Read/Write Token、Cache Family Key 的 SHA-256、完整请求压力和 Pruning 决策。Eval 会汇总
+Cache Hit Ratio、Cache Key 变化次数以及 Soft/Hard Compaction 次数。只做 Replay 的 Golden Trace 与
+应用层 `aihi-code-agent-context-v1` 对比要求 Cache Family 不变、关键状态召回率 100% 且任务成功，满足
+这些语义门禁后才接受 Token 降低；墙钟延迟只用于诊断。
+
 ## 工具与安全
 
 `aihi.models.ModelToolDefinition` 只包含模型可见的名称、描述和 JSON Schema；

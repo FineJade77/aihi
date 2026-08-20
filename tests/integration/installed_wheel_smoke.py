@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import sys
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from aihi.agent import (
     ApprovalOutcome,
     ChildRunSubagentRunner,
     ContextCompiler,
+    ContextState,
     HostBackend,
     InMemoryEventStore,
     ReadFileTool,
@@ -28,7 +30,14 @@ from aihi.agent import (
     subagent_session_factory,
 )
 from aihi.code_agent.config import CodeAgentConfig
-from aihi.models import FakeProvider, FakeStep, Message
+from aihi.models import (
+    Capabilities,
+    FakeProvider,
+    FakeStep,
+    Message,
+    Usage,
+    estimate_messages_tokens,
+)
 
 
 async def main(workspace: Path) -> None:
@@ -39,16 +48,37 @@ async def main(workspace: Path) -> None:
     basic_session = Session.create(
         InMemoryEventStore(), cwd=workspace, provider="fake", model="fake-model"
     )
+    cache_provider = FakeProvider(
+        [
+            FakeStep(
+                text="done",
+                usage=Usage(
+                    input_tokens=100,
+                    output_tokens=5,
+                    cached_input_tokens=60,
+                    cache_write_input_tokens=20,
+                ),
+            )
+        ],
+        capabilities=Capabilities(prefix_caching=True, token_counting=True),
+    )
     basic = await RunCoordinator(
-        FakeProvider([FakeStep(text="done")]),
+        cache_provider,
         registry=ToolRegistry(),
         sandbox=sandbox,
     ).run(
         basic_session,
         model="fake-model",
         user_message=Message.text("user", "hello"),
+        system_prompt="stable wheel smoke instructions",
     )
     assert basic.state == RunState.COMPLETED
+    cache_usage = next(
+        event for event in basic_session.events if event.type == "model.usage"
+    )
+    assert cache_usage.data["cached_input_tokens"] == 60
+    assert cache_usage.data["cache_write_input_tokens"] == 20
+    assert isinstance(cache_usage.data["cache_key_hash"], str)
 
     (workspace / "note.txt").write_text("wheel smoke", encoding="utf-8")
     tool_session = Session.create(
@@ -123,16 +153,22 @@ async def main(workspace: Path) -> None:
     )
     for index in range(20):
         compact_session.add_message(Message.text("user", f"history {index} " + "x" * 80))
+    raw_tokens = estimate_messages_tokens(compact_session.messages)
+    input_capacity = math.ceil(raw_tokens / 0.88)
     compact = await RunCoordinator(
         FakeProvider([FakeStep(text="compacted")]),
         registry=ToolRegistry(),
         sandbox=sandbox,
         context_compiler=ContextCompiler(),
-        context_window=600,
+        context_window=input_capacity + 64,
         context_safety_margin=0,
     ).run(compact_session, model="fake-model", max_output_tokens=64)
     assert compact.state == RunState.COMPLETED
-    assert any(event.type == "compaction.created" for event in compact_session.events)
+    compaction = next(
+        event for event in compact_session.events if event.type == "compaction.created"
+    )
+    assert compaction.data["version"] == 2
+    assert ContextState.from_dict(compaction.data["context_state"]).schema_version == 2
 
     store = InMemoryEventStore()
     full_registry = ToolRegistry([ReadFileTool()])

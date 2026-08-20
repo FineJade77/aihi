@@ -2,7 +2,7 @@
 
 本文冻结第一版评估边界，定义数据归属、案例格式、发布语义和本地自动化门禁。
 
-## 两套数据集，一个报告契约
+## 三套数据集，一个报告契约
 
 `aihi-agent` 与 `aihi-code-agent` 共同纳入评估，但使用不同的 Oracle：
 
@@ -10,6 +10,7 @@
 | --- | --- | --- | --- | --- |
 | `aihi-agent-conformance-v1` | `aihi-agent` | 脱敏 `TraceBundle` | Replay、事件和安全不变式 | 必须 100% 通过 |
 | `aihi-code-agent-benchmark-v1` | `aihi-code-agent` | 隔离工作区和任务 Prompt | 隐藏测试、回归、范围和安全 | 对比 pass@1 基线 |
+| `aihi-code-agent-context-v1` | `aihi-code-agent` | 成对的确定性长 Session | Cache/Compaction 不变式与任务结果 | 必须 100% 通过 |
 
 一次 Coding Agent 运行可以同时产生产品结果和脱敏 Harness Trace，但两个分数保持独立，不能让一个正确的
 代码 Patch 掩盖 Runtime 契约违规。
@@ -20,7 +21,8 @@
 evals/
 ├── schemas/
 ├── aihi_agent/v1/
-└── aihi_code_agent/v1/
+├── aihi_code_agent/v1/
+└── aihi_code_agent/context-v1/
 ```
 
 `evals/schemas/` 中的 JSON Schema 是序列化契约：
@@ -53,6 +55,17 @@ v1 Smoke-plus 语料目前包含九个任务，覆盖 Bug 修复、小功能、�
 指令遵循、中断/恢复和 Subagent 使用。提交的脚本化基线只验证 Runner/Oracle 链路，明确不是真实模型能力
 分数。
 
+## Cache/Compaction 联合评估
+
+`aihi-code-agent-context-v1` 使用打包 Prompt，对同一任务分别运行未压缩长 Session 基线和
+ContextState v2 Hard Compaction Profile。两次工作区结果及导出的 Harness Trace 都必须通过。联合门禁
+还要求关键状态召回率为 100%、Cache Family Hash 相同、任务内 Cache Key 变化为 0、至少一次 Hard
+Compaction、观察到 Cache Hit，并且压缩后输入 Token 更少。任务耗时会记录，但不作为墙钟回归门禁。
+
+Harness 语料还包含只做 Replay 的 `cache-compaction-v2` Golden Trace，覆盖 Cache Read/Write Usage、
+稳定前缀身份、压力 Metadata 和 Schema v2 Compaction Record。这样无需改变既有 Coding Benchmark 与
+已审核真实基线，也能让联合行为成为 PR 和 Release 的必选预检。
+
 ## 已审核真实基线
 
 首份审核后的真实结果于 2026-08-17 使用 DeepSeek `deepseek-v4-flash` 采集。9 个基础任务各重复 3 次，
@@ -73,13 +86,15 @@ PR 模式只使用脚本化参考基线验证 Runner/Oracle 链路。Nightly/Rel
 - 不为适配实现而重写 Fixture 或隐藏 Oracle。
 - 报告必须是严格 JSON；真实模型运行时记录 Provider/Model 以及 Prompt/Tool Hash。`prompt_sha256`
   对打包的 Coding Prompt 模板取指纹，`tools_sha256` 对运行时实际组装并暴露给模型的 Tool 定义取指纹。
+- Trace 脱敏后仍保留数值型 Cache/Token/Compaction 指标；`access_token` 等凭据字段仍会脱敏。完整 Cache
+  Key 和 Prompt 不进入报告。
 - 凭据和未脱敏的模型/Tool 输出不能进入数据集或提交的报告。
 - Schema 或语义发生变化时创建新版本，不能静默改变旧案例。
 
 ## 执行模式
 
 - `offline`：只做 Replay 的 Harness 契约评估，不进行外部调用。
-- `pr`：Harness 全集加少量确定性的 Coding Agent Smoke Case。
+- `pr`：Harness 全集、确定性的 Cache/Compaction 联合对比和 Coding Agent Smoke Case。
 - `nightly`：完整基准、多次重复和基线对比。
 - `release`：与 nightly 相同，并应用发布门槛。
 
@@ -103,10 +118,12 @@ Permission Mode 都会 fail closed。提交的
 默认每个任务执行三次，可用 `--repeat` 覆盖。重复传入 `--config` 可以在同一次运行中
 比较多个 Provider/Model；所有配置必须先通过 fail-closed 校验，之后才会产生真实 Provider 调用。
 
-每个真实案例记录任务耗时、模型调用数、Tool 调用数、输入/输出/缓存 Token，以及 Provider 能提供时的成本。
+每个真实案例记录任务耗时、模型调用数、Tool 调用数、输入/输出/Cache Read/Cache Write Token、Cache Hit
+Ratio、Cache Key 变化、Soft/Hard Compaction 次数，以及 Provider 能提供时的成本。
 汇总报告提供经验 `pass_at_1`（各任务成功比例的均值）、至少一次成功率、所有尝试稳定通过率和任务耗时
-P50/P95。单 Profile 写入 `code.json` 与 `baseline-comparison.json`；多 Profile 在 `profiles/` 下分别写入报告，
-并额外生成不含凭据的 `live-summary.json`。脚本化基线始终只用于诊断 Runner/Oracle 链路，不作为模型分数。
+P50/P95。所有非 Offline 门禁还会写入 `context.json` 与 `context-comparison.json`。单个 Live Profile 写入
+`code.json` 与 `baseline-comparison.json`；多 Profile 在 `profiles/` 下分别写入 Live 报告，并额外生成
+不含凭据的 `live-summary.json`。脚本化基线始终只用于诊断 Runner/Oracle 链路，不作为模型分数。
 审核后的真实基线按 Provider/Model 精确匹配并用于 pass@1 回归门禁；无基线 Profile 不会静默使用脚本基线。
 
 `.github/workflows/evals.yml` 在 Pull Request 上运行确定性的 `pr` 模式。手工触发真实评测时，它从

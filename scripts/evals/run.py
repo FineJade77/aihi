@@ -40,8 +40,13 @@ from aihi.agent.evals import (  # noqa: E402
 from aihi.agent.evals.errors import EvalGateFailed  # noqa: E402
 from aihi.agent.policy import PermissionMode  # noqa: E402
 from aihi.code_agent import CodeAgentEvalRunner, CodeTaskDataset, load_config  # noqa: E402
-from aihi.code_agent.evals import CodeEvalGateFailed, CodeEvalReport  # noqa: E402
+from aihi.code_agent.evals import (  # noqa: E402
+    CodeEvalGateFailed,
+    CodeEvalReport,
+    CodeTaskResult,
+)
 
+from scripts.evals.context_baseline import context_reference_executor  # noqa: E402
 from scripts.evals.reference_baseline import reference_executor  # noqa: E402
 
 MODES = ("offline", "pr", "nightly", "release")
@@ -340,6 +345,106 @@ def assert_baseline_gate(
         )
 
 
+def compare_context_report(report: CodeEvalReport) -> dict[str, object]:
+    """Compare the deterministic long-session baseline with hard compaction."""
+
+    if report.dataset_id != "aihi-code-agent-context-v1":
+        raise ValueError("context comparison requires aihi-code-agent-context-v1")
+    by_id = {result.case_id: result for result in report.results}
+    try:
+        baseline = by_id["long-session-uncompacted"]
+        compacted = by_id["long-session-compacted"]
+    except KeyError as exc:
+        raise ValueError("context report requires baseline and compacted cases") from exc
+
+    def integer(result: CodeTaskResult, name: str) -> int:
+        raw = result.metrics.get(name, 0)
+        return (
+            raw
+            if isinstance(raw, int) and not isinstance(raw, bool) and raw >= 0
+            else 0
+        )
+
+    def number(result: CodeTaskResult, name: str) -> float:
+        raw = result.metrics.get(name, 0.0)
+        return (
+            float(raw)
+            if isinstance(raw, (int, float)) and not isinstance(raw, bool) and raw >= 0
+            else 0.0
+        )
+
+    baseline_tokens = integer(baseline, "input_tokens")
+    compacted_tokens = integer(compacted, "input_tokens")
+    token_delta = compacted_tokens - baseline_tokens
+    baseline_key = baseline.metrics.get("cache_key_hash")
+    compacted_key = compacted.metrics.get("cache_key_hash")
+
+    def snapshot(result: CodeTaskResult) -> dict[str, object]:
+        return {
+            "passed": result.passed,
+            "duration_seconds": number(result, "duration_seconds"),
+            "input_tokens": integer(result, "input_tokens"),
+            "cached_input_tokens": integer(result, "cached_input_tokens"),
+            "cache_hit_ratio": number(result, "cache_hit_ratio"),
+            "cache_key_change_count": integer(result, "cache_key_change_count"),
+            "compaction_count": integer(result, "compaction_count"),
+            "hard_compaction_count": integer(result, "hard_compaction_count"),
+            "soft_compaction_count": integer(result, "soft_compaction_count"),
+            "critical_state_recall": number(result, "critical_state_recall"),
+        }
+
+    return {
+        "comparison_version": 1,
+        "dataset_id": report.dataset_id,
+        "task_success_rate": report.pass_rate,
+        "baseline": snapshot(baseline),
+        "compacted": snapshot(compacted),
+        "input_token_delta": token_delta,
+        "input_token_reduction_ratio": (
+            -token_delta / baseline_tokens if baseline_tokens else 0.0
+        ),
+        "latency_delta_seconds": (
+            number(compacted, "duration_seconds")
+            - number(baseline, "duration_seconds")
+        ),
+        "stable_cache_family": (
+            isinstance(baseline_key, str)
+            and bool(baseline_key)
+            and baseline_key == compacted_key
+        ),
+    }
+
+
+def assert_context_gate(
+    report: CodeEvalReport, comparison: Mapping[str, object]
+) -> None:
+    """Enforce semantic success before accepting cache or token improvements."""
+
+    report.assert_gate()
+    baseline = comparison.get("baseline")
+    compacted = comparison.get("compacted")
+    if not isinstance(baseline, Mapping) or not isinstance(compacted, Mapping):
+        raise ValueError("context comparison is incomplete")
+    if comparison.get("stable_cache_family") is not True:
+        raise CodeEvalGateFailed("Context evaluation cache family changed after compaction")
+    if int(compacted.get("hard_compaction_count", 0)) < 1:
+        raise CodeEvalGateFailed("Context evaluation did not exercise hard compaction")
+    if int(compacted.get("input_tokens", 0)) >= int(baseline.get("input_tokens", 0)):
+        raise CodeEvalGateFailed("Context evaluation did not reduce input tokens")
+    if int(compacted.get("cached_input_tokens", 0)) <= 0:
+        raise CodeEvalGateFailed("Context evaluation did not observe a cache hit")
+    if any(
+        int(profile.get("cache_key_change_count", 0)) != 0
+        for profile in (baseline, compacted)
+    ):
+        raise CodeEvalGateFailed("Context evaluation changed cache key within the task")
+    if any(
+        float(profile.get("critical_state_recall", 0.0)) != 1.0
+        for profile in (baseline, compacted)
+    ):
+        raise CodeEvalGateFailed("Context evaluation lost critical state")
+
+
 def build_live_summary(reports: tuple[CodeEvalReport, ...]) -> dict[str, object]:
     """Build one credential-free comparison artifact for multiple live models."""
 
@@ -395,6 +500,18 @@ async def _code_report(
     return await runner.run_dataset(dataset, mode=mode)
 
 
+async def _context_report(mode: str) -> CodeEvalReport:
+    benchmark_root = REPO_ROOT / "evals" / "aihi_code_agent" / "context-v1"
+    dataset = CodeTaskDataset.from_jsonl(
+        "aihi-code-agent-context-v1",
+        (benchmark_root / "manifest.jsonl").read_text(encoding="utf-8"),
+        base_dir=benchmark_root,
+    )
+    return await CodeAgentEvalRunner(executor=context_reference_executor).run_dataset(
+        dataset, mode=mode
+    )
+
+
 def _profile_slug(report: CodeEvalReport, index: int) -> str:
     provider = str(report.config.get("provider", "provider"))
     model = str(report.config.get("model", "model"))
@@ -423,6 +540,11 @@ async def _run(args: argparse.Namespace) -> int:
             validate_live_config(load_config(config_path, cwd=REPO_ROOT))
         if config_paths:
             validate_docker_daemon()
+        context = await _context_report(args.mode)
+        context_comparison = compare_context_report(context)
+        _write_json(output / "context.json", context.to_dict())
+        _write_json(output / "context-comparison.json", context_comparison)
+        assert_context_gate(context, context_comparison)
         repetitions = args.repeat or (1 if args.mode == "pr" else 3)
         reports: tuple[CodeEvalReport, ...]
         if args.mode == "pr":
@@ -474,6 +596,10 @@ async def _run(args: argparse.Namespace) -> int:
                 assert_baseline_gate(report, comparison)
             else:
                 report.assert_gate()
+        print(
+            f"{args.mode}: context {context.passed}/{context.total} passed, "
+            f"input token delta {int(context_comparison['input_token_delta']):+d}"
+        )
         print(f"{args.mode}: harness {harness.passed}/{harness.total} passed")
         return EXIT_OK
     except (EvalGateFailed, CodeEvalGateFailed) as exc:
@@ -501,8 +627,10 @@ __all__ = [
     "EXIT_OK",
     "EXIT_SETUP_ERROR",
     "assert_baseline_gate",
+    "assert_context_gate",
     "build_live_summary",
     "compare_baseline",
+    "compare_context_report",
     "main",
     "repeat_dataset",
     "select_baseline",

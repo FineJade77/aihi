@@ -10,7 +10,7 @@
 | Status | Foundation complete; application and platform roadmap remains |
 | Current release line | Python packages 0.1.0 on PyPI; Code Protocol 0.2 |
 | Architecture | [ARCHITECTURE.md](ARCHITECTURE.md) |
-| Last completed slice | Reviewed real-Provider baseline and explicit timeout classification |
+| Last completed slice | H-19 prompt cache and ContextState v2 compaction |
 
 Architecture decision records and RFC drafts in docs/adr/ and docs/rfcs/ are local-only working files.
 They are deliberately ignored by Git; stable decisions must be reflected in architecture, package
@@ -90,12 +90,15 @@ must exercise `aihi-agent` through redacted, replay-only traces.
 
 ### H-19 — Prompt cache and context compaction v2
 
-**Status: In progress.** This reusable Harness slice is specified in the accepted local RFC
+**Status: Done.** Cache contracts, stable Provider prefixes, token-pressure control, recoverable
+Tool Result pruning, evidence-backed ContextState v2 and the joint evaluation/release gates are
+implemented. The reusable Harness slice was specified in the accepted local RFC
 `docs/rfcs/0004-prompt-cache-and-context-compaction-v2.md`. Cache request contracts and Provider wire mappings belong to
 `aihi-models`; prefix compilation, token pressure, recoverable tool-result pruning, structured
 compaction, persistence and replay belong to `aihi-agent`. Product prompts and compact-model selection
-remain application-owned. H-19.1 through H-19.5 are implemented and awaiting review before H-19.6
-starts.
+remain application-owned. The release evidence is the cache/compaction golden Trace, the independent
+`aihi-code-agent-context-v1` long-session comparison, frozen compatibility tests and installed-wheel
+PEP 420 smoke coverage.
 
 | Slice | Scope | Acceptance |
 | --- | --- | --- |

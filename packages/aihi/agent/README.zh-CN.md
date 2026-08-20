@@ -155,7 +155,8 @@ Definition 派生唯一 Cache Family Key。Memory、Skill、Compaction State 和
 保守的本地估算；达到 65% 且 Provider 声明能力时请求精确计数；计数不可用时只做降级，不使 Run
 失败。`CompactionPolicy` 使用 60% 目标、70% Soft Trigger 和 85% Hard Trigger；只有预测保留的
 下一轮输出会耗尽后续请求容量时，才允许在 85% 以下产生 Hard 决策。每个持久化
-`model.usage` Event 都记录计数方法、当前/预测压力、Trigger、Reason 和 Target。
+`model.usage` Event 都记录计数方法、当前/预测压力、Trigger、Reason 和 Target，并记录 Provider 上报的
+Cache Read/Write Token 与 Cache Family Key 的 SHA-256，绝不记录完整 Key 或 Prompt。
 
 压力达到 70% 后，Runtime 在调用 Provider 前最多尝试一次批量 Soft Pruning。它只移除旧的、成功的、
 只读 Tool Result 正文，并要求原始 Message 已持久化，且 Session Scope Artifact 通过访问权限、Manifest
@@ -169,6 +170,19 @@ Artifact Manifest 确定性投影，再执行可选的模型语义补充。模�
 不能宣称文件已修改或验证已成功。每个 `compaction.created` v2 Event 都记录证据引用、Policy/计数元数据
 和保留 Tail；v1 Event 继续可 Replay。Hard Compaction 必须达到 60% Target，否则返回
 `context_window_exceeded`。
+
+应用可以只使用持久化 Event 派生 Cache 与 Compaction 诊断：
+
+```python
+usage = [event for event in session.events if event.type == "model.usage"]
+compactions = [event for event in session.events if event.type == "compaction.created"]
+cached = sum(int(event.data["cached_input_tokens"]) for event in usage)
+input_tokens = sum(int(event.data["input_tokens"]) for event in usage)
+cache_hit_ratio = cached / input_tokens if input_tokens else 0.0
+```
+
+在源码 Checkout 中运行 `python3 -m scripts.evals.run --mode pr`，会执行 Replay Golden Trace、成对的
+长 Session Cache/Compaction 门禁和 Coding Agent Smoke Benchmark。
 
 ## 开发
 

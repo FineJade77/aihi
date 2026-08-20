@@ -178,10 +178,30 @@ class CodeEvalReport:
             "input_tokens": _integer_metric(self.results, "input_tokens"),
             "output_tokens": _integer_metric(self.results, "output_tokens"),
             "cached_input_tokens": _integer_metric(self.results, "cached_input_tokens"),
+            "cache_write_input_tokens": _integer_metric(
+                self.results, "cache_write_input_tokens"
+            ),
+            "cache_key_change_count": _integer_metric(
+                self.results, "cache_key_change_count"
+            ),
+            "compaction_count": _integer_metric(self.results, "compaction_count"),
+            "hard_compaction_count": _integer_metric(
+                self.results, "hard_compaction_count"
+            ),
+            "soft_compaction_count": _integer_metric(
+                self.results, "soft_compaction_count"
+            ),
             "tokens": _integer_metric(self.results, "tokens"),
             "model_calls": _integer_metric(self.results, "model_calls"),
             "tool_calls": _integer_metric(self.results, "tool_calls"),
         }
+        input_tokens = summary["input_tokens"]
+        cached_input_tokens = summary["cached_input_tokens"]
+        assert isinstance(input_tokens, int)
+        assert isinstance(cached_input_tokens, int)
+        summary["cache_hit_ratio"] = (
+            cached_input_tokens / input_tokens if input_tokens else 0.0
+        )
         if any(_number(result.metrics.get("cost_usd")) is not None for result in self.results):
             summary["cost_usd"] = _float_metric(self.results, "cost_usd")
         return summary

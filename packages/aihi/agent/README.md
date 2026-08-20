@@ -151,7 +151,8 @@ It uses the conservative local estimate by default, asks a capable Provider for 
 and falls back without failing the run when counting is unavailable. `CompactionPolicy` applies the
 60% target, 70% soft trigger and 85% hard trigger; a hard decision below 85% is allowed only when the
 reserved next output would exhaust the following request. Each durable `model.usage` event records the
-count method, current/projected pressure, trigger, reason and target.
+count method, current/projected pressure, trigger, reason and target. It also records Provider-reported
+cache read/write tokens and a SHA-256 of the cache-family key, never the key or prompt itself.
 
 At 70% pressure or above, the Runtime makes at most one batched soft-pruning attempt before the
 Provider call. It removes only old, successful, read-only Tool Result bodies whose original Messages
@@ -169,6 +170,19 @@ decisions, questions and next steps, but cannot assert file changes or successfu
 `compaction.created` v2 event records evidence references, policy/count metadata and the retained tail;
 v1 events remain replayable. Hard compaction must reach the 60% target or fail with
 `context_window_exceeded`.
+
+Applications can derive cache and compaction diagnostics entirely from durable Events:
+
+```python
+usage = [event for event in session.events if event.type == "model.usage"]
+compactions = [event for event in session.events if event.type == "compaction.created"]
+cached = sum(int(event.data["cached_input_tokens"]) for event in usage)
+input_tokens = sum(int(event.data["input_tokens"]) for event in usage)
+cache_hit_ratio = cached / input_tokens if input_tokens else 0.0
+```
+
+Run `python3 -m scripts.evals.run --mode pr` from a source checkout to execute the replay golden Trace,
+the paired long-session cache/compaction gate and the Coding Agent smoke benchmark.
 
 ## Development
 
