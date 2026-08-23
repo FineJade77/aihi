@@ -28,6 +28,8 @@ python3 -m scripts.evals.run --mode nightly \
 能提供时的成本。报告不包含配置路径、凭据和原始模型/Tool 输出。真实报告默认只保留在本地或 CI Artifact；
 公开报告前仍需检查模型名称、指标和脱敏边界。
 
-PR 模式只与脚本化参考基线比较。Nightly/Release 会自动选择 Provider 和 Model 均匹配的审核基线，并在
-经验 pass@1 退化时失败。尚无审核基线的新模型会显示 `baseline unavailable`，同时要求所有尝试通过；随后
+PR 模式只与脚本化参考基线比较。Nightly/Release 会自动选择 Provider 和 Model 均匹配的审核基线；当配对
+Bootstrap 能把 pass@1 的下降与抽样噪声区分开，或某个基础任务从“每次都通过”变为“每次都失败”时判定失败，
+更小的下降只记为警告。因此 `baselines/*.json` 记录每个任务的尝试次数，真实运行的 Oracle 命令也在一次性
+容器中打分，而不是在宿主机上。尚无审核基线的新模型会显示 `baseline unavailable`，同时要求所有尝试通过；随后
 可单独审核并版本化其生成报告。单 Profile 运行需要覆盖默认选择时可显式传入 `--baseline`。

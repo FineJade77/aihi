@@ -55,6 +55,16 @@ v1 Smoke-plus 语料目前包含九个任务，覆盖 Bug 修复、小功能、�
 指令遵循、中断/恢复和 Subagent 使用。提交的脚本化基线只验证 Runner/Oracle 链路，明确不是真实模型能力
 分数。
 
+### Oracle 执行边界
+
+模型写出的代码不会在评估进程内执行。真实运行时，每条 Oracle 命令都在自己的一次性容器中打分：镜像来自
+`sandbox.image`，无网络、根文件系统只读、丢弃全部 Capability，唯一挂载的宿主路径是任务工作区。真实配置
+缺少 `sandbox.image`，或者向真实运行注入宿主命令执行器，都会 fail closed。每份报告在
+`config.oracle_execution` 中记录打分位置（`docker:<image>`、`host` 或 `injected`）。
+
+确定性的 PR 门禁保留宿主执行：它的补丁来自提交在本仓库中的脚本化参考执行器，不涉及任何模型输出，因此
+该门禁不需要 Docker Daemon。
+
 ## Cache/Compaction 联合评估
 
 `aihi-code-agent-context-v1` 使用打包 Prompt，对同一任务分别运行未压缩长 Session 基线和
@@ -76,9 +86,27 @@ P50 为 16.0 秒、P95 为 59.7 秒。唯一失败尝试在 90 秒任务上限�
 该结果用于项目回归对比，不代表对模型通用能力的断言。
 
 PR 模式只使用脚本化参考基线验证 Runner/Oracle 链路。Nightly/Release 会选择 Provider 与 Model 都和
-真实报告匹配的审核基线；经验 pass@1 低于该基线时，Live 门禁失败。没有审核基线的 Profile 会显示
+真实报告匹配的审核基线。没有审核基线的 Profile 会显示
 `baseline unavailable`，不会回退到脚本化分数，并在生成待审核 Artifact 的同时保持所有尝试必须通过的
 严格门禁。单 Profile 对比可用显式 `--baseline` 覆盖自动选择。
+
+### 回归判定
+
+真实 `pass@1` 是一次抽样结果，因此审核基线门禁不再直接和存档数字做阈值比较。它按基础任务把两个 Profile
+配对，做分层 Bootstrap：任务层有放回重抽，被抽中的任务再对自己的重复尝试重抽。满足以下任一条件即判定
+回归失败：
+
+- `pass@1` 差值的 Bootstrap 置信区间整体低于零，**且**降幅不小于 `--regression-margin`（默认 0.05）；
+- 某个基础任务在基线中每次尝试都通过，现在每次尝试都失败。
+
+无法与抽样噪声区分的下降记为警告（在 GitHub Actions 下输出 `::warning` 注解），不会让构建变红。第二条
+规则用于弥补小语料：要求该任务的全部重复都失败，单次抖动就无法把门禁染红，而真正坏掉的能力仍会被拦下。
+
+判定是可复现的。`--bootstrap-resamples`（默认 10000）和 `--bootstrap-seed`（默认 20260817）会连同置信
+区间、margin 和配对任务数一起写入 `baseline-comparison.json` 的 `regression` 字段。
+
+因此审核基线必须描述每个任务的尝试次数：Artifact 可以直接记录 `per_case`，否则从统一重复次数加
+`reviewed_failures` 推导。两种方式的合计都必须与记录的 summary 一致，手工改写的基线无法削弱门禁。
 
 ## 可复现性与兼容性
 
@@ -97,6 +125,11 @@ PR 模式只使用脚本化参考基线验证 Runner/Oracle 链路。Nightly/Rel
 - `pr`：Harness 全集、确定性的 Cache/Compaction 联合对比和 Coding Agent Smoke Case。
 - `nightly`：完整基准、多次重复和基线对比。
 - `release`：与 nightly 相同，并应用发布门槛。
+
+`nightly` 是采样档位的名字，不是排程。真实模式要花钱且需要 Provider 凭据，因此没有任何自动触发，只能手工
+运行——本地执行或通过 `workflow_dispatch` 触发。修改 Agent 循环、Prompt、Tool 或上下文处理之后，以及发布
+之前，应当跑一次。审核基线在此之前一直有效，这也意味着它可能比被比较的代码更旧；查看 Artifact 中的
+`generated_at` 判断新鲜度。
 
 本地门禁命令：
 
@@ -124,9 +157,12 @@ Ratio、Cache Key 变化、Soft/Hard Compaction 次数，以及 Provider 能提�
 P50/P95。所有非 Offline 门禁还会写入 `context.json` 与 `context-comparison.json`。单个 Live Profile 写入
 `code.json` 与 `baseline-comparison.json`；多 Profile 在 `profiles/` 下分别写入 Live 报告，并额外生成
 不含凭据的 `live-summary.json`。脚本化基线始终只用于诊断 Runner/Oracle 链路，不作为模型分数。
-审核后的真实基线按 Provider/Model 精确匹配并用于 pass@1 回归门禁；无基线 Profile 不会静默使用脚本基线。
+审核后的真实基线按 Provider/Model 精确匹配，并用上述配对 Bootstrap 判定回归；无基线 Profile 不会静默
+使用脚本基线。
 
-`.github/workflows/evals.yml` 在 Pull Request 上运行确定性的 `pr` 模式。手工触发真实评测时，它从
+`.github/workflows/evals.yml` 在 Pull Request 上运行确定性的 `pr` 模式。真实模式只能通过
+`workflow_dispatch` 手工触发：它需要 Provider 凭据，仓库没有配置这些 Secret 时，定时任务只会每晚失败而
+什么都没评测。手工触发的真实运行若缺少 Secret，同样以准备错误退出而不是报告成功。该运行会从
 `AIHI_CODE_EVAL_CONFIGS_B64` Repository Secret 重建权限为 0600 的 TOML，并从对应 API Key Secret 读取
 凭据。该 Secret 每个非空行保存一个 TOML 的 Base64，可在一次 Dispatch 中比较多个模型。独立的
 `.github/workflows/ci.yml` 会执行 Python 3.11/3.12 编译、Ruff、严格 Mypy、完整测试/打包测试、
