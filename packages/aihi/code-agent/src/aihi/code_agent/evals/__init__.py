@@ -22,8 +22,10 @@ from aihi.code_agent.evals.report import (
 from aihi.code_agent.evals.runner import (
     CodeAgentEvalRunner,
     CommandExecutor,
+    DockerCommandExecutor,
     TaskExecution,
     TaskExecutor,
+    run_command_on_host,
 )
 from aihi.code_agent.evals.workspace import (
     PreparedWorkspace,
@@ -43,6 +45,7 @@ __all__ = [
     "CodeTaskResult",
     "CommandExecutor",
     "CommandOutcome",
+    "DockerCommandExecutor",
     "PreparedWorkspace",
     "TaskExecution",
     "TaskExecutor",
@@ -55,5 +58,6 @@ __all__ = [
     "grade_harness_trace",
     "grade_scope",
     "paths_match",
+    "run_command_on_host",
     "snapshot_files",
 ]

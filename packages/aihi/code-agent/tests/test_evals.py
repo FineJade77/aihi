@@ -8,9 +8,22 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from aihi.agent import Event, InMemoryEventStore, RunResult, RunState, Session
+from aihi.agent import (
+    Event,
+    InMemoryEventStore,
+    RunResult,
+    RunState,
+    SandboxViolation,
+    Session,
+)
 from aihi.agent.policy import PermissionMode
-from aihi.code_agent.config import CodeAgentConfig, ProviderSettings, SandboxSettings
+from aihi.agent.sandbox.base import CommandResult
+from aihi.code_agent.config import (
+    CodeAgentConfig,
+    CodeAgentConfigError,
+    ProviderSettings,
+    SandboxSettings,
+)
 from aihi.code_agent.evals import (
     CodeAgentEvalRunner,
     CodeEvalGateFailed,
@@ -18,9 +31,11 @@ from aihi.code_agent.evals import (
     CodeTask,
     CodeTaskDataset,
     CodeTaskResult,
+    DockerCommandExecutor,
     TaskExecution,
     changed_paths,
     directory_sha256,
+    run_command_on_host,
 )
 from aihi.code_agent.evals.dataset import CodeEvalValidationError
 
@@ -833,3 +848,98 @@ def test_context_gate_rejects_cache_family_drift() -> None:
 
     with pytest.raises(CodeEvalGateFailed, match="cache family changed"):
         assert_context_gate(report, comparison)
+
+
+def _live_config(tmp_path: Path, *, image: str | None = "python:3.11-slim") -> CodeAgentConfig:
+    return replace(
+        CodeAgentConfig.defaults(tmp_path),
+        provider=ProviderSettings(
+            name="openai", model="gpt-eval", api_key_env="OPENAI_API_KEY"
+        ),
+        permission_mode=PermissionMode.BYPASS,
+        sandbox=SandboxSettings(
+            backend="docker",
+            root=tmp_path,
+            image=image,
+            network="none",
+            allow_network=False,
+        ),
+    )
+
+
+class _RecordingDockerRunner:
+    """Capture the docker argv instead of contacting a daemon."""
+
+    def __init__(self, *, exit_code: int = 0, error: Exception | None = None) -> None:
+        self.exit_code = exit_code
+        self.error = error
+        self.calls: list[tuple[str, ...]] = []
+
+    async def run(
+        self,
+        argv: tuple[str, ...],
+        *,
+        cwd: Path,
+        timeout_seconds: float,
+        max_output_chars: int,
+    ) -> CommandResult:
+        self.calls.append(argv)
+        if self.error is not None:
+            raise self.error
+        return CommandResult(exit_code=self.exit_code, stdout="ok", stderr="")
+
+
+async def test_docker_oracle_executor_runs_an_isolated_container(tmp_path: Path) -> None:
+    runner = _RecordingDockerRunner()
+    executor = DockerCommandExecutor(image="python:3.11-slim", runner=runner)
+
+    outcome = await executor(("python3", "-c", "print(1)"), tmp_path, 30.0)
+
+    assert outcome.passed is True
+    assert outcome.stdout == "ok"
+    argv = runner.calls[0]
+    assert argv[0] == "run"
+    assert "--network" in argv and argv[argv.index("--network") + 1] == "none"
+    assert "--read-only" in argv
+    assert argv[argv.index("--cap-drop") + 1] == "ALL"
+    assert argv[argv.index("--security-opt") + 1] == "no-new-privileges"
+    assert f"type=bind,src={tmp_path.resolve()},dst=/workspace" in argv
+    assert argv[-3:] == ("python3", "-c", "print(1)")
+    assert argv[argv.index("python3") - 1] == "python:3.11-slim"
+
+
+async def test_docker_oracle_executor_reports_an_unavailable_daemon(tmp_path: Path) -> None:
+    runner = _RecordingDockerRunner(error=SandboxViolation("daemon is gone"))
+    executor = DockerCommandExecutor(image="python:3.11-slim", runner=runner)
+
+    outcome = await executor(("python3", "-c", "print(1)"), tmp_path, 30.0)
+
+    assert outcome.passed is False
+    assert outcome.exit_code is None
+    assert "oracle container could not run the command" in outcome.stderr
+
+
+def test_live_runner_grades_in_a_container_by_default(tmp_path: Path) -> None:
+    runner = CodeAgentEvalRunner(config=_live_config(tmp_path))
+
+    assert isinstance(runner.command_executor, DockerCommandExecutor)
+    assert runner.command_executor.image == "python:3.11-slim"
+    assert runner._report_config()["oracle_execution"] == "docker:python:3.11-slim"
+
+
+def test_live_runner_refuses_to_grade_provider_code_on_the_host(tmp_path: Path) -> None:
+    with pytest.raises(CodeAgentConfigError, match="must run in the Docker sandbox"):
+        CodeAgentEvalRunner(
+            config=_live_config(tmp_path), command_executor=run_command_on_host
+        )
+
+
+def test_live_runner_requires_an_oracle_image(tmp_path: Path) -> None:
+    with pytest.raises(CodeAgentConfigError, match="sandbox.image"):
+        CodeAgentEvalRunner(config=_live_config(tmp_path, image=None))
+
+
+def test_scripted_runner_keeps_host_execution_without_a_daemon() -> None:
+    runner = CodeAgentEvalRunner(executor=_successful_executor)
+
+    assert runner.command_executor is run_command_on_host

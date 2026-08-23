@@ -36,6 +36,11 @@
           "type": "string",
           "minLength": 1
         },
+        "oracle_execution": {
+          "description": "Where the hidden tests ran: host, injected, or docker:<image>.",
+          "type": "string",
+          "pattern": "^(host|injected|docker:\\S+)$"
+        },
         "prompt_sha256": {
           "type": "string",
           "pattern": "^[0-9a-f]{64}$"
