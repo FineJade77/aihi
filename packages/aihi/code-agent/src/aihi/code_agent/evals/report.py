@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 
 from aihi.agent.evals import Grade, TraceBundle
 from aihi.code_agent.evals.graders import average_grade
+from aihi.code_agent.evals.statistics import CaseOutcome
 
 
 class CodeEvalGateFailed(ValueError):
@@ -38,6 +39,11 @@ def _float_metric(results: tuple[CodeTaskResult, ...], name: str) -> float:
         for result in results
         if (value := _number(result.metrics.get(name))) is not None
     )
+
+
+def _base_case_id(result: CodeTaskResult) -> str:
+    raw = result.metrics.get("base_case_id")
+    return raw.strip() if isinstance(raw, str) and raw.strip() else result.case_id
 
 
 def _nearest_rank(values: list[float], percentile: float) -> float:
@@ -127,18 +133,23 @@ class CodeEvalReport:
                 f"Coding Agent evaluation gate failed: {', '.join(failed)}"
             )
 
+    def case_outcomes(self) -> dict[str, CaseOutcome]:
+        """Group repeated attempts into per-base-case counts for regression tests."""
+
+        grouped: dict[str, list[bool]] = defaultdict(list)
+        for result in self.results:
+            grouped[_base_case_id(result)].append(result.passed)
+        return {
+            case_id: CaseOutcome(case_id, len(attempts), sum(attempts))
+            for case_id, attempts in grouped.items()
+        }
+
     def summary(self) -> dict[str, object]:
         """Aggregate stochastic attempts without hiding per-task instability."""
 
         grouped: dict[str, list[CodeTaskResult]] = defaultdict(list)
         for result in self.results:
-            raw_base = result.metrics.get("base_case_id")
-            base_case_id = (
-                raw_base.strip()
-                if isinstance(raw_base, str) and raw_base.strip()
-                else result.case_id
-            )
-            grouped[base_case_id].append(result)
+            grouped[_base_case_id(result)].append(result)
         repetitions = [len(attempts) for attempts in grouped.values()]
         per_case_rates = [
             sum(attempt.passed for attempt in attempts) / len(attempts)

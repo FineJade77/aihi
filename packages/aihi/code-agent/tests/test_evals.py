@@ -25,6 +25,7 @@ from aihi.code_agent.config import (
     SandboxSettings,
 )
 from aihi.code_agent.evals import (
+    CaseOutcome,
     CodeAgentEvalRunner,
     CodeEvalGateFailed,
     CodeEvalReport,
@@ -44,10 +45,12 @@ from scripts.evals.reference_baseline import reference_executor
 from scripts.evals.run import (
     assert_baseline_gate,
     assert_context_gate,
+    baseline_case_outcomes,
     build_live_summary,
     compare_baseline,
     compare_context_report,
     repeat_dataset,
+    report_regression_warning,
     select_baseline,
     validate_docker_daemon,
     validate_live_config,
@@ -606,6 +609,7 @@ def test_live_baseline_comparison_uses_model_matched_pass_at_1() -> None:
         "provider": "deepseek",
         "model": "model-a",
         "case_ids": ["a"],
+        "per_case": {"a": {"attempts": 3, "passed": 2}},
         "summary": {
             "total": 3,
             "passed": 2,
@@ -620,27 +624,163 @@ def test_live_baseline_comparison_uses_model_matched_pass_at_1() -> None:
     assert comparison["comparison_kind"] == "reviewed_live_baseline"
     assert comparison["baseline"]["pass_at_1"] == pytest.approx(2 / 3)
     assert comparison["delta"]["pass_at_1"] == pytest.approx(0.0)
+    assert comparison["regression"]["status"] == "pass"
     assert_baseline_gate(report, comparison)
 
 
-def test_live_baseline_gate_rejects_pass_at_1_regression() -> None:
-    report = CodeEvalReport(
+def _live_report(passed_per_case: dict[str, int], *, attempts: int = 3) -> CodeEvalReport:
+    results = []
+    for case_id, passed in passed_per_case.items():
+        for attempt in range(1, attempts + 1):
+            results.append(
+                CodeTaskResult(
+                    f"{case_id}#repeat-{attempt}",
+                    attempt <= passed,
+                    metrics={"base_case_id": case_id},
+                )
+            )
+    return CodeEvalReport(
         "benchmark",
         "nightly",
-        (
-            CodeTaskResult("a#repeat-1", True, metrics={"base_case_id": "a"}),
-            CodeTaskResult("a#repeat-2", False, metrics={"base_case_id": "a"}),
-            CodeTaskResult("a#repeat-3", False, metrics={"base_case_id": "a"}),
-        ),
+        tuple(results),
         config={"provider": "deepseek", "model": "model-a"},
     )
-    comparison = {
-        "baseline": {"pass_at_1": 2 / 3},
-        "actual": {"pass_at_1": 1 / 3},
+
+
+def _live_baseline(passed_per_case: dict[str, int], *, attempts: int = 3) -> dict[str, object]:
+    total = attempts * len(passed_per_case)
+    passed = sum(passed_per_case.values())
+    return {
+        "artifact_kind": "reviewed_live_baseline",
+        "baseline_version": 1,
+        "dataset_id": "benchmark",
+        "provider": "deepseek",
+        "model": "model-a",
+        "case_ids": list(passed_per_case),
+        "per_case": {
+            case_id: {"attempts": attempts, "passed": count}
+            for case_id, count in passed_per_case.items()
+        },
+        "summary": {
+            "total": total,
+            "passed": passed,
+            "failed": total - passed,
+            "pass_rate": passed / total,
+            "pass_at_1": sum(count / attempts for count in passed_per_case.values())
+            / len(passed_per_case),
+        },
     }
 
-    with pytest.raises(CodeEvalGateFailed, match="below reviewed baseline"):
+
+def test_live_baseline_gate_tolerates_one_flaky_attempt() -> None:
+    cases = {f"case-{index}": 3 for index in range(9)}
+    baseline = _live_baseline(cases)
+    report = _live_report({**cases, "case-3": 2})
+
+    comparison = compare_baseline(report, baseline)
+
+    assert comparison["regression"]["status"] == "warn"
+    assert comparison["delta"]["pass_at_1"] < 0
+    assert_baseline_gate(report, comparison)
+    warning = report_regression_warning(report, comparison)
+    assert warning is not None and "sampling noise" in warning
+
+
+def test_live_baseline_gate_rejects_a_collapsed_base_case() -> None:
+    cases = {f"case-{index}": 3 for index in range(9)}
+    baseline = _live_baseline(cases)
+    report = _live_report({**cases, "case-3": 0})
+
+    comparison = compare_baseline(report, baseline)
+
+    assert comparison["regression"]["status"] == "fail"
+    assert comparison["regression"]["collapsed_cases"] == ["case-3"]
+    with pytest.raises(CodeEvalGateFailed, match="fail every attempt"):
         assert_baseline_gate(report, comparison)
+
+
+def test_live_baseline_gate_rejects_a_broad_regression() -> None:
+    baseline = _live_baseline({f"case-{index}": 3 for index in range(9)})
+    report = _live_report({f"case-{index}": 1 for index in range(9)})
+
+    comparison = compare_baseline(report, baseline)
+
+    assert comparison["regression"]["status"] == "fail"
+    assert comparison["regression"]["ci_high"] < 0
+    with pytest.raises(CodeEvalGateFailed, match="regressed against its reviewed baseline"):
+        assert_baseline_gate(report, comparison)
+
+
+def test_live_baseline_gate_is_reproducible_for_a_fixed_seed() -> None:
+    baseline = _live_baseline({f"case-{index}": 3 for index in range(9)})
+    report = _live_report({**{f"case-{index}": 3 for index in range(9)}, "case-1": 2})
+
+    first = compare_baseline(report, baseline, resamples=500, seed=7)["regression"]
+    second = compare_baseline(report, baseline, resamples=500, seed=7)["regression"]
+    other = compare_baseline(report, baseline, resamples=500, seed=8)["regression"]
+
+    assert first == second
+    assert other["status"] == first["status"]
+    assert first["resamples"] == 500 and first["seed"] == 7
+
+
+def test_live_baseline_gate_requires_a_regression_analysis() -> None:
+    report = _live_report({"case-0": 3})
+
+    with pytest.raises(ValueError, match="missing its regression analysis"):
+        assert_baseline_gate(report, {"baseline": {}, "actual": {}})
+
+
+def test_baseline_case_outcomes_derives_attempts_from_reviewed_failures() -> None:
+    baseline = {
+        "case_ids": ["a", "b"],
+        "summary": {"total": 6, "passed": 5, "repetitions_min": 3, "repetitions_max": 3},
+        "reviewed_failures": [{"base_case_id": "b", "case_id": "b#repeat-2"}],
+    }
+
+    outcomes = baseline_case_outcomes(baseline)
+
+    assert outcomes["a"].passed == 3
+    assert outcomes["b"] == CaseOutcome("b", 3, 2)
+
+
+def test_baseline_case_outcomes_rejects_unattributed_failures() -> None:
+    baseline = {
+        "case_ids": ["a", "b"],
+        "summary": {"total": 6, "passed": 5},
+    }
+
+    with pytest.raises(ValueError, match="does not account for every failed attempt"):
+        baseline_case_outcomes(baseline)
+
+
+def test_baseline_case_outcomes_rejects_a_hand_edited_per_case_block() -> None:
+    baseline = {
+        "case_ids": ["a"],
+        "per_case": {"a": {"attempts": 3, "passed": 3}},
+        "summary": {"total": 3, "passed": 2},
+    }
+
+    with pytest.raises(ValueError, match="disagree with summary.passed"):
+        baseline_case_outcomes(baseline)
+
+
+def test_reviewed_baseline_artifact_matches_its_recorded_summary() -> None:
+    path = (
+        Path(__file__).resolve().parents[4]
+        / "evals"
+        / "aihi_code_agent"
+        / "v1"
+        / "baselines"
+        / "deepseek-v4-flash-2026-08-17.json"
+    )
+    baseline = json.loads(path.read_text(encoding="utf-8"))
+
+    outcomes = baseline_case_outcomes(baseline)
+
+    assert sum(outcome.attempts for outcome in outcomes.values()) == 27
+    assert sum(outcome.passed for outcome in outcomes.values()) == 26
+    assert outcomes["repository-understanding-settings"].passed == 2
 
 
 def test_live_baseline_requires_matching_provider_and_model() -> None:
