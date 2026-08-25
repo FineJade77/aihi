@@ -22,8 +22,17 @@ from aihi.code_agent.evals.report import (
 from aihi.code_agent.evals.runner import (
     CodeAgentEvalRunner,
     CommandExecutor,
+    DockerCommandExecutor,
     TaskExecution,
     TaskExecutor,
+    run_command_on_host,
+)
+from aihi.code_agent.evals.statistics import (
+    CaseOutcome,
+    RegressionVerdict,
+    assess_regression,
+    bootstrap_delta,
+    collapsed_cases,
 )
 from aihi.code_agent.evals.workspace import (
     PreparedWorkspace,
@@ -34,6 +43,7 @@ from aihi.code_agent.evals.workspace import (
 )
 
 __all__ = [
+    "CaseOutcome",
     "CodeAgentEvalRunner",
     "CodeEvalGateFailed",
     "CodeEvalReport",
@@ -43,17 +53,23 @@ __all__ = [
     "CodeTaskResult",
     "CommandExecutor",
     "CommandOutcome",
+    "DockerCommandExecutor",
     "PreparedWorkspace",
+    "RegressionVerdict",
     "TaskExecution",
     "TaskExecutor",
     "WorkspaceManager",
+    "assess_regression",
     "average_grade",
+    "bootstrap_delta",
     "changed_paths",
+    "collapsed_cases",
     "directory_sha256",
     "grade_commands",
     "grade_expected_files",
     "grade_harness_trace",
     "grade_scope",
     "paths_match",
+    "run_command_on_host",
     "snapshot_files",
 ]

@@ -40,7 +40,11 @@ reviewing its model name, metrics and redaction boundary.
 
 PR mode compares only with the scripted reference baseline. Nightly/release
 automatically select a reviewed baseline with the same Provider and Model, then
-fail when empirical pass@1 regresses. A new model without a reviewed baseline is
+fail when a paired bootstrap separates the pass@1 drop from sampling noise, or
+when a base case that used to pass every attempt now fails every attempt. A
+smaller drop is reported as a warning. `baselines/*.json` therefore records
+per-case attempt counts, and the oracle commands of a live run are graded in a
+disposable container rather than on the host. A new model without a reviewed baseline is
 reported as `baseline unavailable` and must pass every attempt; its generated
 report can then be reviewed and versioned separately. `--baseline` explicitly
 selects a baseline when a one-profile run needs an override.

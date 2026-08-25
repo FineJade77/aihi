@@ -14,10 +14,17 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Protocol
 
-from aihi.agent import EventStore, InMemoryEventStore, Session
+from aihi.agent import (
+    AgentRuntimeError,
+    DockerBackend,
+    EventStore,
+    InMemoryEventStore,
+    Session,
+)
 from aihi.agent.evals import TraceBundle
 from aihi.agent.observability import Redactor
 from aihi.agent.runtime import RunResult
+from aihi.agent.sandbox.docker import DockerRunner
 from aihi.code_agent.config import CodeAgentConfig, CodeAgentConfigError
 from aihi.code_agent.evals.dataset import CodeEvalValidationError, CodeTask, CodeTaskDataset
 from aihi.code_agent.evals.graders import (
@@ -78,8 +85,38 @@ class CodeAgentEvalRunner:
         self.executor = executor
         self.config = config
         self.workspace_manager = workspace_manager or WorkspaceManager()
-        self.command_executor = command_executor or _run_command
+        self.command_executor = self._resolve_command_executor(command_executor)
         self._tools_sha256: str | None = None
+
+    def _resolve_command_executor(
+        self, command_executor: CommandExecutor | None
+    ) -> CommandExecutor:
+        """Never grade Provider-written code in the evaluation process.
+
+        The Agent already writes its patch inside the Docker sandbox.  Running
+        the oracle on the host would import those files back into the host
+        interpreter, which is a sandbox bypass, so a configured (live) run
+        grades inside its own disposable container.  The scripted PR executor
+        only replays patches committed to this repository and keeps the host
+        executor so the deterministic gate does not require a daemon.
+        """
+
+        if self.config is None:
+            return command_executor or run_command_on_host
+        image = self.config.sandbox.image
+        if not isinstance(image, str) or not image.strip():
+            raise CodeAgentConfigError(
+                "benchmark oracle execution requires sandbox.image so hidden tests "
+                "run in a container instead of on the host"
+            )
+        if command_executor is None:
+            return DockerCommandExecutor(image=image.strip())
+        if command_executor is run_command_on_host:
+            raise CodeAgentConfigError(
+                "the host oracle executor cannot grade Provider-written code; "
+                "hidden tests must run in the Docker sandbox"
+            )
+        return command_executor
 
     async def run_case(self, task: CodeTask) -> CodeTaskResult:
         started = time.perf_counter()
@@ -289,6 +326,7 @@ class CodeAgentEvalRunner:
         result: dict[str, object] = {
             "provider": self.config.provider.name,
             "model": self.config.provider.model,
+            "oracle_execution": self._oracle_execution(),
             "prompt_sha256": hashlib.sha256(
                 load_builtin_prompt().encode("utf-8")
             ).hexdigest(),
@@ -296,6 +334,16 @@ class CodeAgentEvalRunner:
         if self._tools_sha256 is not None:
             result["tools_sha256"] = self._tools_sha256
         return result
+
+    def _oracle_execution(self) -> str:
+        """Describe where hidden tests ran so a report cannot hide host grading."""
+
+        executor = self.command_executor
+        if isinstance(executor, DockerCommandExecutor):
+            return f"docker:{executor.image}"
+        if executor is run_command_on_host:
+            return "host"
+        return "injected"
 
 
 def _session_metrics(execution: TaskExecution) -> dict[str, object]:
@@ -369,7 +417,68 @@ def _session_metrics(execution: TaskExecution) -> dict[str, object]:
     return metrics
 
 
-async def _run_command(argv: tuple[str, ...], cwd: Path, timeout: float) -> CommandOutcome:
+@dataclass(frozen=True, slots=True)
+class DockerCommandExecutor:
+    """Run oracle commands in a disposable, network-isolated container.
+
+    One container per command.  The workspace is the only host path mounted,
+    the root filesystem is read-only, all capabilities are dropped and no
+    network is available, so a hidden test never executes model-written code in
+    the evaluation process.
+    """
+
+    image: str
+    runner: DockerRunner | None = None
+    workspace_read_only: bool = False
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.image, str) or not self.image.strip():
+            raise CodeAgentConfigError("oracle container requires a non-empty image")
+
+    async def __call__(
+        self, argv: tuple[str, ...], cwd: Path, timeout: float
+    ) -> CommandOutcome:
+        started = time.perf_counter()
+        try:
+            backend = DockerBackend(
+                cwd,
+                image=self.image,
+                runner=self.runner,
+                network="none",
+                allow_network=False,
+                workspace_read_only=self.workspace_read_only,
+            )
+            result = await backend.run_command(
+                argv, timeout_seconds=timeout, max_output_chars=_MAX_COMMAND_OUTPUT
+            )
+        except (AgentRuntimeError, OSError, ValueError) as exc:
+            # A container that cannot start is a failed grade, not a crashed run.
+            return CommandOutcome(
+                argv=argv,
+                exit_code=None,
+                stderr=f"{type(exc).__name__}: oracle container could not run the command",
+                duration_seconds=time.perf_counter() - started,
+            )
+        redactor = Redactor(max_string=_MAX_COMMAND_OUTPUT)
+        return CommandOutcome(
+            argv=argv,
+            exit_code=None if result.timed_out else result.exit_code,
+            stdout=str(redactor.redact(result.stdout)),
+            stderr=str(redactor.redact(result.stderr)),
+            timed_out=result.timed_out,
+            duration_seconds=time.perf_counter() - started,
+        )
+
+
+async def run_command_on_host(
+    argv: tuple[str, ...], cwd: Path, timeout: float
+) -> CommandOutcome:
+    """Run an oracle command directly on the host.
+
+    Only valid for the scripted reference executor, whose patches are committed
+    to this repository.  A live run must use :class:`DockerCommandExecutor`.
+    """
+
     started = time.perf_counter()
     try:
         process = await asyncio.create_subprocess_exec(
@@ -420,4 +529,11 @@ def _terminate_process(process: asyncio.subprocess.Process) -> None:
         pass
 
 
-__all__ = ["CodeAgentEvalRunner", "CommandExecutor", "TaskExecution", "TaskExecutor"]
+__all__ = [
+    "CodeAgentEvalRunner",
+    "CommandExecutor",
+    "DockerCommandExecutor",
+    "TaskExecution",
+    "TaskExecutor",
+    "run_command_on_host",
+]

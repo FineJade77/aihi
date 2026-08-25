@@ -45,6 +45,13 @@ from aihi.code_agent.evals import (  # noqa: E402
     CodeEvalReport,
     CodeTaskResult,
 )
+from aihi.code_agent.evals.statistics import (  # noqa: E402
+    DEFAULT_REGRESSION_MARGIN,
+    DEFAULT_RESAMPLES,
+    DEFAULT_SEED,
+    CaseOutcome,
+    assess_regression,
+)
 
 from scripts.evals.context_baseline import context_reference_executor  # noqa: E402
 from scripts.evals.reference_baseline import reference_executor  # noqa: E402
@@ -87,6 +94,27 @@ def _parser() -> argparse.ArgumentParser:
             "baseline and live modes select a reviewed provider/model baseline"
         ),
     )
+    parser.add_argument(
+        "--regression-margin",
+        type=_unit_interval,
+        default=DEFAULT_REGRESSION_MARGIN,
+        help=(
+            "smallest pass@1 drop the reviewed-baseline gate is willing to call a "
+            f"regression (default: {DEFAULT_REGRESSION_MARGIN})"
+        ),
+    )
+    parser.add_argument(
+        "--bootstrap-resamples",
+        type=_positive_int,
+        default=DEFAULT_RESAMPLES,
+        help=f"bootstrap resamples for the regression interval (default: {DEFAULT_RESAMPLES})",
+    )
+    parser.add_argument(
+        "--bootstrap-seed",
+        type=int,
+        default=DEFAULT_SEED,
+        help=f"seed that makes the regression decision reproducible (default: {DEFAULT_SEED})",
+    )
     return parser
 
 
@@ -97,6 +125,16 @@ def _positive_int(value: str) -> int:
         raise argparse.ArgumentTypeError("must be a positive integer") from exc
     if result <= 0:
         raise argparse.ArgumentTypeError("must be a positive integer")
+    return result
+
+
+def _unit_interval(value: str) -> float:
+    try:
+        result = float(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be a number between zero and one") from exc
+    if not 0 <= result < 1:
+        raise argparse.ArgumentTypeError("must be a number between zero and one")
     return result
 
 
@@ -187,7 +225,90 @@ def validate_docker_daemon() -> None:
         raise ValueError("live evaluation requires a reachable Docker daemon")
 
 
-def compare_baseline(report: CodeEvalReport, baseline: Mapping[str, object]) -> dict[str, object]:
+def baseline_case_outcomes(baseline: Mapping[str, object]) -> dict[str, CaseOutcome]:
+    """Read per-case attempt counts from a baseline artifact.
+
+    A reviewed artifact may record ``per_case`` directly.  Older artifacts only
+    record a uniform repetition count plus the reviewed failure list, which is
+    the same information; either way the totals must agree with the recorded
+    summary so a hand-edited baseline cannot weaken the gate.
+    """
+
+    case_ids = baseline.get("case_ids")
+    if not isinstance(case_ids, list) or not case_ids:
+        raise ValueError("baseline.case_ids must be a non-empty list")
+    summary = baseline.get("summary")
+    if not isinstance(summary, Mapping):
+        raise ValueError("baseline.summary must be an object")
+    raw_per_case = baseline.get("per_case")
+    outcomes: dict[str, CaseOutcome] = {}
+    if isinstance(raw_per_case, Mapping):
+        for case_id in case_ids:
+            entry = raw_per_case.get(case_id)
+            if not isinstance(entry, Mapping):
+                raise ValueError(f"baseline.per_case is missing {case_id}")
+            outcomes[str(case_id)] = CaseOutcome(
+                str(case_id),
+                _baseline_count(entry.get("attempts"), "per_case.attempts"),
+                _baseline_count(entry.get("passed"), "per_case.passed"),
+            )
+    else:
+        total = _baseline_count(summary.get("total"), "summary.total")
+        if total % len(case_ids):
+            raise ValueError(
+                "baseline attempts are not uniform across cases; add a per_case block"
+            )
+        attempts = total // len(case_ids)
+        for name in ("repetitions_min", "repetitions_max"):
+            recorded = summary.get(name)
+            if recorded is not None and recorded != attempts:
+                raise ValueError(f"baseline {name} disagrees with summary.total")
+        failures: dict[str, int] = {}
+        for failure in baseline.get("reviewed_failures", ()) or ():
+            if not isinstance(failure, Mapping):
+                raise ValueError("baseline.reviewed_failures entries must be objects")
+            raw_case = failure.get("base_case_id", failure.get("case_id"))
+            if not isinstance(raw_case, str) or raw_case not in case_ids:
+                raise ValueError("baseline.reviewed_failures references an unknown case")
+            failures[raw_case] = failures.get(raw_case, 0) + 1
+        recorded_passed = summary.get("passed")
+        if recorded_passed is not None and sum(failures.values()) != total - int(
+            _baseline_count(recorded_passed, "summary.passed")
+        ):
+            raise ValueError(
+                "baseline.reviewed_failures does not account for every failed attempt; "
+                "add a per_case block"
+            )
+        for case_id in case_ids:
+            failed = failures.get(str(case_id), 0)
+            if failed > attempts:
+                raise ValueError(f"baseline records more failures than attempts: {case_id}")
+            outcomes[str(case_id)] = CaseOutcome(str(case_id), attempts, attempts - failed)
+    recorded_total = summary.get("total")
+    recorded_passed = summary.get("passed")
+    actual_total = sum(outcome.attempts for outcome in outcomes.values())
+    actual_passed = sum(outcome.passed for outcome in outcomes.values())
+    if recorded_total is not None and recorded_total != actual_total:
+        raise ValueError("baseline per-case attempts disagree with summary.total")
+    if recorded_passed is not None and recorded_passed != actual_passed:
+        raise ValueError("baseline per-case passes disagree with summary.passed")
+    return outcomes
+
+
+def _baseline_count(value: object, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"baseline.{name} must be a non-negative integer")
+    return value
+
+
+def compare_baseline(
+    report: CodeEvalReport,
+    baseline: Mapping[str, object],
+    *,
+    margin: float = DEFAULT_REGRESSION_MARGIN,
+    resamples: int = DEFAULT_RESAMPLES,
+    seed: int = DEFAULT_SEED,
+) -> dict[str, object]:
     """Compare dataset shape and outcome counts without hiding live results."""
 
     comparison_kind = baseline.get("artifact_kind", "scripted_reference")
@@ -235,6 +356,15 @@ def compare_baseline(report: CodeEvalReport, baseline: Mapping[str, object]) -> 
     pass_at_1_delta = float(actual_pass_at_1) - float(baseline_pass_at_1)
     if abs(pass_at_1_delta) < 1e-12:
         pass_at_1_delta = 0.0
+    regression: dict[str, object] | None = None
+    if comparison_kind == "reviewed_live_baseline":
+        regression = assess_regression(
+            baseline_case_outcomes(baseline),
+            report.case_outcomes(),
+            margin=margin,
+            resamples=resamples,
+            seed=seed,
+        ).to_dict()
     return {
         "comparison_kind": comparison_kind,
         "baseline_version": baseline.get("baseline_version"),
@@ -259,6 +389,7 @@ def compare_baseline(report: CodeEvalReport, baseline: Mapping[str, object]) -> 
         "delta": {
             "pass_at_1": pass_at_1_delta,
         },
+        "regression": regression,
         "case_ids_match": True,
     }
 
@@ -290,6 +421,14 @@ def select_baseline(
     return matches[0] if matches else None
 
 
+def _warn(message: str) -> None:
+    """Surface a non-blocking regression warning in local and CI output."""
+
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        print(f"::warning::{message}")
+    print(f"warning: {message}", file=sys.stderr)
+
+
 def _read_json_object(path: Path) -> Mapping[str, object]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, Mapping):
@@ -314,6 +453,7 @@ def _unbaselined_comparison(report: CodeEvalReport) -> dict[str, object]:
             "stable_pass_rate": summary["stable_pass_rate"],
         },
         "delta": None,
+        "regression": None,
         "case_ids_match": None,
     }
 
@@ -321,28 +461,41 @@ def _unbaselined_comparison(report: CodeEvalReport) -> dict[str, object]:
 def assert_baseline_gate(
     report: CodeEvalReport, comparison: Mapping[str, object]
 ) -> None:
-    """Reject a live result only when empirical pass@1 regresses."""
+    """Reject a live result only on evidence of regression, not on noise.
 
-    baseline = comparison.get("baseline")
-    actual = comparison.get("actual")
-    if not isinstance(baseline, Mapping) or not isinstance(actual, Mapping):
-        raise ValueError("reviewed baseline comparison is incomplete")
-    baseline_pass_at_1 = baseline.get("pass_at_1")
-    actual_pass_at_1 = actual.get("pass_at_1")
-    if (
-        not isinstance(baseline_pass_at_1, (int, float))
-        or isinstance(baseline_pass_at_1, bool)
-        or not isinstance(actual_pass_at_1, (int, float))
-        or isinstance(actual_pass_at_1, bool)
-    ):
-        raise ValueError("baseline gate requires numeric pass_at_1 values")
-    if float(actual_pass_at_1) + 1e-12 < float(baseline_pass_at_1):
-        failed = [result.case_id for result in report.results if not result.passed]
-        raise CodeEvalGateFailed(
-            "Coding Agent pass@1 "
-            f"{float(actual_pass_at_1):.3f} is below reviewed baseline "
-            f"{float(baseline_pass_at_1):.3f}: {', '.join(failed)}"
-        )
+    A stored ``pass@1`` is one sample of a stochastic run, so an exact-threshold
+    comparison turns a single flaky attempt into a red build.  The gate instead
+    fails when the paired bootstrap separates the drop from sampling noise, or
+    when a base case that used to pass every attempt now fails every attempt.
+    """
+
+    regression = comparison.get("regression")
+    if not isinstance(regression, Mapping):
+        raise ValueError("reviewed baseline comparison is missing its regression analysis")
+    status = regression.get("status")
+    if status not in {"pass", "warn", "fail"}:
+        raise ValueError("regression analysis has an unknown status")
+    if status != "fail":
+        return
+    failed = [result.case_id for result in report.results if not result.passed]
+    detail = f": {', '.join(failed)}" if failed else ""
+    raise CodeEvalGateFailed(
+        f"Coding Agent regressed against its reviewed baseline: {regression.get('reason')}"
+        f"{detail}"
+    )
+
+
+def report_regression_warning(
+    report: CodeEvalReport, comparison: Mapping[str, object]
+) -> str | None:
+    """Render a non-blocking warning so an insignificant drop stays visible."""
+
+    regression = comparison.get("regression")
+    if not isinstance(regression, Mapping) or regression.get("status") != "warn":
+        return None
+    provider = report.config.get("provider", "reference")
+    model = report.config.get("model", "reference")
+    return f"{provider}/{model}: {regression.get('reason')}"
 
 
 def compare_context_report(report: CodeEvalReport) -> dict[str, object]:
@@ -561,7 +714,13 @@ async def _run(args: argparse.Namespace) -> int:
             select_baseline(report, benchmark_root, args.baseline) for report in reports
         )
         comparisons = tuple(
-            compare_baseline(report, baseline)
+            compare_baseline(
+                report,
+                baseline,
+                margin=args.regression_margin,
+                resamples=args.bootstrap_resamples,
+                seed=args.bootstrap_seed,
+            )
             if baseline is not None
             else _unbaselined_comparison(report)
             for report, baseline in zip(reports, baselines, strict=True)
@@ -591,6 +750,9 @@ async def _run(args: argparse.Namespace) -> int:
                 print(f"{prefix}, baseline delta {float(delta['pass_at_1']):+.3f}")
             else:
                 print(f"{prefix}, baseline unavailable")
+            warning = report_regression_warning(report, comparison)
+            if warning is not None:
+                _warn(warning)
         for report, comparison in zip(reports, comparisons, strict=True):
             if comparison.get("comparison_kind") == "reviewed_live_baseline":
                 assert_baseline_gate(report, comparison)
@@ -627,12 +789,14 @@ __all__ = [
     "EXIT_OK",
     "EXIT_SETUP_ERROR",
     "assert_baseline_gate",
+    "baseline_case_outcomes",
     "assert_context_gate",
     "build_live_summary",
     "compare_baseline",
     "compare_context_report",
     "main",
     "repeat_dataset",
+    "report_regression_warning",
     "select_baseline",
     "validate_docker_daemon",
     "validate_live_config",

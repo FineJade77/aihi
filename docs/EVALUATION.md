@@ -64,6 +64,20 @@ understanding, instruction following, interruption/resume and subagent use. The
 committed scripted baseline checks the runner/oracle chain only; it is explicitly
 not a real-model capability score.
 
+### Oracle execution boundary
+
+Provider-written code is never executed in the evaluation process. A live run
+grades each oracle command in its own disposable container built from
+`sandbox.image`, with no network, a read-only root filesystem, all capabilities
+dropped and the task workspace as the only mounted host path. Configuring a live
+run without `sandbox.image`, or injecting the host command executor into it,
+fails closed. Every report records where grading happened in
+`config.oracle_execution` (`docker:<image>`, `host` or `injected`).
+
+The deterministic PR gate keeps host execution: its patches come from the
+scripted reference executor committed to this repository, so no model output is
+involved and the gate does not require a Docker daemon.
+
 ## Joint cache/compaction evaluation
 
 `aihi-code-agent-context-v1` runs the same packaged-prompt task against an uncompacted long-session
@@ -91,11 +105,39 @@ claim about general model capability.
 
 PR mode uses the scripted reference baseline only to verify the runner/oracle
 chain. Nightly/release select a reviewed baseline whose Provider and Model both
-match the live report; the live gate fails when empirical pass@1 drops below
-that baseline. A profile without a reviewed baseline is labeled
+match the live report. A profile without a reviewed baseline is labeled
 `baseline unavailable` instead of falling back to the scripted score, and keeps
 the strict all-attempt gate while producing an artifact for review. An explicit
 `--baseline` overrides automatic selection for a single-profile comparison.
+
+### Regression decision
+
+A live `pass@1` is one sample of a stochastic run, so the reviewed-baseline gate
+does not compare it against a stored number directly. It pairs the two profiles
+by base case and runs a hierarchical bootstrap: cases are resampled with
+replacement, and every drawn case resamples its own attempts. The gate fails
+when either rule fires:
+
+- the bootstrap interval for the `pass@1` delta lies entirely below zero **and**
+  the drop is at least `--regression-margin` (default 0.05), or
+- a base case that passed every baseline attempt now fails every attempt.
+
+A drop that the interval cannot separate from sampling noise is reported as a
+warning (a `::warning` annotation under GitHub Actions) and does not fail the
+build. The second rule keeps a small corpus honest: requiring every repeat of a
+case to fail means one flaky attempt cannot turn the gate red, while a genuinely
+broken capability still does.
+
+The decision is reproducible. `--bootstrap-resamples` (default 10000) and
+`--bootstrap-seed` (default 20260817) are recorded together with the interval,
+the margin and the paired case count in `baseline-comparison.json` under
+`regression`.
+
+A reviewed baseline therefore has to describe its per-case attempts. Artifacts
+may record them directly in a `per_case` block; otherwise they are derived from
+a uniform repetition count plus `reviewed_failures`. Either way the totals must
+agree with the recorded summary, so a hand-edited baseline cannot weaken the
+gate.
 
 ## Reproducibility and compatibility
 
@@ -118,6 +160,14 @@ the strict all-attempt gate while producing an artifact for review. An explicit
 - `pr`: Harness corpus, the deterministic cache/compaction comparison and the Coding Agent smoke set.
 - `nightly`: full benchmark, repeated runs and baseline comparison.
 - `release`: the same as nightly with the release gate applied.
+
+`nightly` names a sampling profile, not a schedule. The live modes cost money
+and need provider credentials, so nothing runs them automatically; they are
+invoked by hand, locally or through `workflow_dispatch`. Run one after a change
+to the Agent loop, prompts, tools or context handling, and before publishing a
+release. A reviewed baseline stays valid until then, which also means it can be
+older than the code it is compared against; `generated_at` in the artifact is
+the date to check.
 
 Run the local gate with:
 
@@ -157,7 +207,11 @@ identity and govern pass@1 regression; unbaselined profiles never silently use
 the scripted baseline.
 
 The CI workflow in `.github/workflows/evals.yml` runs deterministic `pr` mode on
-pull requests. Manual live runs reconstruct a mode-0600 TOML file from the
+pull requests. Live modes are available only through `workflow_dispatch`: they
+require provider credentials, so a scheduled job in a repository without those
+secrets would fail every night without evaluating anything. A dispatched live
+run without the secrets exits with the setup error rather than reporting
+success. It reconstructs a mode-0600 TOML file from the
 `AIHI_CODE_EVAL_CONFIGS_B64` repository secret and read Provider credentials
 from the matching API-key secret. The secret contains one base64-encoded TOML
 per non-empty line, so one dispatch can compare multiple models. The separate
