@@ -6,14 +6,18 @@ import asyncio
 import hashlib
 from collections.abc import Coroutine
 from dataclasses import asdict, dataclass, replace
-from datetime import datetime
 from typing import Any
 
 from aihi.agent._core.awaits import await_cancelable
 from aihi.agent._core.errors import ContextWindowExceeded, TurnLimitExceeded
 from aihi.agent._core.events import Event
 from aihi.agent._core.ids import new_id
-from aihi.agent.artifacts import ArtifactAccess, ArtifactPolicy, ArtifactRef, ArtifactStore
+from aihi.agent.artifacts import (
+    ArtifactAccess,
+    ArtifactRef,
+    ArtifactStore,
+    session_artifact_policy,
+)
 from aihi.agent.context import (
     CompactionPolicy,
     CompiledContext,
@@ -558,7 +562,7 @@ class RunCoordinator:
                     tools=self.registry.specs,
                     budget=budget,
                     artifact_store=self.artifact_store,
-                    artifact_policy=self._artifact_policy(session),
+                    artifact_policy=session_artifact_policy(session.id),
                     sections=sections,
                 )
             except ContextWindowExceeded:
@@ -571,7 +575,7 @@ class RunCoordinator:
                     tools=self.registry.specs,
                     budget=budget,
                     artifact_store=self.artifact_store,
-                    artifact_policy=self._artifact_policy(session),
+                    artifact_policy=session_artifact_policy(session.id),
                     summary_generator=self.summary_generator,
                     sections=sections,
                     trigger="preflight_context_window",
@@ -1266,7 +1270,7 @@ class RunCoordinator:
             policy=self.compaction_policy,
             events=session.events,
             artifact_store=self.artifact_store,
-            artifact_policy=self._artifact_policy(session),
+            artifact_policy=session_artifact_policy(session.id),
             known_artifacts=known_artifacts,
             summary_generator=self.summary_generator,
             sections=sections,
@@ -1320,58 +1324,6 @@ class RunCoordinator:
             )
         )
         session.append_many(pending)
-
-    @staticmethod
-    def _artifact_policy(session: Session) -> ArtifactPolicy:
-        return ArtifactPolicy(session_id=session.id, retention="session")
-
-    def cleanup_expired_artifacts(
-        self,
-        session: Session,
-        *,
-        run_id: str,
-        now: datetime | None = None,
-    ) -> tuple[str, ...]:
-        """Remove expired artifacts in the session scope and append audit events."""
-
-        if self.artifact_store is None:
-            return ()
-        access = ArtifactAccess(session_id=session.id, run_id=run_id, allow_delete=True)
-        deleted = self.artifact_store.cleanup_expired(now=now, access=access)
-        for ref in deleted:
-            session.append(
-                Event(
-                    type="artifact.deleted",
-                    session_id=session.id,
-                    run_id=run_id,
-                    data={"artifact": ref.to_dict(), "reason": "expired"},
-                )
-            )
-        return tuple(ref.artifact_id for ref in deleted)
-
-    def delete_artifact(
-        self,
-        session: Session,
-        artifact_id: str,
-        *,
-        run_id: str,
-        reason: str = "requested",
-    ) -> ArtifactRef:
-        """Delete one artifact and persist the corresponding audit event."""
-
-        if self.artifact_store is None:
-            raise ValueError("Artifact storage is not configured")
-        access = ArtifactAccess(session_id=session.id, run_id=run_id, allow_delete=True)
-        ref = self.artifact_store.delete(artifact_id, access=access)
-        session.append(
-            Event(
-                type="artifact.deleted",
-                session_id=session.id,
-                run_id=run_id,
-                data={"artifact": ref.to_dict(), "reason": reason},
-            )
-        )
-        return ref
 
     async def _consume_provider(
         self,

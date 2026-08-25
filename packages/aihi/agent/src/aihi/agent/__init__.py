@@ -47,7 +47,13 @@ from aihi.agent.agents import (
     restrict_registry,
     subagent_session_factory,
 )
-from aihi.agent.artifacts import ArtifactAccess, ArtifactPolicy, ArtifactStore, FileArtifactStore
+from aihi.agent.artifacts import (
+    ArtifactAccess,
+    ArtifactLifecycle,
+    ArtifactPolicy,
+    ArtifactStore,
+    FileArtifactStore,
+)
 from aihi.agent.builder import Runtime, RuntimeBuilder
 from aihi.agent.context import (
     ArtifactState,
@@ -193,6 +199,7 @@ __all__ = [
     "ApprovalRequest",
     "ApprovalResolver",
     "ArtifactAccess",
+    "ArtifactLifecycle",
     "ArtifactPolicy",
     "ArtifactState",
     "ArtifactStore",

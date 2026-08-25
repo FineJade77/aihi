@@ -19,6 +19,7 @@ from typing import Any
 from aihi.agent import (
     AgentBudget,
     ApprovalOutcome,
+    ArtifactLifecycle,
     ArtifactPolicy,
     FileArtifactStore,
     HostBackend,
@@ -127,7 +128,9 @@ async def _authorized_session(root: Path, store: InMemoryEventStore) -> Session:
             data={"artifact": ref.to_dict(), "purpose": "context"},
         )
     )
-    deferred.delete_artifact(session, ref.artifact_id, run_id=suspended.run_id)
+    ArtifactLifecycle(artifacts, session.id, session.append).delete(
+        ref.artifact_id, run_id=suspended.run_id
+    )
 
     # Memory: a candidate, a durable write, then a tombstone.
     access = MemoryAccess(scope_grants=frozenset({(MemoryScope.SESSION, session.id)}))

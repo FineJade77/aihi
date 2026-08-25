@@ -5,7 +5,12 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from aihi.agent.artifacts import ArtifactAccess, ArtifactPolicy, FileArtifactStore
+from aihi.agent.artifacts import (
+    ArtifactAccess,
+    ArtifactLifecycle,
+    ArtifactPolicy,
+    FileArtifactStore,
+)
 from aihi.agent.context import CompactionPolicy, ContextState
 from aihi.agent.hooks import HookBus
 from aihi.agent.runtime import RunCoordinator, RunState
@@ -610,16 +615,9 @@ async def test_runtime_cleanup_expired_artifacts_appends_audit_event(
             expires_at=(datetime.now(UTC) - timedelta(seconds=1)).isoformat(),
         ),
     )
-    coordinator = RunCoordinator(
-        FakeProvider(),
-        registry=ToolRegistry(),
-        sandbox=HostBackend(session_tmp_path, unsafe=True),
-        artifact_store=artifact_store,
-    )
+    retention = ArtifactLifecycle(artifact_store, session.id, session.append)
 
-    deleted = coordinator.cleanup_expired_artifacts(
-        session, run_id="run-cleanup", now=datetime.now(UTC)
-    )
+    deleted = retention.cleanup_expired(run_id="run-cleanup", now=datetime.now(UTC))
 
     assert deleted == (ref.artifact_id,)
     event = next(event for event in session.events if event.type == "artifact.deleted")
@@ -635,14 +633,9 @@ async def test_runtime_delete_artifact_appends_audit_event(session_tmp_path: Pat
         "delete me",
         policy=ArtifactPolicy(session_id=session.id, retention="session"),
     )
-    coordinator = RunCoordinator(
-        FakeProvider(),
-        registry=ToolRegistry(),
-        sandbox=HostBackend(session_tmp_path, unsafe=True),
-        artifact_store=artifact_store,
-    )
+    retention = ArtifactLifecycle(artifact_store, session.id, session.append)
 
-    deleted = coordinator.delete_artifact(session, ref.artifact_id, run_id="run-delete")
+    deleted = retention.delete(ref.artifact_id, run_id="run-delete")
 
     assert deleted.artifact_id == ref.artifact_id
     assert any(

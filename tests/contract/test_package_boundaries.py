@@ -4,6 +4,10 @@ Wheel tests prove the declared dependencies; they say nothing about which module
 a cross-distribution import actually lands on. In a development checkout every
 ``src`` tree is on ``pythonpath``, so a reversed or private-module import type
 checks and runs. This gate reads the source instead.
+
+Scope is the boundary *between* the three distributions. The spine *inside*
+``aihi.agent`` -- which package may import which -- is enforced separately by
+``packages/aihi/agent/tests/contract/test_layering.py``.
 """
 
 from __future__ import annotations
