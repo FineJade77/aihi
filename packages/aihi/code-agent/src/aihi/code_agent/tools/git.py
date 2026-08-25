@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from aihi.agent import ToolContext, ToolExecutionResult, ToolInputError, ToolSpec
-from aihi.agent.tools.builtin.command import format_command_result
+from aihi.agent.tools.builtin import format_command_result
 
 
 def _git() -> str:

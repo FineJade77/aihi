@@ -24,7 +24,7 @@ from aihi.agent import (
 from aihi.agent.evals import TraceBundle
 from aihi.agent.observability import Redactor
 from aihi.agent.runtime import RunResult
-from aihi.agent.sandbox.docker import DockerRunner
+from aihi.agent.sandbox import DockerRunner
 from aihi.code_agent.config import CodeAgentConfig, CodeAgentConfigError
 from aihi.code_agent.evals.dataset import CodeEvalValidationError, CodeTask, CodeTaskDataset
 from aihi.code_agent.evals.graders import (

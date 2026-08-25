@@ -5,6 +5,7 @@ or executes goes through policy first.
 """
 
 from aihi.agent.tools.builtin.bash import BashTool
+from aihi.agent.tools.builtin.command import format_command_result
 from aihi.agent.tools.builtin.edit_file import EditFileTool
 from aihi.agent.tools.builtin.ledger import ReadLedger
 from aihi.agent.tools.builtin.read_file import ReadFileTool
@@ -19,4 +20,5 @@ __all__ = [
     "ReadFileTool",
     "ReadLedger",
     "WriteFileTool",
+    "format_command_result",
 ]

@@ -31,8 +31,5 @@ __all__ = [
     "TelemetryError",
     "TelemetrySink",
     "TraceContext",
-    "RetryPolicy",
-    "WorkerTrace",
-    "WorkerLeaseTraceError",
     "stable_payload_hash",
 ]

@@ -279,7 +279,11 @@ pnpm --dir apps/aihi-code-cli test
 ~~~
 
 Packaging tests build and install wheels independently and together, verify PEP 420 namespace layout and
-py.typed, and replay the frozen event/SQLite/trace fixtures without regenerating them. The three Python
+py.typed, and replay the frozen event/SQLite/trace fixtures without regenerating them. Contract tests read
+the source of all three distributions and fail the build when a package imports a layer above it, reaches
+into another distribution's private or internal module instead of its package surface, or exports an
+`__all__` name nothing binds. Wheel metadata cannot catch those: in a development checkout every `src`
+tree is importable, so a reversed import type checks and runs. The three Python
 distributions are published as `0.1.0` on PyPI: [aihi-models](https://pypi.org/project/aihi-models/0.1.0/),
 [aihi-agent](https://pypi.org/project/aihi-agent/0.1.0/) and
 [aihi-code-agent](https://pypi.org/project/aihi-code-agent/0.1.0/).

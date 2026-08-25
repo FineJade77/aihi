@@ -7,12 +7,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from aihi.agent.evals import (
+    EvalError,
     Grade,
     HarnessConformanceCase,
     HarnessConformanceRunner,
     TraceBundle,
 )
-from aihi.agent.evals.errors import EvalError
 from aihi.code_agent.evals.workspace import paths_match
 
 
