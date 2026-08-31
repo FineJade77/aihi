@@ -186,6 +186,8 @@ These rules are not implementation preferences; tests and code review must prese
   summary and output budget; it cannot weaken or drift authority.
 - INTERRUPTED is resumable; CANCELLED is explicit abandonment and is not resumable.
 - A Session has one writer and monotonic seq; appends use expected_seq for conflict detection.
+- Session metadata is application-owned and opaque to aihi-agent; the base Session API must not require
+  or interpret cwd, workspace, Provider, Model or product permission modes.
 - Provider fallback must never blindly replay a possibly side-effecting Tool.
 - After the first Provider stream chunk, do not automatically retry or switch Provider.
 - Events, errors, messages and tool results must be JSON serializable and reloadable.

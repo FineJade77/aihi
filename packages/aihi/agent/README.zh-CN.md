@@ -67,8 +67,6 @@ uv pip install -e packages/aihi/agent
 ## 最小 Runtime
 
 ~~~python
-from pathlib import Path
-
 from aihi.agent import (
     InMemoryEventStore,
     RuntimeBuilder,
@@ -104,12 +102,7 @@ runtime = (
     .build()
 )
 
-session = Session.create(
-    InMemoryEventStore(),
-    cwd=Path.cwd(),
-    provider="fake",
-    model="fake-model",
-)
+session = Session.create(InMemoryEventStore(), metadata={"application": "example"})
 
 result = await runtime.coordinator.run(
     session,
@@ -132,6 +125,9 @@ Sandbox backend 只暴露命令执行，不提供文件读取、Glob 或写入 A
 
 命令 Tool 可以在自己的构造函数中单独要求 \`SandboxBackend\`；Runtime 不拥有、也不向所有 Tool
 分发全局 Sandbox。
+
+`Session.create(...)` 只接收应用拥有的 JSON metadata，以及通用的 identity 和 observer 选项。Harness
+只负责不透明地持久化和复制这些 metadata，不要求也不解释 cwd、Provider、Model、Workspace 或产品权限模式。
 
 可通过以下方法显式增加可选扩展：
 

@@ -66,8 +66,6 @@ uv pip install -e packages/aihi/agent
 ## Minimal runtime
 
 ```python
-from pathlib import Path
-
 from aihi.agent import (
     InMemoryEventStore,
     RuntimeBuilder,
@@ -103,12 +101,7 @@ runtime = (
     .build()
 )
 
-session = Session.create(
-    InMemoryEventStore(),
-    cwd=Path.cwd(),
-    provider="fake",
-    model="fake-model",
-)
+session = Session.create(InMemoryEventStore(), metadata={"application": "example"})
 
 result = await runtime.coordinator.run(
     session,
@@ -132,6 +125,10 @@ acknowledgement.
 
 A command tool may separately require a `SandboxBackend` in its own constructor. The Runtime does
 not own or distribute a global Sandbox.
+
+`Session.create(...)` accepts only application-owned JSON metadata plus generic identity and observer
+options. The Harness persists and forks that metadata opaquely; it does not require or interpret a cwd,
+provider, model, workspace, or product permission mode.
 
 Optional extensions are added explicitly with methods such as:
 

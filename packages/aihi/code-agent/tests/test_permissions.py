@@ -12,7 +12,6 @@ from aihi.agent import (
     InMemoryEventStore,
     PermissionContext,
     RunState,
-    Session,
     ToolSpec,
 )
 from aihi.code_agent.config import CodeAgentConfig
@@ -24,6 +23,7 @@ from aihi.code_agent.permissions import (
     build_run_profile,
 )
 from aihi.code_agent.runtime import CodeAgentRuntime
+from aihi.code_agent.sessions import create_coding_session
 from aihi.code_agent.tools import BashTool, ReadFileTool, WriteFileTool
 
 
@@ -205,7 +205,7 @@ async def test_interrupted_plan_run_cannot_resume_as_execute(tmp_path: Path) -> 
         subagents=replace(config.subagents, enabled=False),
     )
     store = InMemoryEventStore()
-    session = Session.create(store, cwd=tmp_path, provider="fake", model="demo")
+    session = create_coding_session(store, cwd=tmp_path, provider="fake", model="demo")
     runtime = await CodeAgentRuntime.create(plan_config, session=session)
     cancelled = asyncio.Event()
     cancelled.set()

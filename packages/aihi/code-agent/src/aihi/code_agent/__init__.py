@@ -25,6 +25,11 @@ from aihi.code_agent.protocol import (
     SERVER_NAME,
 )
 from aihi.code_agent.runtime import CodeAgentRuntime
+from aihi.code_agent.sessions import (
+    CodingSessionMetadata,
+    CodingSessionMetadataError,
+    create_coding_session,
+)
 from aihi.code_agent.turns import (
     ApprovalRequested,
     AssistantMessage,
@@ -60,6 +65,8 @@ __all__ = [
     "CodeAgentConfig",
     "CodeAgentConfigError",
     "CodeAgentRuntime",
+    "CodingSessionMetadata",
+    "CodingSessionMetadataError",
     "CodeEvalGateFailed",
     "CodeEvalReport",
     "CodeEvalValidationError",
@@ -83,6 +90,7 @@ __all__ = [
     "TurnEvent",
     "TurnFinished",
     "WorkspaceManager",
+    "create_coding_session",
     "directory_sha256",
     "WorkerServer",
     "main",

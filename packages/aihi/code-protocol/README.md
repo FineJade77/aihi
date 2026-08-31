@@ -63,7 +63,7 @@ The package exports its TypeScript entrypoint as `@aihi/code-protocol` and check
 
 Protocol 0.3 makes application authority explicit without treating it as generic Harness state:
 
-- `SessionDescriptor.cwd` is the Coding application's canonical workspace. It is supplied at Session creation and is never read from TOML.
+- `SessionDescriptor.cwd` is the Coding application's canonical workspace. Code Agent stores it in opaque Harness Session metadata during Coding Session creation; it is never read from TOML.
 - `ConfigDescriptor.access_mode` and `run_mode` are configured defaults; `command_sandbox` describes only arbitrary-command execution and has no workspace root.
 - `RunDescriptor.access_mode` and `run_mode` report the persisted effective profile and take precedence in clients once a Run exists.
 - Task request and response DTOs carry generic delegation scope only; workspace authority is derived by the application and is never accepted from a task caller.

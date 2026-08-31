@@ -27,9 +27,6 @@ class _FlushSink:
 def _session(tmp_path: Path, session_id: str) -> Session:
     return Session.create(
         InMemoryEventStore(),
-        cwd=tmp_path,
-        provider="fake",
-        model="fake-model",
         session_id=session_id,
     )
 

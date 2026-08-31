@@ -15,9 +15,6 @@ from packages.aihi.agent.tests.support_tools import ReadTestTool
 def session_for(tmp_path: Path, name: str) -> Session:
     return Session.create(
         InMemoryEventStore(),
-        cwd=tmp_path,
-        provider="fake",
-        model="fake-model",
         session_id=name,
     )
 

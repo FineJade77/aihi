@@ -36,7 +36,7 @@ Content-Length framing 分别位于 `aihi-code-agent` 与 CLI RPC client。
 
 Protocol 0.3 显式描述应用权限，但不把它误归为通用 Harness 状态：
 
-- `SessionDescriptor.cwd` 是 Coding 应用的 canonical Workspace，由创建 Session 时传入，不能从 TOML 配置。
+- `SessionDescriptor.cwd` 是 Coding 应用的 canonical Workspace；Code Agent 创建 Coding Session 时将其存入 Harness 不透明 metadata，不能从 TOML 配置。
 - `ConfigDescriptor.access_mode`、`run_mode` 是配置默认值；`command_sandbox` 只描述任意命令执行，不包含 Workspace root。
 - Run 创建后，客户端以 `RunDescriptor.access_mode`、`run_mode` 中持久化的实际生效值为准。
 - Task request/response DTO 只携带通用委派范围；Workspace 权限由应用派生，Task caller 不能传入。

@@ -54,6 +54,7 @@ from .permissions import (
     build_run_profile,
 )
 from .prompts import build_subagent_prompt, build_system_prompt
+from .sessions import CodingSessionMetadata
 from .skills import builtin_skill_root
 from .subagents import (
     CODING_SUBAGENTS,
@@ -95,7 +96,7 @@ class CodeAgentRuntime:
         either value separately would permit a mismatched authority boundary.
         """
 
-        workspace = Path(session.cwd)
+        workspace = CodingSessionMetadata.from_session(session).require_workspace()
         provider = _build_provider(config)
         sandbox = _build_sandbox(config, workspace)
         permission_context = CodeAgentPermissionContext(
@@ -328,7 +329,7 @@ class CodeAgentRuntime:
                     self.runtime.telemetry.close()
 
     def _validate_session_workspace(self, session: Session) -> None:
-        session_workspace = Path(session.cwd).expanduser().resolve(strict=True)
+        session_workspace = CodingSessionMetadata.from_session(session).require_workspace()
         if session_workspace != self.permission_context.workspace:
             raise CodeAgentConfigError(
                 "Runtime workspace must match the Session cwd: "

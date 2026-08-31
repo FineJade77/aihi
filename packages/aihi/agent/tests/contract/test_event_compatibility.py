@@ -324,9 +324,6 @@ def test_an_unknown_message_version_is_rejected_before_append(tmp_path: Path) ->
     store = InMemoryEventStore()
     session = Session.create(
         store,
-        cwd=tmp_path,
-        provider="fake",
-        model="fake-model",
         session_id="ses-message-version",
     )
     initial_head = session.head_seq

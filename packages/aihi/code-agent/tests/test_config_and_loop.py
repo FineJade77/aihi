@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 
 import pytest
-from aihi.agent import InMemoryEventStore, Session, ToolContext, UnsafeHostNotAcknowledged
+from aihi.agent import InMemoryEventStore, ToolContext, UnsafeHostNotAcknowledged
 from aihi.code_agent.config import (
     acknowledge_host_execution,
     ensure_user_config,
@@ -14,6 +14,7 @@ from aihi.code_agent.config import (
 from aihi.code_agent.permissions import AccessMode, RunMode
 from aihi.code_agent.protocol import PROTOCOL_VERSION, WorkerServer
 from aihi.code_agent.runtime import CodeAgentRuntime
+from aihi.code_agent.sessions import create_coding_session
 
 
 def test_config_loads_provider_sandbox_skill_and_mcp_paths(tmp_path, monkeypatch) -> None:
@@ -126,7 +127,7 @@ async def test_runtime_derives_workspace_and_command_root_from_session_cwd(tmp_p
     workspace = tmp_path / "project"
     workspace.mkdir()
     config = load_config(config_path, cwd=workspace)
-    session = Session.create(
+    session = create_coding_session(
         InMemoryEventStore(), cwd=workspace, provider="fake", model="demo"
     )
 
@@ -276,7 +277,7 @@ def test_config_discovers_user_aihi_config_when_project_config_is_absent(
 @pytest.mark.asyncio
 async def test_config_defaults_keep_host_execution_disabled(tmp_path) -> None:
     config = load_config(cwd=tmp_path)
-    session = Session.create(
+    session = create_coding_session(
         InMemoryEventStore(), cwd=tmp_path, provider="fake", model="demo"
     )
 
@@ -364,7 +365,7 @@ path = "audit.jsonl"
     )
     config = load_config(config_path, cwd=tmp_path)
     store = InMemoryEventStore()
-    session = Session.create(store, cwd=tmp_path, provider="fake", model="demo")
+    session = create_coding_session(store, cwd=tmp_path, provider="fake", model="demo")
     runtime = await CodeAgentRuntime.create(config, session=session)
     try:
         result = await runtime.run(session, user_message="record this turn")
@@ -582,7 +583,7 @@ async def test_skill_trust_commands_enable_explicit_skill_loading(tmp_path) -> N
     server.close()
 
     config = load_config(config_path, cwd=tmp_path)
-    runtime_session = Session.create(
+    runtime_session = create_coding_session(
         InMemoryEventStore(), cwd=tmp_path, provider="fake", model="demo"
     )
     runtime = await CodeAgentRuntime.create(config, session=runtime_session)

@@ -45,6 +45,18 @@ _GENERATED_ID = re.compile(r"^[a-z][a-z0-9_]*_[0-9a-f]{24}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
+def _fixture_session_metadata(root: Path, **extra: Any) -> dict[str, Any]:
+    """Preserve the frozen v1 application metadata while testing an opaque Session."""
+
+    return {
+        "cwd": str(root.resolve()),
+        "provider": "fake",
+        "model": "fake-model",
+        "harness_version": "0.1.0",
+        **extra,
+    }
+
+
 def _coordinator(
     tmp_path: Path,
     steps: list[FakeStep],
@@ -67,7 +79,9 @@ async def _authorized_session(root: Path, store: InMemoryEventStore) -> Session:
     """Approval, lease, tool lifecycle, artifacts, memory and a subagent record."""
 
     session = Session.create(
-        store, cwd=root, provider="fake", model="fake-model", session_id="ses-golden-a"
+        store,
+        session_id="ses-golden-a",
+        metadata=_fixture_session_metadata(root),
     )
     session.add_message(Message(role="system", content=(), metadata={"origin": "project_rules"}))
     artifacts = FileArtifactStore(root / ".artifacts")
@@ -175,15 +189,13 @@ async def _delegating_session(root: Path, store: InMemoryEventStore) -> Session:
     def session_factory(spec: Any, context: Any) -> Session:
         return Session.create(
             store,
-            cwd=root,
-            provider="fake",
-            model="fake-model",
-            metadata={
-                "parent_session_id": context.session_id,
-                "parent_run_id": context.run_id,
-                "task_id": spec.task_id,
-                "depth": spec.depth,
-            },
+            metadata=_fixture_session_metadata(
+                root,
+                parent_session_id=context.session_id,
+                parent_run_id=context.run_id,
+                task_id=spec.task_id,
+                depth=spec.depth,
+            ),
         )
 
     runner = ChildRunSubagentRunner(
@@ -203,7 +215,9 @@ async def _delegating_session(root: Path, store: InMemoryEventStore) -> Session:
         ),
     )
     parent = Session.create(
-        store, cwd=root, provider="fake", model="fake-model", session_id="ses-golden-parent"
+        store,
+        session_id="ses-golden-parent",
+        metadata=_fixture_session_metadata(root),
     )
     coordinator = _coordinator(
         root,
@@ -223,7 +237,9 @@ async def _failure_session(root: Path, store: InMemoryEventStore) -> Session:
     """Rejection, compaction, repair, and the three non-happy terminals."""
 
     session = Session.create(
-        store, cwd=root, provider="fake", model="fake-model", session_id="ses-golden-b"
+        store,
+        session_id="ses-golden-b",
+        metadata=_fixture_session_metadata(root),
     )
     for index in range(12):
         session.add_message(Message.text("user", f"history {index} " + "x" * 90))

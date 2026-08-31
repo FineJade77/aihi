@@ -131,7 +131,7 @@ def test_construction_rejects_meaningless_bounds() -> None:
 @pytest.mark.asyncio
 async def test_the_run_records_which_generator_produced_the_summary(tmp_path: Path) -> None:
     session = Session.create(
-        InMemoryEventStore(), cwd=tmp_path, provider="fake", model="fake-model",
+        InMemoryEventStore(),
         session_id="ses-compact",
     )
     for index in range(20):

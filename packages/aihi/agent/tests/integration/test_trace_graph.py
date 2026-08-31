@@ -61,9 +61,7 @@ async def delegated_run(tmp_path: Path) -> tuple[Session, InMemoryEventStore, st
         registry=ToolRegistry([tool]),
         approval_resolver=StaticApprovalResolver(ApprovalOutcome.GRANTED),
     )
-    session = Session.create(
-        store, cwd=tmp_path, provider="fake", model="fake-model", session_id="ses-parent"
-    )
+    session = Session.create(store, session_id="ses-parent")
     result = await parent.run(
         session, model="fake-model", user_message=Message.text("user", "delegate")
     )
@@ -110,9 +108,7 @@ async def test_a_child_naming_a_parent_outside_the_graph_is_rejected(tmp_path: P
     child = Session.load(store, child_id)
 
     # Pair the child with a different parent session.
-    other = Session.create(
-        InMemoryEventStore(), cwd=tmp_path, provider="fake", model="fake-model", session_id="other"
-    )
+    other = Session.create(InMemoryEventStore(), session_id="other")
     with pytest.raises(EvalValidationError, match="names a parent outside this graph"):
         TraceGraph.from_sessions(list(other.events), [list(child.events)])
 
@@ -140,9 +136,7 @@ async def test_the_same_child_cannot_appear_twice(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_a_lone_parent_is_still_a_valid_graph(tmp_path: Path) -> None:
-    session = Session.create(
-        InMemoryEventStore(), cwd=tmp_path, provider="fake", model="fake-model", session_id="solo"
-    )
+    session = Session.create(InMemoryEventStore(), session_id="solo")
     coordinator = RunCoordinator(
         FakeProvider([FakeStep(text="no delegation here")]),
         registry=ToolRegistry(),

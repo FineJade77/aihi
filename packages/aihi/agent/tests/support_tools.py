@@ -112,10 +112,10 @@ def app_session_factory(
     def create(spec: Any, context: ToolContext[Any]) -> Session:
         return Session.create(
             store,
-            cwd=workspace,
-            provider=provider,
-            model=model,
             metadata={
+                "workspace": str(Path(workspace).resolve()),
+                "provider": provider,
+                "model": model,
                 "parent_session_id": context.session_id,
                 "parent_run_id": context.run_id,
                 "task_id": spec.task_id,

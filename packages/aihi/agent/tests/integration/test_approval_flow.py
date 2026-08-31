@@ -21,9 +21,6 @@ from packages.aihi.agent.tests.support_tools import WriteTestTool
 def session_for(tmp_path: Path, name: str, store: object | None = None) -> Session:
     return Session.create(
         store or InMemoryEventStore(),  # type: ignore[arg-type]
-        cwd=tmp_path,
-        provider="fake",
-        model="fake-model",
         session_id=name,
     )
 

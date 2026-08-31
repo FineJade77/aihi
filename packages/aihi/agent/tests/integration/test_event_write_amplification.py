@@ -27,9 +27,7 @@ class CountingEventStore(InMemoryEventStore):
 
 
 def session_for(store: InMemoryEventStore, tmp_path: Path, name: str) -> Session:
-    return Session.create(
-        store, cwd=tmp_path, provider="fake", model="fake-model", session_id=name
-    )
+    return Session.create(store, session_id=name)
 
 
 def test_emit_and_append_reject_the_wrong_durability(tmp_path: Path) -> None:

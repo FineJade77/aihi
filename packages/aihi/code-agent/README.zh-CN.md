@@ -71,6 +71,20 @@ Worker 通过 stdin/stdout 读写使用 Content-Length framing 的 JSON-RPC 2.0 
 
 通常由 CLI 启动 Worker；也可以将它嵌入实现同一协议的其他本地宿主之后。
 
+嵌入 Coding Runtime 的应用需要显式创建由应用拥有的 Session metadata：
+
+```python
+from aihi.agent import InMemoryEventStore
+from aihi.code_agent import create_coding_session
+
+session = create_coding_session(
+    InMemoryEventStore(),
+    cwd="/path/to/project",
+    provider="deepseek",
+    model="deepseek-chat",
+)
+```
+
 ## 配置
 
 配置路径是有意固定的，不支持通过命令行或环境变量覆盖配置目录。配置文件按从低到高的优先级合并：
@@ -122,8 +136,9 @@ command = "npx"
 args = ["-y", "some-mcp-server"]
 ```
 
-API Key 只放在环境变量中；`config.get` 只向外暴露非敏感 metadata。Workspace 不允许在 TOML 中配置，
-它就是创建 Session 时传入的 canonical `cwd`。`access_mode`、`run_mode`、该 Workspace 和命令 Sandbox
+API Key 只放在环境变量中；`config.get` 只向外暴露非敏感 metadata。Workspace 不允许在 TOML 中配置；
+`create_coding_session(...)` 会规范化传入的 `cwd`，并把它存为应用拥有的 Session metadata，基础 Harness
+不解释该字段。`access_mode`、`run_mode`、该 Workspace 和命令 Sandbox
 descriptor 一起持久化到 Run profile，因此 Resume 不能漂移或提升权限。Host 执行采用 fail-closed 策略，
 且不是隔离边界；交互式确认会按精确的 Session Workspace 写入 `~/.aihi/host-workspaces.json`。
 

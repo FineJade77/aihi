@@ -14,7 +14,6 @@ from aihi.agent import (
     RunResult,
     RunState,
     SandboxViolation,
-    Session,
 )
 from aihi.agent.sandbox.base import CommandResult
 from aihi.code_agent.config import (
@@ -39,6 +38,7 @@ from aihi.code_agent.evals import (
 )
 from aihi.code_agent.evals.dataset import CodeEvalValidationError
 from aihi.code_agent.permissions import AccessMode, RunMode
+from aihi.code_agent.sessions import create_coding_session
 
 from scripts.evals.context_baseline import context_reference_executor
 from scripts.evals.reference_baseline import reference_executor
@@ -89,7 +89,7 @@ async def _successful_executor(
 
 
 async def _completed_execution(workspace: Path, store: InMemoryEventStore) -> TaskExecution:
-    session = Session.create(store, cwd=workspace, provider="fake", model="demo")
+    session = create_coding_session(store, cwd=workspace, provider="fake", model="demo")
     session.append_many(
         [
             Event(type="run.started", session_id=session.id, run_id="run-1"),
@@ -321,7 +321,7 @@ async def test_code_eval_runner_classifies_cancellation_repaired_as_interrupted(
     async def interrupted_executor(
         _task: CodeTask, workspace: Path, store: InMemoryEventStore
     ) -> TaskExecution:
-        session = Session.create(store, cwd=workspace, provider="live", model="model")
+        session = create_coding_session(store, cwd=workspace, provider="live", model="model")
         try:
             await asyncio.sleep(2)
         except asyncio.CancelledError:
@@ -364,7 +364,7 @@ async def test_code_eval_runner_records_usage_cost_and_tool_metrics(tmp_path: Pa
         _task: CodeTask, workspace: Path, store: InMemoryEventStore
     ) -> TaskExecution:
         (workspace / "answer.txt").write_text("ok\n", encoding="utf-8")
-        session = Session.create(store, cwd=workspace, provider="live", model="model")
+        session = create_coding_session(store, cwd=workspace, provider="live", model="model")
         session.append_many(
             [
                 Event(type="run.started", session_id=session.id, run_id="run-live"),

@@ -189,8 +189,9 @@ Cache Hit Ratio、Cache Key 变化次数以及 Soft/Hard Compaction 次数。只
 
 Policy 输出 `ALLOW`、`DENY` 或 `ASK`。`ASK` 会持久化 `approval.requested` 并挂起 Run，由应用提供
 人工 Resolver。Approval 和 Capability Lease 按 `run_id` 作用域化，Resume 时从事件重建；一次性
-Approval 只能消费一次。Coding Workspace 是 Session 中持久化的 canonical cwd；TOML 只能从该目录
-发现配置，不能定义另一套 Workspace。文件 Tool 通过应用 Context 规范化路径并在本地执行，只有 Bash
+Approval 只能消费一次。Coding Workspace 是 Session 中以应用自有 metadata 持久化的 canonical cwd；
+基础 Harness 只负责不透明地持久化和 Fork 这些 metadata，不提供 cwd 属性或 Workspace 语义。TOML 只能
+从该目录发现配置，不能定义另一套 Workspace。文件 Tool 通过应用 Context 规范化路径并在本地执行，只有 Bash
 持有 Sandbox backend。`HostBackend` 需要显式 `unsafe=true`，只提供命令 cwd、超时、输出上限和进程组
 清理，不提供系统隔离；Docker 命令执行在能力不可用时 fail closed。
 

@@ -96,9 +96,7 @@ async def test_an_assembled_runtime_actually_runs(tmp_path: Path) -> None:
         .with_approvals(StaticApprovalResolver(ApprovalOutcome.GRANTED))
         .build()
     )
-    session = Session.create(
-        InMemoryEventStore(), cwd=tmp_path, provider="fake", model="fake-model"
-    )
+    session = Session.create(InMemoryEventStore())
 
     result = await runtime.coordinator.run(
         session, model=runtime.model, user_message=Message.text("user", "hi")
@@ -218,9 +216,6 @@ async def test_subagent_runtime_persists_injected_application_authority(tmp_path
     )
     parent = Session.create(
         store,
-        cwd=tmp_path,
-        provider="fake",
-        model="fake-model",
         session_id="ses-scoped-parent",
     )
 

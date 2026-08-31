@@ -41,9 +41,7 @@ class TracingTool:
 
 
 def session_for(tmp_path: Path, name: str) -> Session:
-    return Session.create(
-        InMemoryEventStore(), cwd=tmp_path, provider="fake", model="fake-model", session_id=name
-    )
+    return Session.create(InMemoryEventStore(), session_id=name)
 
 
 def call(name: str) -> ToolCallBlock:

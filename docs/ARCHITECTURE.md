@@ -217,9 +217,10 @@ Policy returns ALLOW, DENY or ASK. ASK persists approval.requested and suspends 
 supplies the human resolver. Approval and capability leases are append-only, scoped to run_id and
 reconstructed on resume. One-shot approvals are consumed exactly once.
 
-The Coding workspace is the canonical cwd stored in its Session; TOML may discover configuration from
-that directory but cannot define another workspace. File tools canonicalize and operate locally through
-the application context. Only Bash owns a Sandbox backend. HostBackend requires explicit unsafe=true and
+The Coding workspace is the canonical cwd stored as application-owned metadata in its Session; the base
+Harness persists and forks that metadata opaquely and has no cwd property or workspace semantics. TOML
+may discover configuration from that directory but cannot define another workspace. File tools canonicalize
+and operate locally through the application context. Only Bash owns a Sandbox backend. HostBackend requires explicit unsafe=true and
 provides command cwd, timeouts, output limits and process-group cleanup, not isolation. Docker command
 execution fails closed when required capabilities are unavailable.
 

@@ -39,6 +39,7 @@ from aihi.code_agent.evals.workspace import WorkspaceManager, changed_paths
 from aihi.code_agent.permissions import AccessMode, RunMode
 from aihi.code_agent.prompts import load_builtin_prompt
 from aihi.code_agent.runtime import CodeAgentRuntime
+from aihi.code_agent.sessions import create_coding_session
 
 _MAX_COMMAND_OUTPUT = 4_096
 
@@ -285,7 +286,7 @@ class CodeAgentEvalRunner:
             audit_path=None,
             sandbox=replace(self.config.sandbox, allow_network=False),
         )
-        session = Session.create(
+        session = create_coding_session(
             store,
             cwd=workspace,
             provider=scoped.provider.name,

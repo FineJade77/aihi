@@ -131,9 +131,6 @@ def test_session_event_observer_sees_persisted_events_without_becoming_authority
     sink = InMemoryTelemetrySink()
     session = Session.create(
         InMemoryEventStore(),
-        cwd=tmp_path,
-        provider="fake",
-        model="test",
         session_id="ses-observed",
         event_observer=Telemetry(sink).record_event,
     )

@@ -119,14 +119,14 @@ filesystem abstraction.
 | Slice | Scope | Acceptance |
 | --- | --- | --- |
 | H-20.1 | `PreparedToolCall`, typed application context and opaque run profile | Validation precedes side-effect-free preparation; Policy and Tool execution consume the same normalized input; Resume rejects profile drift |
-| H-20.2 | Command-only Sandbox and Runtime decoupling | Sandbox exposes only command execution; Runtime, Session, Hook and generic Tool context contain no workspace or global Sandbox assumption |
+| H-20.2 | Command-only Sandbox and Runtime decoupling | Sandbox exposes only command execution; Runtime, Session, Hook and generic Tool context contain no workspace or global Sandbox assumption; Session persists application metadata opaquely |
 | H-20.3 | Generic delegation scope | Base Subagent types contain no Coding workspace or permission mode; an injected application policy proves child authority is a subset |
 
 ### P-07 — Coding workspace and permission ownership
 
 **Status: Done.** `aihi-code-agent` now owns Coding tools, canonical workspace handling,
-`AccessMode`, `RunMode` and command-sandbox selection. The Coding workspace is the canonical `cwd` supplied
-when its Session is created; TOML discovers configuration from that workspace but never defines it.
+`AccessMode`, `RunMode` and command-sandbox selection. `create_coding_session(...)` canonicalizes the supplied
+`cwd` into application-owned Session metadata; TOML discovers configuration from that workspace but never defines it.
 
 | Slice | Scope | Acceptance |
 | --- | --- | --- |

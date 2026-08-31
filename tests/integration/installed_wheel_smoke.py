@@ -26,7 +26,7 @@ from aihi.agent import (
     ToolRegistry,
     restrict_registry,
 )
-from aihi.code_agent import AccessMode, RunMode
+from aihi.code_agent import AccessMode, RunMode, create_coding_session
 from aihi.code_agent.config import CodeAgentConfig
 from aihi.code_agent.permissions import CodeAgentPermissionContext
 from aihi.code_agent.tools import ReadFileTool, WriteFileTool
@@ -51,9 +51,7 @@ async def main(workspace: Path) -> None:
         command_sandbox=sandbox.descriptor,
     )
 
-    basic_session = Session.create(
-        InMemoryEventStore(), cwd=workspace, provider="fake", model="fake-model"
-    )
+    basic_session = Session.create(InMemoryEventStore())
     cache_provider = FakeProvider(
         [
             FakeStep(
@@ -86,9 +84,10 @@ async def main(workspace: Path) -> None:
     assert isinstance(cache_usage.data["cache_key_hash"], str)
 
     (workspace / "note.txt").write_text("wheel smoke", encoding="utf-8")
-    tool_session = Session.create(
+    tool_session = create_coding_session(
         InMemoryEventStore(), cwd=workspace, provider="fake", model="fake-model"
     )
+    assert tool_session.metadata["cwd"] == str(workspace.resolve())
     tool_run = await RunCoordinator(
         FakeProvider(
             [
@@ -110,9 +109,7 @@ async def main(workspace: Path) -> None:
         for result in message.tool_results
     )
 
-    approval_session = Session.create(
-        InMemoryEventStore(), cwd=workspace, provider="fake", model="fake-model"
-    )
+    approval_session = Session.create(InMemoryEventStore())
     approval = await RunCoordinator(
         FakeProvider(
             [FakeStep.call_tool("write_file", {"path": "blocked.txt", "content": "x"})]
@@ -128,9 +125,7 @@ async def main(workspace: Path) -> None:
     assert not (workspace / "blocked.txt").exists()
 
     interrupted_store = InMemoryEventStore()
-    interrupted_session = Session.create(
-        interrupted_store, cwd=workspace, provider="fake", model="fake-model"
-    )
+    interrupted_session = Session.create(interrupted_store)
     cancel = asyncio.Event()
     cancel.set()
     interrupted = await RunCoordinator(
@@ -151,9 +146,7 @@ async def main(workspace: Path) -> None:
     assert resumed.state == RunState.COMPLETED
     assert reloaded.orphan_tool_calls == ()
 
-    compact_session = Session.create(
-        InMemoryEventStore(), cwd=workspace, provider="fake", model="fake-model"
-    )
+    compact_session = Session.create(InMemoryEventStore())
     for index in range(20):
         compact_session.add_message(Message.text("user", f"history {index} " + "x" * 80))
     raw_tokens = estimate_messages_tokens(compact_session.messages)
@@ -178,9 +171,6 @@ async def main(workspace: Path) -> None:
     def child_session(spec, context):
         return Session.create(
             store,
-            cwd=workspace,
-            provider="fake",
-            model="fake-model",
             metadata={"parent_session_id": context.session_id, "task_id": spec.task_id},
         )
 
@@ -203,9 +193,7 @@ async def main(workspace: Path) -> None:
             capabilities=frozenset({SPAWN_CAPABILITY, "filesystem.read"}),
         ),
     )
-    parent_session = Session.create(
-        store, cwd=workspace, provider="fake", model="fake-model"
-    )
+    parent_session = Session.create(store)
     delegated = await RunCoordinator(
         FakeProvider(
             [FakeStep.call_tool("task", {"objective": "inspect"}), FakeStep(text="parent done")]

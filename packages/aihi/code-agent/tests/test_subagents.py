@@ -147,8 +147,9 @@ def _task_spec(capabilities: set[str]):
 
 
 async def test_explore_child_gets_only_its_declared_tools(tmp_path) -> None:
-    from aihi.agent import InMemoryEventStore, Session
+    from aihi.agent import InMemoryEventStore
     from aihi.code_agent.runtime import CodeAgentRuntime
+    from aihi.code_agent.sessions import create_coding_session
 
     path = tmp_path / "aihi-code.toml"
     path.write_text(
@@ -158,7 +159,7 @@ async def test_explore_child_gets_only_its_declared_tools(tmp_path) -> None:
         encoding="utf-8",
     )
     config = load_config(path, cwd=tmp_path)
-    session = Session.create(
+    session = create_coding_session(
         InMemoryEventStore(), cwd=tmp_path, provider="fake", model="demo"
     )
     runtime = await CodeAgentRuntime.create(config, session=session)

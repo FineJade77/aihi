@@ -64,6 +64,20 @@ The Worker reads and writes Content-Length framed JSON-RPC 2.0 messages on stdin
 
 The Worker is normally launched by the CLI. It can also be embedded behind another local host that implements the same protocol.
 
+Applications embedding the Coding runtime create its application-owned Session metadata explicitly:
+
+```python
+from aihi.agent import InMemoryEventStore
+from aihi.code_agent import create_coding_session
+
+session = create_coding_session(
+    InMemoryEventStore(),
+    cwd="/path/to/project",
+    provider="deepseek",
+    model="deepseek-chat",
+)
+```
+
 ## Configuration
 
 Configuration paths are fixed by design; there is no command-line or environment-variable override for the config directory. Files are merged from low to high precedence:
@@ -115,7 +129,7 @@ command = "npx"
 args = ["-y", "some-mcp-server"]
 ```
 
-API keys stay in environment variables; configuration exposes only non-secret metadata through `config.get`. The workspace is never configured in TOML: it is the canonical `cwd` supplied when the Session is created. `access_mode`, `run_mode`, that workspace and the command-sandbox descriptor are persisted in the Run profile, so Resume cannot drift or upgrade authority. Host execution is fail-closed and is not an isolation boundary; interactive acknowledgement is stored for the exact Session workspace in `~/.aihi/host-workspaces.json`.
+API keys stay in environment variables; configuration exposes only non-secret metadata through `config.get`. The workspace is never configured in TOML: `create_coding_session(...)` canonicalizes the supplied `cwd` and stores it as application-owned Session metadata. The base Harness does not interpret it. `access_mode`, `run_mode`, that workspace and the command-sandbox descriptor are persisted in the Run profile, so Resume cannot drift or upgrade authority. Host execution is fail-closed and is not an isolation boundary; interactive acknowledgement is stored for the exact Session workspace in `~/.aihi/host-workspaces.json`.
 
 `read_only` denies mutation and process execution; `workspace_write` allows application-owned local file edits but asks before Bash or other external mutation; `full_access` allows privileged tools after hard safety checks. `plan` is an independent hard read-only ceiling and cannot be bypassed by approval.
 

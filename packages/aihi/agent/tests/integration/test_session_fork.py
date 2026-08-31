@@ -23,9 +23,6 @@ from packages.aihi.agent.tests.support_tools import WriteTestTool
 async def two_turn_session(tmp_path: Path, store: object | None = None) -> Session:
     session = Session.create(
         store or InMemoryEventStore(),  # type: ignore[arg-type]
-        cwd=tmp_path,
-        provider="fake",
-        model="fake-model",
         session_id="ses-parent",
     )
     coordinator = RunCoordinator(
@@ -119,9 +116,7 @@ async def test_both_branches_replay_independently(tmp_path: Path) -> None:
 async def test_forking_mid_tool_call_leaves_an_orphan_the_next_run_repairs(
     tmp_path: Path,
 ) -> None:
-    session = Session.create(
-        InMemoryEventStore(), cwd=tmp_path, provider="fake", model="fake-model"
-    )
+    session = Session.create(InMemoryEventStore())
     coordinator = RunCoordinator(
         FakeProvider(
             [

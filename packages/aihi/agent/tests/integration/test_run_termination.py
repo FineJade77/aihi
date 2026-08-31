@@ -18,9 +18,7 @@ from packages.aihi.agent.tests.support_tools import WriteTestTool
 
 
 def session_for(tmp_path: Path, name: str) -> Session:
-    return Session.create(
-        InMemoryEventStore(), cwd=tmp_path, provider="fake", model="fake-model", session_id=name
-    )
+    return Session.create(InMemoryEventStore(), session_id=name)
 
 
 def coordinator_for(tmp_path: Path, steps: list[FakeStep]) -> RunCoordinator:

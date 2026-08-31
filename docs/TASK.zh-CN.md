@@ -97,14 +97,14 @@ Context，应用持久化不透明的 Run 权限 Profile；Sandbox 从 Runtime �
 | 切片 | 范围 | 验收 |
 | --- | --- | --- |
 | H-20.1 | `PreparedToolCall`、类型化应用 Context 和不透明 Run Profile | 先校验再做无副作用 Prepare；Policy 与 Tool 执行消费同一份规范化输入；Resume 拒绝 Profile 漂移 |
-| H-20.2 | 纯命令 Sandbox 与 Runtime 解耦 | Sandbox 只暴露命令执行；Runtime、Session、Hook 和通用 Tool Context 不包含 workspace 或全局 Sandbox 假设 |
+| H-20.2 | 纯命令 Sandbox 与 Runtime 解耦 | Sandbox 只暴露命令执行；Runtime、Session、Hook 和通用 Tool Context 不包含 workspace 或全局 Sandbox 假设；Session 只不透明持久化应用 metadata |
 | H-20.3 | 通用委派 Scope | 基础 Subagent 类型不包含 Coding workspace 或权限模式；由注入的应用 Policy 证明子权限是父权限子集 |
 
 ### P-07：Coding Workspace 与权限归属
 
 **状态：Done。** Coding Tool、canonical workspace、`AccessMode`、`RunMode` 和命令
-Sandbox 选择均已归属 `aihi-code-agent`。Coding workspace 是创建 Session 时传入的 canonical `cwd`；
-TOML 只从该 workspace 发现配置，不能定义 workspace。
+Sandbox 选择均已归属 `aihi-code-agent`。`create_coding_session(...)` 将传入的 `cwd` 规范化为应用拥有的
+Session metadata；TOML 只从该 workspace 发现配置，不能定义 workspace。
 
 | 切片 | 范围 | 验收 |
 | --- | --- | --- |

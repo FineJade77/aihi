@@ -37,6 +37,7 @@ from aihi.code_agent.config import (
     load_worker_config,
 )
 from aihi.code_agent.runtime import CodeAgentRuntime
+from aihi.code_agent.sessions import CodingSessionMetadata, create_coding_session
 from aihi.code_agent.skills import builtin_skill_root
 
 from ..protocol import (
@@ -321,7 +322,7 @@ class WorkerServer:
         ):
             raise RpcValidationError("session_id must be a non-empty string", code=INVALID_PARAMS)
         metadata = self._optional_mapping(params, "metadata")
-        session = Session.create(
+        session = create_coding_session(
             self._ensure_store(),
             cwd=cwd,
             provider=selected.provider.name,
@@ -335,20 +336,20 @@ class WorkerServer:
 
     def _session_list(self, params: JsonObject) -> JsonObject:
         limit = self._limit(params.get("limit", 50), name="limit", maximum=100)
-        sessions = self._ensure_store().list_sessions(limit=limit)
-        return {
-            "sessions": [
+        sessions: list[JsonObject] = []
+        for info in self._ensure_store().list_sessions(limit=limit):
+            coding = CodingSessionMetadata.from_mapping(info.metadata)
+            sessions.append(
                 {
                     "session_id": info.session_id,
-                    "cwd": str(info.metadata["cwd"]),
+                    "cwd": str(coding.workspace),
                     "head_seq": info.head_seq,
                     "created_at": info.created_at,
                     "metadata": deepcopy(info.metadata),
                     "parent_session_id": info.parent_session_id,
                 }
-                for info in sessions
-            ]
-        }
+            )
+        return {"sessions": sessions}
 
     def _session_fork(self, params: JsonObject) -> JsonObject:
         session = self._load_session(params)
@@ -526,7 +527,7 @@ class WorkerServer:
             params.get("max_output_tokens"), "max_output_tokens"
         )
         run_id = self._optional_text_value(params.get("run_id"), "run_id", max_length=256)
-        config = self._config_loader(session.cwd)
+        config = self._config_loader(CodingSessionMetadata.from_session(session).workspace)
         config = config.select_provider(provider, model=model)
         return asyncio.run(
             self._execute_run_start(
@@ -599,7 +600,7 @@ class WorkerServer:
         max_output_tokens = self._optional_positive_int(
             params.get("max_output_tokens"), "max_output_tokens"
         )
-        config = self._config_loader(session.cwd)
+        config = self._config_loader(CodingSessionMetadata.from_session(session).workspace)
         return asyncio.run(
             self._execute_run_resume(
                 config,
@@ -666,7 +667,7 @@ class WorkerServer:
         session = self._load_session(params)
         run_id = self._required_text(params, "run_id", max_length=256)
         reason = self._optional_text_value(params.get("reason"), "reason", max_length=4_096)
-        config = self._config_loader(session.cwd)
+        config = self._config_loader(CodingSessionMetadata.from_session(session).workspace)
         return asyncio.run(self._execute_run_cancel(config, session, run_id=run_id, reason=reason))
 
     @staticmethod
@@ -822,7 +823,7 @@ class WorkerServer:
 
     def _skill_list(self, params: JsonObject) -> JsonObject:
         session = self._load_session(params)
-        config = self._config_loader(session.cwd)
+        config = self._config_loader(CodingSessionMetadata.from_session(session).workspace)
         discovery, trust = self._skill_components(config)
         candidates = discovery.discover()
         return {
@@ -851,7 +852,7 @@ class WorkerServer:
         enable = params.get("enable", True)
         if not isinstance(enable, bool):
             raise RpcValidationError("enable must be a boolean", code=INVALID_PARAMS)
-        config = self._config_loader(session.cwd)
+        config = self._config_loader(CodingSessionMetadata.from_session(session).workspace)
         discovery, trust = self._skill_components(config)
         candidate = discovery.resolve(name)
         record = trust.trust(candidate, trusted_by=trusted_by, enable=enable)
@@ -860,7 +861,7 @@ class WorkerServer:
     def _skill_untrust(self, params: JsonObject) -> JsonObject:
         session = self._load_session(params)
         name = self._required_text(params, "name", max_length=256)
-        config = self._config_loader(session.cwd)
+        config = self._config_loader(CodingSessionMetadata.from_session(session).workspace)
         discovery, trust = self._skill_components(config)
         candidate = discovery.resolve(name)
         if candidate.scope is SkillScope.BUILTIN:
@@ -875,7 +876,7 @@ class WorkerServer:
 
     def _mcp_list(self, params: JsonObject) -> JsonObject:
         session = self._load_session(params)
-        config = self._config_loader(session.cwd)
+        config = self._config_loader(CodingSessionMetadata.from_session(session).workspace)
         return {
             "session_id": session.id,
             "servers": [
@@ -897,7 +898,7 @@ class WorkerServer:
 
     def _tool_list(self, params: JsonObject) -> JsonObject:
         session = self._load_session(params)
-        config = self._config_loader(session.cwd)
+        config = self._config_loader(CodingSessionMetadata.from_session(session).workspace)
         names = list(config.tools)
         if config.skill_load_tool and "load_skill" not in names:
             names.append("load_skill")
@@ -1025,9 +1026,10 @@ class WorkerServer:
 
     def _session_descriptor(self, session: Session) -> JsonObject:
         info = self._ensure_store().get(session.id)
+        coding = CodingSessionMetadata.from_session(session)
         return {
             "session_id": info.session_id,
-            "cwd": str(session.cwd),
+            "cwd": str(coding.workspace),
             "head_seq": info.head_seq,
             "created_at": info.created_at,
             "metadata": deepcopy(info.metadata),

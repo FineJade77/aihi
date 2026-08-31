@@ -15,9 +15,6 @@ from packages.aihi.agent.tests.support_tools import WriteTestTool
 def make_session(store, cwd: Path, session_id: str) -> Session:
     return Session.create(
         store,
-        cwd=cwd,
-        provider="fake",
-        model="fake-model",
         session_id=session_id,
     )
 

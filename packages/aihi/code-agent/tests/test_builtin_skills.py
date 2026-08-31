@@ -11,6 +11,7 @@ from aihi.agent import (
 from aihi.agent.tools import ToolContext
 from aihi.code_agent.config import CodeAgentConfigError, load_config
 from aihi.code_agent.runtime import CodeAgentRuntime
+from aihi.code_agent.sessions import create_coding_session
 from aihi.code_agent.skills import BUILTIN_SKILL_NAMES, builtin_skill_root
 
 _MINIMAL_CONFIG = (
@@ -19,7 +20,7 @@ _MINIMAL_CONFIG = (
 
 
 def _session(tmp_path) -> Session:
-    return Session.create(
+    return create_coding_session(
         InMemoryEventStore(), cwd=tmp_path, provider="fake", model="demo"
     )
 

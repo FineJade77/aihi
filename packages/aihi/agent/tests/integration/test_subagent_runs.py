@@ -74,9 +74,7 @@ def build(
         registry=ToolRegistry([tool]),
         approval_resolver=StaticApprovalResolver(ApprovalOutcome.GRANTED),
     )
-    session = Session.create(
-        store, cwd=tmp_path, provider="fake", model="fake-model", session_id="ses-parent"
-    )
+    session = Session.create(store, session_id="ses-parent")
     return parent, session, store, full_registry
 
 
@@ -167,9 +165,7 @@ async def test_child_budget_is_clamped_to_the_parent_ceiling(tmp_path: Path) -> 
         registry=ToolRegistry([tool]),
         approval_resolver=StaticApprovalResolver(ApprovalOutcome.GRANTED),
     )
-    session = Session.create(
-        InMemoryEventStore(), cwd=tmp_path, provider="fake", model="fake-model"
-    )
+    session = Session.create(InMemoryEventStore())
 
     await parent.run(session, model="fake-model", user_message=Message.text("user", "go"))
 
@@ -244,9 +240,7 @@ async def test_a_suspended_child_is_reported_without_failing_the_parent(tmp_path
         registry=ToolRegistry([tool]),
         approval_resolver=StaticApprovalResolver(ApprovalOutcome.GRANTED),
     )
-    session = Session.create(
-        store, cwd=workspace, provider="fake", model="fake-model", session_id="ses-suspend"
-    )
+    session = Session.create(store, session_id="ses-suspend")
 
     result = await parent.run(
         session, model="fake-model", user_message=Message.text("user", "delegate")
@@ -290,9 +284,7 @@ async def test_child_run_receives_injected_application_authority(tmp_path: Path)
             registry=ToolRegistry([SubagentTool(runner, authority=authority_for())]),
             approval_resolver=StaticApprovalResolver(ApprovalOutcome.GRANTED),
         )
-        session = Session.create(
-            InMemoryEventStore(), cwd=tmp_path, provider="fake", model="fake-model"
-        )
+        session = Session.create(InMemoryEventStore())
         return coordinator, session
 
     coordinator, session = parent_for()

@@ -84,9 +84,6 @@ class SequencedTokenCountProvider(FakeProvider):
 def make_session(tmp_path: Path, name: str) -> Session:
     return Session.create(
         InMemoryEventStore(),
-        cwd=tmp_path,
-        provider="fake",
-        model="fake-model",
         session_id=name,
     )
 
@@ -381,9 +378,6 @@ async def test_context_state_survives_reload_fork_and_provider_switch(
     store = InMemoryEventStore()
     session = Session.create(
         store,
-        cwd=session_tmp_path,
-        provider="fake-a",
-        model="model-a",
         session_id="ses-context-portable",
     )
     for index in range(20):

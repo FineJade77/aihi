@@ -25,6 +25,7 @@ from ..permissions import (
     RunMode,
     build_run_profile,
 )
+from ..sessions import create_coding_session
 
 _ACCESS_RANK = {
     AccessMode.READ_ONLY: 0,
@@ -81,7 +82,7 @@ def coding_session_factory(
     """Create child Sessions in the parent Coding workspace."""
 
     def factory(spec: TaskSpec, context: ToolContext[object]) -> Session:
-        return Session.create(
+        return create_coding_session(
             store,
             cwd=workspace,
             provider=provider,
