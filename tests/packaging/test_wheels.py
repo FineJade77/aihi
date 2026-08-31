@@ -107,6 +107,11 @@ def test_release_manifest_contains_only_the_foundation_distributions() -> None:
     assert code_agent["tool"]["aihi"]["release"]["publish"] is False
     assert "Private :: Do Not Upload" in code_agent["project"]["classifiers"]
 
+    with (REPOSITORY / "uv.lock").open("rb") as source:
+        lock = tomllib.load(source)
+    assert lock["manifest"]["members"] == ["aihi-agent", "aihi-models"]
+    assert not any(package["name"] == "aihi-code-agent" for package in lock["package"])
+
 
 def test_wheels_contain_only_their_namespace_leaf(wheels: dict[str, Path]) -> None:
     for leaf, wheel in wheels.items():
@@ -128,7 +133,7 @@ def test_agent_wheel_declares_the_models_dependency(wheels: dict[str, Path]) -> 
         for line in metadata.splitlines()
         if line.startswith("Requires-Dist:")
     ]
-    assert "aihi-models<0.2,>=0.1" in requirements
+    assert "aihi-models<0.3,>=0.2" in requirements
 
 
 def test_installed_wheels_coexist_run_and_remain_typed(

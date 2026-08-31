@@ -4,7 +4,7 @@
 
 面向 AIHI 的无 UI Coding Agent Runtime 和 stdio Worker。
 
-`aihi-code-agent` 是私有 workspace 应用层包，负责将 `aihi-models` 与 `aihi-agent` 组合为 Coding
+`aihi-code-agent` 是位于 uv workspace 之外的私有本地应用层包，负责将 `aihi-models` 与 `aihi-agent` 组合为 Coding
 工作流。它拥有配置、Coding Prompt、Workspace Tool、Skill/MCP 集成、Subagent、审计接线和 Worker
 入口，不发布到 PyPI；TypeScript TUI 位于另一个私有 workspace 包中。
 
@@ -33,20 +33,15 @@ aihi-models  →  aihi-agent  →  aihi-code-agent Worker  ←  @aihi/code-cli
 
 ## 安装
 
-本应用从仓库 workspace 安装，不从 PyPI 安装。在仓库根目录执行：
+本应用从仓库源码单独安装，不从 PyPI 安装。在仓库根目录执行：
 
 ```bash
 uv sync
-```
-
-要在已有 Python 环境中暴露 Worker，以 editable 模式安装 workspace 源码：
-
-```bash
 uv pip install -e packages/aihi/code-agent
 ```
 
-该 workspace 包要求 Python 3.11+，并在 workspace/editable 安装后提供
-`aihi-code-agent-worker` console script。公开 PyPI distribution 只有 `aihi-models` 与 `aihi-agent`。
+该本地包要求 Python 3.11+，并在单独的 editable 安装后提供 `aihi-code-agent-worker` console
+script。公开 PyPI distribution 只有 `aihi-models` 与 `aihi-agent`。
 
 ## 启动 Worker
 

@@ -4,13 +4,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "aihi-agent"
-version = "0.1.0"
+version = "0.2.0"
 description = "Recoverable provider-neutral Agent Runtime for AIHI"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 dependencies = [
-  "aihi-models>=0.1,<0.2",
+  "aihi-models>=0.2,<0.3",
 ]
 
 classifiers = [

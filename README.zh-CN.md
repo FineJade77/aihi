@@ -62,11 +62,15 @@ pnpm install
 PyPI 只发布两个基础 distribution：
 
 ```bash
-python -m pip install aihi-models==0.1.0 aihi-agent==0.1.0
+python -m pip install aihi-models==0.2.0 aihi-agent==0.2.0
 ```
 
-`aihi-code-agent` 是私有 workspace 应用，不发布到 PyPI。`uv sync` 会为仓库开发安装它；已有
-Python 环境可使用 `uv pip install -e packages/aihi/code-agent` 暴露本地 Worker。
+`aihi-code-agent` 是私有本地应用，不发布到 PyPI，有意不加入 uv workspace；从源码运行 Worker
+或 CLI 时单独执行：
+
+```bash
+uv pip install -e packages/aihi/code-agent
+```
 
 ### 运行检查
 
@@ -101,7 +105,7 @@ pnpm --dir apps/aihi-code-cli start -- --workspace /path/to/project
 - [任务路线图](docs/TASK.zh-CN.md)
 - [各项目 README](packages/aihi/models/README.zh-CN.md)
 
-PyPI：[`aihi-models`](https://pypi.org/project/aihi-models/0.1.0/) · [`aihi-agent`](https://pypi.org/project/aihi-agent/0.1.0/)。`aihi-code-agent` 仅在 workspace 内使用。
+PyPI：[`aihi-models`](https://pypi.org/project/aihi-models/0.2.0/) · [`aihi-agent`](https://pypi.org/project/aihi-agent/0.2.0/)。`aihi-code-agent` 仅作为 uv workspace 外的私有本地应用使用。
 
 ADR/RFC 仅保存在本地 `docs/adr/` 和 `docs/rfcs/`，不会提交到 Git。
 

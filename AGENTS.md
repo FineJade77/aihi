@@ -45,13 +45,14 @@ aihi.models must not import aihi.agent; base packages must not import applicatio
 not copy runtime or safety implementations. aihi.agent.agents is subagent coordination infrastructure,
 not the directory for a user-facing Agent product.
 
-The two public Python distributions are published at version 0.1.0:
+The two public Python distributions are published at version 0.2.0:
 
-- [aihi-models on PyPI](https://pypi.org/project/aihi-models/0.1.0/)
-- [aihi-agent on PyPI](https://pypi.org/project/aihi-agent/0.1.0/)
+- [aihi-models on PyPI](https://pypi.org/project/aihi-models/0.2.0/)
+- [aihi-agent on PyPI](https://pypi.org/project/aihi-agent/0.2.0/)
 
-aihi-code-agent is a private workspace application package. Keep it installable for local Worker/CLI
-development, but do not build or publish it as a PyPI release artifact.
+aihi-code-agent is a private local application package outside the uv workspace. Keep it installable
+for local Worker/CLI development with a separate editable install, but do not build or publish it as a
+PyPI release artifact.
 
 ## Choose the right layer
 
@@ -78,7 +79,7 @@ Requirements:
 - Node.js 20+
 - pnpm 9
 
-Install the workspace:
+Install the public uv workspace:
 
 ```bash
 uv sync
@@ -88,11 +89,11 @@ pnpm install
 Install the public foundation packages from PyPI:
 
 ```bash
-python -m pip install aihi-models==0.1.0 aihi-agent==0.1.0
+python -m pip install aihi-models==0.2.0 aihi-agent==0.2.0
 ```
 
-The Coding Agent runs from this workspace. Use editable installs only when you need to test source
-changes in an existing Python environment:
+The Coding Agent is outside the uv workspace. Install its source separately when running the local
+Worker/CLI or testing application changes:
 
 ```bash
 uv pip install -e packages/aihi/models
@@ -145,6 +146,10 @@ python3 -m build --sdist --wheel --no-isolation --outdir dist/pypi packages/aihi
 python3 -m build --sdist --wheel --no-isolation --outdir dist/pypi packages/aihi/agent
 python3 -m twine check dist/pypi/aihi_models-* dist/pypi/aihi_agent-*
 ```
+
+Update package versions, dependency ranges and public README install commands before building. PyPI
+captures each package README as release metadata, so a stale long description requires a new release
+rather than an in-place metadata refresh.
 
 Packaging tests must verify wheel layout, PEP 420 namespace coexistence, py.typed, dependency metadata,
 installed-wheel smoke behavior, the exclusion of aihi-code-agent and frozen compatibility fixtures.

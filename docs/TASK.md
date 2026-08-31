@@ -8,7 +8,7 @@
 | Field | Value |
 | --- | --- |
 | Status | Foundation complete; application and platform roadmap remains |
-| Current release line | Public aihi-models and aihi-agent 0.1.0 on PyPI; Code Protocol 0.3 |
+| Current release line | Public aihi-models and aihi-agent 0.2.0 on PyPI; Code Protocol 0.3 |
 | Architecture | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | Last completed slice | P-08 public Python distribution boundary |
 
@@ -50,7 +50,7 @@ The repository is a multi-package monorepo with a runnable local Coding Agent ve
 | aihi-code-agent | Coding configuration, project/user .aihi config discovery, provider/model catalog, Worker, Session/Run/Task APIs, Coding tools and TUI composition | Done |
 | @aihi/code-protocol | Code Protocol 0.3 DTOs, method map, guards and schemas | Done |
 | @aihi/code-cli | Ink TUI, transcript replay, scrolling/composer UX, session/model pickers, slash commands, approvals, skills/MCP/tools management and doctor checks | Done |
-| Packaging | Public aihi-models/aihi-agent wheels, PEP 420 namespace, installed-wheel compatibility, frozen fixture replay, and workspace-only aihi-code-agent | Done |
+| Packaging | Public aihi-models/aihi-agent wheels, PEP 420 namespace, installed-wheel compatibility, frozen fixture replay, and private local aihi-code-agent outside uv workspace | Done |
 | Operability | Redacted local audit.jsonl, doctor audit target checks, session recovery and replay diagnostics | Done |
 
 ### Foundation history
@@ -136,8 +136,9 @@ filesystem abstraction.
 
 ### P-08 — Public Python distribution boundary
 
-**Status: Done.** Only `aihi-models` and `aihi-agent` are public PyPI release artifacts.
-`aihi-code-agent` remains an installable private workspace application so the local Worker, CLI and
+**Status: Done.** Only `aihi-models` and `aihi-agent` are public PyPI release artifacts; both are
+published at `0.2.0`.
+`aihi-code-agent` remains an installable private local application outside the uv workspace so the local Worker, CLI and
 tests can compose it without turning product code into a third public distribution.
 
 | Slice | Scope | Acceptance |

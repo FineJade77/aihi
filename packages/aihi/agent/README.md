@@ -43,10 +43,10 @@ The event store is the source of truth. Tool calls are recorded before execution
 Published release:
 
 ```bash
-python -m pip install aihi-agent==0.1.0
+python -m pip install aihi-agent==0.2.0
 ```
 
-See the [PyPI project page](https://pypi.org/project/aihi-agent/0.1.0/). It installs the compatible
+See the [PyPI project page](https://pypi.org/project/aihi-agent/0.2.0/). It installs the compatible
 `aihi-models` dependency automatically. For repository development:
 
 From the workspace:

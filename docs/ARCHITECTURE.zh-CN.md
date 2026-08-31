@@ -92,7 +92,7 @@ Tool input → 校验/Prepare → Policy/Approval → Hook → 受治理的 Tool
 ```text
 packages/aihi/models         aihi-models；模型契约与 Provider
 packages/aihi/agent          aihi-agent；Runtime、Session、Tool、安全链路
-packages/aihi/code-agent     aihi-code-agent；私有 workspace Coding Worker 与应用组合
+packages/aihi/code-agent     aihi-code-agent；位于 uv workspace 外的私有本地 Coding Worker 与应用组合
 packages/aihi/code-protocol  @aihi/code-protocol；DTO 与 JSON Schema
 apps/aihi-code-cli           @aihi/code-cli；Ink TUI
 tests/                       契约、集成、打包和冻结 fixture
@@ -256,10 +256,10 @@ pnpm --dir apps/aihi-code-cli test
 `__all__` 导出无任何绑定的名字，都会让构建失败。这些是 wheel 元数据查不出的——开发态下三个 `src`
 都在 `pythonpath` 上，反向导入既能通过类型检查也能运行。
 
-公开 PyPI distribution 只有当前版本为 `0.1.0` 的
-[`aihi-models`](https://pypi.org/project/aihi-models/0.1.0/) 与
-[`aihi-agent`](https://pypi.org/project/aihi-agent/0.1.0/)。`aihi-code-agent` 仍是可安装的私有 workspace
-应用，供本地 Worker 和 CLI 使用，但不属于 PyPI release artifact。根 `pyproject.toml` 中的
+公开 PyPI distribution 只有当前版本为 `0.2.0` 的
+[`aihi-models`](https://pypi.org/project/aihi-models/0.2.0/) 与
+[`aihi-agent`](https://pypi.org/project/aihi-agent/0.2.0/)。`aihi-code-agent` 仍是可安装的私有本地应用，
+位于 uv workspace 之外，供本地 Worker 和 CLI 使用，但不属于 PyPI release artifact。根 `pyproject.toml` 中的
 `tool.aihi.release.python-distributions` 是公开发布清单的唯一事实源；code-agent 还声明
 `Private :: Do Not Upload`，阻止误操作直接上传到 PyPI。
 

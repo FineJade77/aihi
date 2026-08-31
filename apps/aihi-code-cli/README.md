@@ -36,7 +36,7 @@ The TUI owns presentation and user interaction. The Worker owns configuration, p
 - Node.js 20 or newer
 - pnpm 9
 - Python 3.11 or newer
-- An installed or workspace-available `aihi-code-agent-worker`
+- A separately editable-installed `aihi-code-agent-worker`
 
 ## Install and build
 
@@ -45,17 +45,13 @@ From the repository root:
 ```bash
 uv sync
 pnpm install
+uv pip install -e packages/aihi/code-agent
 pnpm --filter @aihi/code-cli build
 ```
 
-The Python Worker is workspace-only. `uv sync` above installs it; to expose it in another local Python
-environment, use:
-
-```bash
-uv pip install -e packages/aihi/code-agent
-```
-
-It is not published to PyPI. The public Python distributions are `aihi-models` and `aihi-agent`.
+The Python Worker is a private local application outside the uv workspace, so the editable install above
+is required. It is not published to PyPI; the public Python distributions are `aihi-models` and
+`aihi-agent`.
 
 ## Run
 

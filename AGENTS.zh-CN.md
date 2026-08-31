@@ -42,13 +42,13 @@ aihi-models -> aihi-agent -> application runtime -> UI
 `aihi.models` 不得 import `aihi.agent`；基础包不得 import 应用；应用不得复制 Runtime 或安全实现。
 `aihi.agent.agents` 是 Subagent 协调基础设施，不是用户 Agent 产品目录。
 
-两个公开 Python distribution 已发布 `0.1.0`：
+两个公开 Python distribution 已发布 `0.2.0`：
 
-- [aihi-models PyPI](https://pypi.org/project/aihi-models/0.1.0/)
-- [aihi-agent PyPI](https://pypi.org/project/aihi-agent/0.1.0/)
+- [aihi-models PyPI](https://pypi.org/project/aihi-models/0.2.0/)
+- [aihi-agent PyPI](https://pypi.org/project/aihi-agent/0.2.0/)
 
-`aihi-code-agent` 是私有 workspace 应用包。它继续支持本地 Worker/CLI 开发安装，但不得作为
-PyPI release artifact 构建或发布。
+`aihi-code-agent` 是位于 uv workspace 之外的私有本地应用包。它继续通过单独的 editable 安装
+支持本地 Worker/CLI 开发，但不得作为 PyPI release artifact 构建或发布。
 
 ## 选择正确的层
 
@@ -73,13 +73,13 @@ uv sync
 pnpm install
 ```
 
-从 PyPI 安装公开基础包：
+安装公开 uv workspace：
 
 ```bash
-python -m pip install aihi-models==0.1.0 aihi-agent==0.1.0
+python -m pip install aihi-models==0.2.0 aihi-agent==0.2.0
 ```
 
-Coding Agent 从本 workspace 运行；需要在已有 Python 环境验证源码改动时使用 editable 安装：
+Coding Agent 不在 uv workspace 中。运行本地 Worker/CLI 或验证应用源码改动时单独安装：
 
 ```bash
 uv pip install -e packages/aihi/models
@@ -120,6 +120,9 @@ python3 -m build --sdist --wheel --no-isolation --outdir dist/pypi packages/aihi
 python3 -m build --sdist --wheel --no-isolation --outdir dist/pypi packages/aihi/agent
 python3 -m twine check dist/pypi/aihi_models-* dist/pypi/aihi_agent-*
 ```
+
+构建前必须先更新包版本、依赖区间和公开 README 的安装命令。PyPI 会把包 README 固化为该版本的
+release metadata；过期的 long description 不能原地刷新，只能通过新版本修正。
 
 打包测试必须覆盖 wheel 布局、PEP 420 namespace 共存、`py.typed`、依赖 metadata、
 installed-wheel smoke、`aihi-code-agent` 排除契约和冻结 fixture。不能为了让新实现通过而重新生成冻结 fixture。

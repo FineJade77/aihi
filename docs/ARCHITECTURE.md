@@ -99,7 +99,7 @@ The event log, not the model response or TUI memory, is the runtime source of tr
 packages/aihi/
 ├── models/                 # distribution: aihi-models; import: aihi.models
 ├── agent/                  # distribution: aihi-agent; import: aihi.agent
-├── code-agent/             # private workspace app: aihi-code-agent; Coding Worker/runtime
+├── code-agent/             # private local app outside uv workspace: aihi-code-agent; Worker/runtime
 └── code-protocol/          # npm package: @aihi/code-protocol; DTOs and JSON Schemas
 apps/
 └── aihi-code-cli/          # private npm app: @aihi/code-cli; Ink TUI
@@ -304,9 +304,9 @@ into another package's private or internal module instead of its supported surfa
 `__all__` name nothing binds. Wheel metadata cannot catch those: in a development checkout every `src`
 tree is importable, so a reversed import type checks and runs.
 
-The public PyPI distributions are [aihi-models](https://pypi.org/project/aihi-models/0.1.0/) and
-[aihi-agent](https://pypi.org/project/aihi-agent/0.1.0/), currently at `0.1.0`. aihi-code-agent remains
-an installable private workspace application for the local Worker and CLI, but it is not a PyPI release
+The public PyPI distributions are [aihi-models](https://pypi.org/project/aihi-models/0.2.0/) and
+[aihi-agent](https://pypi.org/project/aihi-agent/0.2.0/), currently at `0.2.0`. aihi-code-agent remains
+an installable private local application outside the uv workspace for the local Worker and CLI, but it is not a PyPI release
 artifact. The canonical public release list lives in root `pyproject.toml` under
 `tool.aihi.release.python-distributions`; code-agent also declares `Private :: Do Not Upload` as a
 defense against an accidental direct PyPI upload.

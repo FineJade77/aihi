@@ -31,23 +31,19 @@ TUI 只负责展示和交互；Worker 负责配置、Provider/runtime 组合、�
 - Node.js 20+
 - pnpm 9
 - Python 3.11+
-- 已安装或可从 workspace 找到 `aihi-code-agent-worker`
+- 已单独以 editable 模式安装的 `aihi-code-agent-worker`
 
 ## 安装、构建和运行
 
 ```bash
+uv sync
+uv pip install -e packages/aihi/code-agent
 pnpm install
 pnpm --dir apps/aihi-code-cli build
 pnpm --dir apps/aihi-code-cli start -- --workspace /path/to/project
 ```
 
-Python Worker 仅在 workspace 内使用。上面的 `uv sync` 会安装它；要在另一个本地 Python 环境中
-暴露 Worker，执行：
-
-```bash
-uv pip install -e packages/aihi/code-agent
-```
-
+Python Worker 是位于 uv workspace 之外的私有本地应用，因此必须单独执行上面的 editable 安装。
 它不发布到 PyPI；公开 Python distribution 只有 `aihi-models` 与 `aihi-agent`。
 
 常用参数包括 `--workspace`/`--cwd`、`--session`、`--model` 和 `--provider`。配置文件路径固定为用户

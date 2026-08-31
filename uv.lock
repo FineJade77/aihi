@@ -9,7 +9,6 @@ resolution-markers = [
 [manifest]
 members = [
     "aihi-agent",
-    "aihi-code-agent",
     "aihi-models",
 ]
 
@@ -25,7 +24,7 @@ dev = [
 
 [[package]]
 name = "aihi-agent"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/aihi/agent" }
 dependencies = [
     { name = "aihi-models" },
@@ -35,23 +34,8 @@ dependencies = [
 requires-dist = [{ name = "aihi-models", editable = "packages/aihi/models" }]
 
 [[package]]
-name = "aihi-code-agent"
-version = "0.1.0"
-source = { editable = "packages/aihi/code-agent" }
-dependencies = [
-    { name = "aihi-agent" },
-    { name = "aihi-models" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "aihi-agent", editable = "packages/aihi/agent" },
-    { name = "aihi-models", editable = "packages/aihi/models" },
-]
-
-[[package]]
 name = "aihi-models"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "packages/aihi/models" }
 dependencies = [
     { name = "httpx" },

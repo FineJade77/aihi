@@ -1,5 +1,5 @@
 [tool.uv.workspace]
-members = ["packages/aihi/models", "packages/aihi/agent", "packages/aihi/code-agent"]
+members = ["packages/aihi/models", "packages/aihi/agent"]
 
 [tool.aihi.release]
 python-distributions = ["packages/aihi/models", "packages/aihi/agent"]

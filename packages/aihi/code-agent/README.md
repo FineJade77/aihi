@@ -4,7 +4,7 @@
 
 UI-free coding-agent runtime and stdio Worker for AIHI.
 
-`aihi-code-agent` is the private workspace application layer that composes `aihi-models` and
+`aihi-code-agent` is the private local application layer outside the uv workspace that composes `aihi-models` and
 `aihi-agent` into a coding workflow. It owns configuration, coding prompts, workspace tools, Skills/MCP
 integration, subagents, audit wiring, and the Worker entrypoint. It is not published to PyPI; the
 TypeScript TUI is a separate private workspace package.
@@ -32,20 +32,15 @@ This package is UI-free. The shared DTO and schema boundary lives in [`@aihi/cod
 
 ## Installation
 
-This application is installed from the repository workspace, not from PyPI. From the repository root:
+This application is installed separately from the repository source, not from PyPI. From the repository root:
 
 ```bash
 uv sync
-```
-
-To expose the Worker in an existing Python environment, install the workspace source in editable mode:
-
-```bash
 uv pip install -e packages/aihi/code-agent
 ```
 
-The workspace package requires Python 3.11+ and exposes the `aihi-code-agent-worker` console script
-after a workspace or editable install. Only `aihi-models` and `aihi-agent` are public PyPI distributions.
+The local package requires Python 3.11+ and exposes the `aihi-code-agent-worker` console script after
+the separate editable install. Only `aihi-models` and `aihi-agent` are public PyPI distributions.
 
 ## Start the Worker
 

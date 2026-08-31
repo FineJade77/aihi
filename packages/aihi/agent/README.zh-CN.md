@@ -46,10 +46,10 @@ Event Store 是事实源。Tool Call 会在执行前记录，并且每个调用�
 已发布版本：
 
 ~~~bash
-python -m pip install aihi-agent==0.1.0
+python -m pip install aihi-agent==0.2.0
 ~~~
 
-参见 [PyPI 项目页](https://pypi.org/project/aihi-agent/0.1.0/)。它会自动安装兼容的
+参见 [PyPI 项目页](https://pypi.org/project/aihi-agent/0.2.0/)。它会自动安装兼容的
 \`aihi-models\` 依赖。仓库开发使用：
 
 ~~~bash
