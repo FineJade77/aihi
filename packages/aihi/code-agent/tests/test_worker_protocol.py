@@ -252,6 +252,7 @@ allowed_tools = ["search"]
     assert descriptor["source_paths"] == [str(config_path.resolve())]
     assert descriptor["audit"]["enabled"] is True
     assert descriptor["audit"]["path"] == str((tmp_path / ".aihi" / "audit.jsonl").resolve())
+    assert "context_window" not in descriptor
     created = server.handle(
         {
             "jsonrpc": "2.0",

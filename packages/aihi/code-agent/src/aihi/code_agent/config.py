@@ -394,7 +394,7 @@ class CodeAgentConfig:
             for profile in self.provider_profiles.values()
         ]
         providers.sort(key=lambda item: str(item["name"]))
-        return {
+        descriptor: dict[str, object] = {
             "source_path": str(self.source_path) if self.source_path else None,
             "source_paths": [str(path) for path in self.source_paths],
             "base_dir": str(self.base_dir),
@@ -430,7 +430,6 @@ class CodeAgentConfig:
                 "path": str(self.audit_path) if self.audit_path else None,
             },
             "compact_model": self.compact_model,
-            "context_window": self.context_window,
             "subagents": {
                 "enabled": self.subagents.enabled,
                 "model": self.subagents.model,
@@ -440,6 +439,9 @@ class CodeAgentConfig:
                 "capabilities": sorted(self.subagents.capabilities),
             },
         }
+        if self.context_window is not None:
+            descriptor["context_window"] = self.context_window
+        return descriptor
 
 
 def load_config(

@@ -81,6 +81,7 @@ allowed_tools = ["search"]
     assert resolve_env_mapping(config.mcp_servers[0].env) == {"TOKEN": "secret-from-env"}
     assert config.compact_model == "compact-demo"
     assert config.context_window == 4096
+    assert config.public_descriptor()["context_window"] == 4096
     assert config.artifact_path == (tmp_path / ".aihi/artifacts").resolve()
     assert config.audit_path == (tmp_path / ".aihi/audit.jsonl").resolve()
     assert config.subagents.enabled is True
