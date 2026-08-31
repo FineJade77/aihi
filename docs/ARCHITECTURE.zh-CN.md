@@ -194,6 +194,10 @@ Approval 只能消费一次。Coding Workspace 是 Session 中持久化的 canon
 持有 Sandbox backend。`HostBackend` 需要显式 `unsafe=true`，只提供命令 cwd、超时、输出上限和进程组
 清理，不提供系统隔离；Docker 命令执行在能力不可用时 fail closed。
 
+基础 Harness 只治理子级预算与能力子集、深度和子任务数量；cwd 和应用权限对它是不透明值。Code Agent
+让子 Run 保持父级 Session 的 canonical cwd，并注入子级 `CodeAgentPermissionContext`：获批能力决定
+请求的 AccessMode，父级 AccessMode 是上限，而 Plan 强制生成只读的 Plan 子 Run。
+
 ## Skill、MCP 与扩展
 
 可选能力通过 `RuntimeExtensions` 接入：Skill 先发现元数据和 Hash，正文只有被显式请求才加载；
@@ -219,7 +223,9 @@ TUI 只拥有 viewport、折叠 Tool 输出、Slash 补全和草稿历史等展�
 ## 持久化与可观测性
 
 默认使用 SQLite WAL；大型输出、Diff 和附件存入 Artifact Store，并带 Session/Run retention 和
-访问检查。Snapshot 与 Compaction 只是派生加速数据，不替代原始事件。`audit.jsonl` 是本地脱敏、
+访问检查。Snapshot 与 Compaction 只是派生加速数据，不替代原始事件。Event envelope v2 从
+`subagent.spawned` 的 Task payload 中删除旧的 Harness-owned Workspace；注册的 v1 migration 继续读取
+冻结 Session，但当前 Task 类型不再保留这一应用字段。`audit.jsonl` 是本地脱敏、
 尽力而为的运维日志，不能成为事实源；`/doctor` 检查审计目标及其父目录可写性。Trace、Replay 和
 Eval 只处理脱敏事件 Bundle，不重新执行 Tool 或 Provider。
 

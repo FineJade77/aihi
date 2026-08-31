@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from aihi.agent import AgentBudget, SubagentAuthority, SubagentTool, WorkspaceScope
+from aihi.agent import AgentBudget, SubagentAuthority, SubagentTool
 from aihi.agent.agents.types import TaskResult, TaskSpec
 
 
@@ -18,7 +18,6 @@ class RecordingRunner:
 def _authority() -> SubagentAuthority:
     return SubagentAuthority(
         budget=AgentBudget(max_tokens=1_000, timeout_seconds=30.0, max_tool_calls=5),
-        workspace=WorkspaceScope(root="/tmp", read_only=True),
         max_children=2,
     )
 
@@ -108,11 +107,11 @@ def test_child_runs_inherit_context_contributors() -> None:
 
     from aihi.agent import (
         AgentBudget,
+        ChildRunContext,
         HostBackend,
         InMemoryEventStore,
         RuntimeBuilder,
         SubagentAuthority,
-        WorkspaceScope,
     )
     from aihi.agent.runtime.extensions import ContextSection
     from aihi.models import FakeProvider
@@ -138,18 +137,18 @@ def test_child_runs_inherit_context_contributors() -> None:
         .with_subagents(
             authority=SubagentAuthority(
                 budget=AgentBudget(max_tokens=1000, timeout_seconds=30.0, max_tool_calls=5),
-                workspace=WorkspaceScope(root=str(workspace), read_only=True),
             ),
             store=InMemoryEventStore(),
             provider=FakeProvider(),
             model="demo",
+            child_context_factory=lambda spec, context: ChildRunContext(),
         )
         .build()
     )
 
     task = runtime.registry.get("task")
     assert task is not None
-    child = task.runner.coordinator_factory(object(), runtime.sandbox)
+    child = task.runner.coordinator_factory(object())
     assert child.extensions.context_contributors, (
         "child coordinator has no contributors: subagents cannot see the skill index"
     )

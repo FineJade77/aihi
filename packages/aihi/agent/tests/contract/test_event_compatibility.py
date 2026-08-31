@@ -73,7 +73,7 @@ async def test_the_frozen_corpus_still_matches_what_the_harness_writes(
     fresh = await build_corpus(tmp_path)
     frozen = json.loads(CORPUS.read_text(encoding="utf-8"))
 
-    assert without_additive_v1_fields(fresh) == frozen, (
+    assert without_additive_v1_fields(fresh) == without_additive_v1_fields(frozen), (
         "The harness now writes different events than the frozen corpus. "
         "Review the change, then regenerate: python tests/fixtures/generate_corpus.py"
     )
@@ -119,7 +119,9 @@ async def test_the_frozen_corpus_still_matches_what_the_harness_writes(
         for event in session["events"]
         if event["type"] == "run.started"
     )
-    assert child_started["data"]["sandbox_descriptor"]["mount_scope"] == "/workspace"
+    # Generic delegation no longer manufactures a filesystem scope. An
+    # application may inject its own child authority through ChildRunContext.
+    assert child_started["data"]["sandbox_descriptor"]["mount_scope"] is None
 
 
 def test_source_only_writes_declared_event_types() -> None:
@@ -145,7 +147,24 @@ def test_frozen_events_round_trip_without_drift() -> None:
     raw = json.loads(CORPUS.read_text(encoding="utf-8"))
     for entry in raw["sessions"]:
         for item in entry["events"]:
-            assert Event.from_dict(item).to_dict() == item
+            assert Event.from_dict(item).to_dict() == upgrade_event_payload(item)
+
+
+def test_v1_subagent_workspace_is_removed_by_the_v2_migration() -> None:
+    raw = json.loads(CORPUS.read_text(encoding="utf-8"))
+    legacy = next(
+        event
+        for session in raw["sessions"]
+        for event in session["events"]
+        if event["type"] == "subagent.spawned"
+        and "workspace" in event["data"]["task"]
+    )
+
+    upgraded = upgrade_event_payload(legacy)
+
+    assert upgraded["schema_version"] == EVENT_SCHEMA_VERSION
+    assert "workspace" not in upgraded["data"]["task"]
+    assert "workspace" in legacy["data"]["task"]
 
 
 def test_a_stored_session_still_projects_the_same_state() -> None:
@@ -258,7 +277,7 @@ def test_an_unknown_message_version_is_rejected_before_append(tmp_path: Path) ->
     assert store.get(session.id).head_seq == initial_head
 
 
-@pytest.mark.parametrize("version", [0, 2, 99])
+@pytest.mark.parametrize("version", [0, 3, 99])
 def test_an_unreadable_envelope_version_fails_closed(version: int) -> None:
     payload = {
         "id": "evt-x",

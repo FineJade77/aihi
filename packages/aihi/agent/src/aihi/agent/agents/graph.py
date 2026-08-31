@@ -22,7 +22,6 @@ from .types import (
     TaskNode,
     TaskResult,
     TaskSpec,
-    WorkspaceScope,
     _mapping,
 )
 
@@ -94,7 +93,6 @@ class TaskGraph:
         parent_run_id: str,
         objective: str,
         budget: AgentBudget,
-        workspace: WorkspaceScope,
         capabilities: frozenset[str] | set[str] | tuple[str, ...] = (),
         constraints: tuple[str, ...] = (),
         max_depth: int = 4,
@@ -105,7 +103,6 @@ class TaskGraph:
             parent_run_id=parent_run_id,
             objective=objective,
             budget=budget,
-            workspace=workspace,
             capabilities=frozenset(capabilities),
             constraints=constraints,
             max_depth=max_depth,
@@ -161,7 +158,6 @@ class TaskGraph:
         *,
         objective: str,
         budget: AgentBudget | None = None,
-        workspace: WorkspaceScope | None = None,
         capabilities: frozenset[str] | set[str] | tuple[str, ...] | None = None,
         constraints: tuple[str, ...] = (),
         metadata: dict[str, Any] | None = None,
@@ -173,7 +169,6 @@ class TaskGraph:
             if len(parent.child_task_ids) >= parent.spec.max_children:
                 raise AgentPermissionDenied("Parent task child limit has been reached")
             child_budget = budget or parent.spec.budget
-            child_workspace = workspace or parent.spec.workspace
             child_capabilities = frozenset(
                 parent.spec.capabilities if capabilities is None else capabilities
             )
@@ -183,10 +178,6 @@ class TaskGraph:
                 )
             if not child_budget.is_subset_of(parent.spec.budget):
                 raise AgentBudgetExceeded("Child budget must be a subset of the parent budget")
-            if not parent.spec.workspace.contains(child_workspace):
-                raise AgentPermissionDenied(
-                    "Child workspace must be within the parent workspace scope"
-                )
             depth = parent.spec.depth + 1
             if depth > parent.spec.max_depth:
                 raise AgentDepthExceeded("Child task exceeds the configured maximum depth")
@@ -194,7 +185,6 @@ class TaskGraph:
                 parent_run_id=parent.spec.child_run_id,
                 objective=objective,
                 budget=child_budget,
-                workspace=child_workspace,
                 parent_task_id=parent_task_id,
                 capabilities=child_capabilities,
                 constraints=constraints,
@@ -318,7 +308,7 @@ class TaskGraph:
     def snapshot(self) -> dict[str, object]:
         with self._lock:
             return {
-                "schema_version": 1,
+                "schema_version": 2,
                 "session_id": self.session_id,
                 "roots": list(self._roots),
                 "nodes": {task_id: node.to_dict() for task_id, node in sorted(self._nodes.items())},
@@ -333,7 +323,7 @@ class TaskGraph:
     ) -> TaskGraph:
         if not isinstance(snapshot, dict) or not isinstance(snapshot.get("nodes"), dict):
             raise AgentValidationError("Malformed task graph snapshot")
-        if snapshot.get("schema_version", 1) != 1:
+        if snapshot.get("schema_version", 1) not in {1, 2}:
             raise AgentValidationError("Unsupported task graph snapshot schema")
         session_id = snapshot.get("session_id")
         if session_id is not None and not isinstance(session_id, str):
@@ -389,8 +379,6 @@ class TaskGraph:
                     raise AgentValidationError("Task graph child capabilities exceed parent")
                 if not child.spec.budget.is_subset_of(node.spec.budget):
                     raise AgentValidationError("Task graph child budget exceeds parent")
-                if not node.spec.workspace.contains(child.spec.workspace):
-                    raise AgentValidationError("Task graph child workspace exceeds parent")
             if len(node.child_task_ids) > node.spec.max_children:
                 raise AgentValidationError("Task graph child count exceeds configured limit")
             if node.spec.parent_task_id is None and task_id not in self._roots:

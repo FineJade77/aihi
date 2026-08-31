@@ -140,6 +140,11 @@ Optional extensions are added explicitly with methods such as:
 - `.with_skills(...)`, `.with_memory(...)`, `.with_compaction(...)`;
 - `.with_subagents(...)`, `.with_artifacts(...)`, and `.with_telemetry(...)`.
 
+Generic subagent governance covers capability and budget subsets, depth, and child count. The Harness
+does not interpret a workspace or product permission mode. An application that enables subagents must
+provide a child-context factory that derives its own opaque application authority and durable run
+profile for every child Run.
+
 The default coordinator turn budget is finite (`100`) and can be lowered for a product-specific safety envelope.
 
 ## Core modules

@@ -26,7 +26,6 @@ from aihi.agent import (
     SkillTrustManager,
     SQLiteEventStore,
     TaskGraph,
-    WorkspaceScope,
     approval_input_preview,
 )
 from aihi.agent import Event as AgentEvent
@@ -422,13 +421,16 @@ class WorkerServer:
     def _task_create(self, params: JsonObject) -> JsonObject:
         session = self._load_session(params)
         graph = self._task_graph(session)
-        workspace = self._workspace(params.get("workspace"), default_root=str(session.cwd))
+        if "workspace" in params:
+            raise RpcValidationError(
+                "task workspace is application-owned and is not a Harness task field",
+                code=INVALID_PARAMS,
+            )
         budget = self._budget(params.get("budget"))
         node = graph.create_root(
             parent_run_id=self._required_text(params, "parent_run_id"),
             objective=self._required_text(params, "objective"),
             budget=budget,
-            workspace=workspace,
             capabilities=self._string_collection(params.get("capabilities", []), "capabilities"),
             constraints=self._string_collection(params.get("constraints", []), "constraints"),
             max_depth=self._non_negative_int(params.get("max_depth", 4), "max_depth"),
@@ -449,12 +451,11 @@ class WorkerServer:
             if raw_budget is not None
             else None
         )
-        raw_workspace = params.get("workspace")
-        workspace = (
-            self._workspace(raw_workspace, default_root=parent.spec.workspace.root)
-            if raw_workspace is not None
-            else None
-        )
+        if "workspace" in params:
+            raise RpcValidationError(
+                "task workspace is application-owned and is not a Harness task field",
+                code=INVALID_PARAMS,
+            )
         raw_capabilities = params.get("capabilities")
         capabilities = (
             self._string_collection(raw_capabilities, "capabilities")
@@ -465,7 +466,6 @@ class WorkerServer:
             parent.spec.task_id,
             objective=self._required_text(params, "objective"),
             budget=budget,
-            workspace=workspace,
             capabilities=capabilities,
             constraints=self._string_collection(params.get("constraints", []), "constraints"),
             metadata=self._optional_mapping(params, "metadata"),
@@ -1077,14 +1077,6 @@ class WorkerServer:
                 raise RpcValidationError("budget must be a JSON object", code=INVALID_PARAMS)
             defaults.update(dict(value))
         return AgentBudget.from_dict(defaults)
-
-    @staticmethod
-    def _workspace(value: object, *, default_root: str) -> WorkspaceScope:
-        if value is None:
-            return WorkspaceScope(root=default_root)
-        if not isinstance(value, Mapping):
-            raise RpcValidationError("workspace must be a JSON object", code=INVALID_PARAMS)
-        return WorkspaceScope.from_dict(dict(value))
 
     def emit_event(
         self,

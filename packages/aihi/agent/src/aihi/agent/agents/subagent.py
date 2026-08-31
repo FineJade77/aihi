@@ -1,9 +1,9 @@
 """Spawn a governed child run from the parent's tool chain.
 
-A subagent is created the same way any other side effect is: the model calls a
-tool, and that call goes through `tools → policy → hooks → sandbox`. The tool
-itself only enforces authority (capabilities, budget, workspace, depth) via
-`TaskGraph` and then delegates execution to an injected runner.
+A subagent is created through the same governed Tool path as any other runtime
+operation. The Harness enforces generic authority (capabilities, budget, depth
+and child count) via `TaskGraph`; application authority is narrowed by an
+injected child-context factory before the child Run starts.
 
 The child gets its **own Session**. That keeps the single-writer invariant: a
 tool running inside the parent's run must never append to the parent's event log
@@ -15,14 +15,11 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
 from aihi.agent._core.errors import AgentRuntimeError
 from aihi.agent._core.events import Event
-from aihi.agent.policy import PermissionMode
-from aihi.agent.sandbox.base import SandboxBackend
-from aihi.agent.sandbox.scoped import ScopedSandboxBackend
 from aihi.agent.sessions.session import Session
 from aihi.agent.sessions.store import EventStore
 from aihi.agent.tools.base import Tool, ToolContext, ToolExecutionResult
@@ -32,19 +29,9 @@ from aihi.models import Message
 
 from .errors import AgentError, AgentValidationError
 from .graph import TaskGraph
-from .types import AgentBudget, AgentState, TaskResult, TaskSpec, WorkspaceScope
+from .types import AgentBudget, AgentState, TaskResult, TaskSpec
 
 SPAWN_CAPABILITY = "agent.spawn"
-
-# Ordered from most to least restrictive. A child inherits the stricter of its
-# configured mode and the mode its parent run is currently under, so delegation
-# can never be used to escape plan mode or a stricter approval policy.
-_MODE_RANK: dict[str, int] = {
-    PermissionMode.PLAN.value: 0,
-    PermissionMode.DEFAULT.value: 1,
-    PermissionMode.ACCEPT_EDITS.value: 2,
-    PermissionMode.BYPASS.value: 3,
-}
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,7 +39,6 @@ class SubagentAuthority:
     """The ceiling a parent run may delegate. Children can only narrow it."""
 
     budget: AgentBudget
-    workspace: WorkspaceScope
     capabilities: frozenset[str] = frozenset()
     max_depth: int = 2
     max_children: int = 4
@@ -62,15 +48,21 @@ class SubagentAuthority:
 class SubagentTypeSpec:
     """An application's declaration of one named subagent type.
 
-    The application declares intent; the builder owns the wiring. Handing over
-    a finished runner is not possible for an application, which has no access
-    to the parent registry or sandbox at configuration time.
+    The application declares intent; the builder owns the runtime wiring.
     """
 
     system_prompt: str = ""
     model: str | None = None
     capabilities: frozenset[str] | None = None
     tools: tuple[str, ...] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ChildRunContext:
+    """Opaque application authority supplied to one child Run."""
+
+    app_context: object | None = None
+    run_profile: dict[str, Any] = field(default_factory=dict)
 
 
 @runtime_checkable
@@ -95,15 +87,17 @@ class ChildCoordinator(Protocol):
         model: str,
         user_message: Message | None = ...,
         run_id: str | None = ...,
-        permission_mode: PermissionMode = ...,
         system_prompt: str = ...,
         max_output_tokens: int = ...,
         cancel_event: asyncio.Event | None = ...,
+        app_context: object | None = ...,
+        run_profile: dict[str, Any] | None = ...,
     ) -> Any: ...
 
 
 SessionFactory = Callable[[TaskSpec, ToolContext[Any]], Session]
-CoordinatorFactory = Callable[[TaskSpec, SandboxBackend], ChildCoordinator]
+CoordinatorFactory = Callable[[TaskSpec], ChildCoordinator]
+ChildContextFactory = Callable[[TaskSpec, ToolContext[Any]], ChildRunContext]
 
 
 def restrict_registry(registry: ToolRegistry, capabilities: frozenset[str]) -> ToolRegistry:
@@ -125,7 +119,7 @@ def subagent_session_factory(store: EventStore, *, provider: str, model: str) ->
     def factory(spec: TaskSpec, context: ToolContext[Any]) -> Session:
         return Session.create(
             store,
-            cwd=spec.workspace.root,
+            cwd=context.cwd,
             provider=provider,
             model=model,
             metadata={
@@ -147,29 +141,20 @@ class ChildRunSubagentRunner:
         coordinator_factory: CoordinatorFactory,
         session_factory: SessionFactory,
         *,
-        sandbox: SandboxBackend,
         model: str,
+        child_context_factory: ChildContextFactory,
         system_prompt: str = "",
-        permission_mode: PermissionMode = PermissionMode.DEFAULT,
     ) -> None:
         self.coordinator_factory = coordinator_factory
         self.session_factory = session_factory
-        self.sandbox = sandbox
         self.model = model
+        self.child_context_factory = child_context_factory
         self.system_prompt = system_prompt
-        self.permission_mode = permission_mode
-
-    def _effective_mode(self, context: ToolContext[Any]) -> PermissionMode:
-        parent_rank = _MODE_RANK.get(context.permission_mode, 0)
-        configured_rank = _MODE_RANK[self.permission_mode.value]
-        if parent_rank >= configured_rank:
-            return self.permission_mode
-        return PermissionMode(context.permission_mode)
 
     async def run(self, spec: TaskSpec, context: ToolContext[Any]) -> TaskResult:
+        child_context = self.child_context_factory(spec, context)
         session = self.session_factory(spec, context)
-        child_sandbox = ScopedSandboxBackend(self.sandbox, spec.workspace)
-        coordinator = self.coordinator_factory(spec, child_sandbox)
+        coordinator = self.coordinator_factory(spec)
         cancel_event = asyncio.Event()
         budget_state = _ToolCallBudget(
             spec.budget.max_tool_calls,
@@ -205,10 +190,11 @@ class ChildRunSubagentRunner:
                     model=self.model,
                     user_message=Message.text("user", spec.objective),
                     run_id=spec.child_run_id,
-                    permission_mode=self._effective_mode(context),
                     system_prompt=self.system_prompt,
                     max_output_tokens=spec.budget.max_tokens,
                     cancel_event=cancel_event,
+                    app_context=child_context.app_context,
+                    run_profile=child_context.run_profile,
                 ),
                 timeout=spec.budget.timeout_seconds,
             )
@@ -371,7 +357,7 @@ class SubagentTool:
         name="task",
         description=(
             "Delegate a scoped objective to a subagent. The child inherits at most this "
-            "run's capabilities, budget and workspace, and reports back a summary."
+            "run's capabilities and budget, and reports back a summary."
         ),
         input_schema={
             "type": "object",
@@ -387,7 +373,7 @@ class SubagentTool:
             "additionalProperties": False,
         },
         concurrency_safe=False,
-        mutates=True,
+        mutates=False,
         required_capabilities=(SPAWN_CAPABILITY,),
         timeout_seconds=600.0,
     )
@@ -511,7 +497,6 @@ class SubagentTool:
             parent_run_id=context.run_id,
             objective="parent run",
             budget=self.authority.budget,
-            workspace=self.authority.workspace,
             capabilities=self.authority.capabilities,
             max_depth=self.authority.max_depth,
             max_children=self.authority.max_children,
@@ -554,7 +539,9 @@ class SubagentTool:
 
 __all__ = [
     "SPAWN_CAPABILITY",
+    "ChildContextFactory",
     "ChildCoordinator",
+    "ChildRunContext",
     "ChildRunSubagentRunner",
     "CoordinatorFactory",
     "SessionFactory",

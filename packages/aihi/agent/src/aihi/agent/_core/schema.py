@@ -19,13 +19,14 @@ Compatibility rules:
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from copy import deepcopy
 from typing import Any
 
 #: The envelope version this harness writes.
-EVENT_SCHEMA_VERSION = 1
+EVENT_SCHEMA_VERSION = 2
 
 #: Envelope versions this harness can read, oldest first.
-SUPPORTED_EVENT_SCHEMA_VERSIONS: tuple[int, ...] = (1,)
+SUPPORTED_EVENT_SCHEMA_VERSIONS: tuple[int, ...] = (1, 2)
 
 #: Types the harness writes and persists. Every one of these must appear in the
 #: frozen corpus contract test, so adding a durable type without a
@@ -85,9 +86,23 @@ KNOWN_EVENT_TYPES: frozenset[str] = (
 #: Upgrades a raw event payload from one envelope version to the next.
 EventUpgrade = Callable[[dict[str, Any]], dict[str, Any]]
 
-#: Registered upgrades keyed by the version they read. Empty while a single
-#: envelope version exists; a new version must land together with its upgrade.
-EVENT_UPGRADES: Mapping[int, EventUpgrade] = {}
+def _upgrade_v1_to_v2(value: dict[str, Any]) -> dict[str, Any]:
+    """Remove the retired Harness-owned workspace from subagent task payloads."""
+
+    payload = deepcopy(value)
+    if payload.get("type") != "subagent.spawned":
+        return payload
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        return payload
+    task = data.get("task")
+    if isinstance(task, dict):
+        task.pop("workspace", None)
+    return payload
+
+
+#: Registered upgrades keyed by the version they read.
+EVENT_UPGRADES: Mapping[int, EventUpgrade] = {1: _upgrade_v1_to_v2}
 
 
 class UnsupportedEventSchema(ValueError):

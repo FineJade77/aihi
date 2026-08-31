@@ -148,8 +148,9 @@ Coding 文件 Tool（`read_file`、`glob`、`grep`、`edit_file`、`write_file`�
 索引；调用 `load_skill` 时使用裸 Skill name（例如 `code_review`），不要使用带版本后缀的展示名称。
 
 命名 Subagent 通过 `task` Tool 选择：`explore`、`code_review`、`test` 和 `general`。默认配置将
-Subagent 限制为深度 1、最多 3 个子 Agent 和只读文件系统能力。必须使用 Worker Session Store，才能
-将父 Run 与子 Run 一起 Replay。
+Subagent 限制为深度 1、最多 3 个子 Agent 和只读文件系统能力。每个子 Run 保持父级 Session 的 canonical
+Workspace；Code Agent 根据获批能力派生子级 AccessMode，再与父级 AccessMode 取交集；Plan 始终生成
+只读的 Plan 子 Run。必须使用 Worker Session Store，才能将父 Run 与子 Run 一起 Replay。
 
 ## 审计与运行行为
 

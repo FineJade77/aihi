@@ -134,7 +134,7 @@ closed, application-authored argv and do not accept a model-authored command.
 
 Built-in Skills (`code_review`, `debug`, `refactor`, and `test_writing`) are package content and are trusted implicitly. User, project, and workspace Skills require explicit trust before loading. The model-facing Skill index is emitted only when the load tool is available; use the `load_skill` tool with the plain Skill name (for example `code_review`), not a display name with a version suffix.
 
-Named subagents are selected through the `task` tool: `explore`, `code_review`, `test`, and `general`. The default configuration limits subagents to depth 1, three children, and read-only filesystem capabilities. A Worker session store is required so parent and child runs can be replayed together.
+Named subagents are selected through the `task` tool: `explore`, `code_review`, `test`, and `general`. The default configuration limits subagents to depth 1, three children, and read-only filesystem capabilities. Every child keeps the parent's canonical Session workspace. Code Agent derives the child's AccessMode from its granted capabilities and intersects it with the parent AccessMode; Plan always produces a read-only Plan child. A Worker session store is required so parent and child runs can be replayed together.
 
 ## Audit and operational behavior
 

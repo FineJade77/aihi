@@ -221,8 +221,12 @@ The Coding workspace is the canonical cwd stored in its Session; TOML may discov
 that directory but cannot define another workspace. File tools canonicalize and operate locally through
 the application context. Only Bash owns a Sandbox backend. HostBackend requires explicit unsafe=true and
 provides command cwd, timeouts, output limits and process-group cleanup, not isolation. Docker command
-execution fails closed when required capabilities are unavailable. Child runs may only receive stricter
-permission, budget and workspace subsets.
+execution fails closed when required capabilities are unavailable.
+
+The base Harness governs child budget and capability subsets, depth and child count; it treats cwd and
+application authority as opaque values. Code Agent keeps a child in the parent's canonical Session cwd
+and injects a child `CodeAgentPermissionContext`: granted capabilities determine the requested
+AccessMode, the parent AccessMode remains the ceiling, and Plan forces a read-only Plan child.
 
 ## Skills, MCP and extensions
 
@@ -256,7 +260,9 @@ history are not persisted. User messages and runtime events are persisted by the
 
 SQLite WAL is the default local store. Artifacts hold large outputs, diffs and attachments outside the
 prompt with session/run retention and explicit access checks. Snapshots and compaction are derived
-accelerators; they never replace original events.
+accelerators; they never replace original events. Event envelope v2 removes the legacy Harness-owned
+workspace from `subagent.spawned` task payloads; the registered v1 migration keeps frozen sessions
+readable without preserving that application-specific field in current task types.
 
 audit.jsonl is a local, redacted operational log and never runtime truth. /doctor checks its configured
 target and recent writable parent; failures are surfaced without changing the run result. Trace export,

@@ -140,6 +140,10 @@ Sandbox backend 只暴露命令执行，不提供文件读取、Glob 或写入 A
 - \`.with_skills(...)\`、\`.with_memory(...)\` 和 \`.with_compaction(...)\`；
 - \`.with_subagents(...)\`、\`.with_artifacts(...)\` 和 \`.with_telemetry(...)\`。
 
+通用 Subagent 治理只负责能力与预算子集、深度和子任务数量。Harness 不解释 Workspace 或产品权限模式。
+启用 Subagent 的应用必须提供 child-context factory，为每个子 Run 派生自己的不透明应用权限上下文和
+持久化 Run profile。
+
 Coordinator 的默认 turn budget 是有限的（\`100\`），应用可以进一步降低它以形成产品级安全边界。
 
 ## 核心模块

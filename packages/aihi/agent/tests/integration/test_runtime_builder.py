@@ -7,6 +7,7 @@ from aihi.agent import (
     SPAWN_CAPABILITY,
     AgentBudget,
     ApprovalOutcome,
+    ChildRunContext,
     DefaultPolicyEngine,
     HookBus,
     HostBackend,
@@ -24,7 +25,6 @@ from aihi.agent import (
     SkillScope,
     StaticApprovalResolver,
     SubagentAuthority,
-    WorkspaceScope,
 )
 from aihi.models import FakeProvider, FakeStep, Message
 
@@ -165,7 +165,6 @@ def test_compaction_uses_the_named_model(tmp_path: Path) -> None:
 def test_subagents_require_an_explicit_authority_and_model(tmp_path: Path) -> None:
     authority = SubagentAuthority(
         budget=AgentBudget(max_tokens=512, timeout_seconds=10.0, max_tool_calls=2),
-        workspace=WorkspaceScope(root=str(tmp_path), read_only=True),
         capabilities=frozenset({SPAWN_CAPABILITY, "filesystem.read"}),
     )
     store = InMemoryEventStore()
@@ -183,6 +182,7 @@ def test_subagents_require_an_explicit_authority_and_model(tmp_path: Path) -> No
             store=store,
             provider=FakeProvider(),
             model="small",
+            child_context_factory=lambda spec, context: ChildRunContext(),
         )
         .build()
     )
@@ -193,15 +193,10 @@ def test_subagents_require_an_explicit_authority_and_model(tmp_path: Path) -> No
 
 
 @pytest.mark.asyncio
-async def test_subagent_runtime_enforces_the_delegated_workspace(tmp_path: Path) -> None:
-    delegated = tmp_path / "delegated"
-    delegated.mkdir()
-    outside = tmp_path / "outside.txt"
-    outside.write_text("parent-only", encoding="utf-8")
+async def test_subagent_runtime_persists_injected_application_authority(tmp_path: Path) -> None:
     store = InMemoryEventStore()
     authority = SubagentAuthority(
         budget=AgentBudget(max_tokens=512, timeout_seconds=10.0, max_tool_calls=2),
-        workspace=WorkspaceScope(root=str(delegated), read_only=True),
         capabilities=frozenset({SPAWN_CAPABILITY, "filesystem.read"}),
     )
     runtime = (
@@ -217,13 +212,12 @@ async def test_subagent_runtime_enforces_the_delegated_workspace(tmp_path: Path)
         .with_subagents(
             authority=authority,
             store=store,
-            provider=FakeProvider(
-                [
-                    FakeStep.call_tool("read_file", {"path": str(outside)}),
-                    FakeStep(text="access denied"),
-                ]
-            ),
+            provider=FakeProvider([FakeStep(text="child done")]),
             model="fake-model",
+            child_context_factory=lambda spec, context: ChildRunContext(
+                app_context={"scope": "child"},
+                run_profile={"scope": "child"},
+            ),
         )
         .build()
     )
@@ -244,13 +238,8 @@ async def test_subagent_runtime_enforces_the_delegated_workspace(tmp_path: Path)
     assert result.state == RunState.COMPLETED
     child_id = str(parent.messages[-2].tool_results[0].metadata["session_id"])
     child = Session.load(store, child_id)
-    denied = next(message.tool_results[0] for message in child.messages if message.tool_results)
-    assert denied.metadata["error_code"] == "sandbox_violation"
     child_started = next(event for event in child.events if event.type == "run.started")
-    assert child_started.data["workspace_root"] == str(delegated.resolve())
-    assert child_started.data["sandbox_descriptor"]["mount_scope"] == str(
-        delegated.resolve()
-    )
+    assert child_started.data["application_profile"] == {"scope": "child"}
 
 
 def test_hooks_are_passed_through_untouched(tmp_path: Path) -> None:

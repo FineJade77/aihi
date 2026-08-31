@@ -21,6 +21,7 @@ from aihi.agent import (
     ApprovalOutcome,
     ArtifactLifecycle,
     ArtifactPolicy,
+    ChildRunContext,
     FileArtifactStore,
     HostBackend,
     InMemoryEventStore,
@@ -33,7 +34,6 @@ from aihi.agent import (
     Session,
     StaticApprovalResolver,
     ToolRegistry,
-    WorkspaceScope,
 )
 from aihi.agent._core.events import Event
 from aihi.agent.agents.graph import TaskGraph
@@ -156,7 +156,6 @@ async def _authorized_session(root: Path, store: InMemoryEventStore) -> Session:
         parent_run_id=suspended.run_id,
         objective="investigate",
         budget=AgentBudget(max_tokens=512, timeout_seconds=10.0, max_tool_calls=2),
-        workspace=WorkspaceScope(root=str(root), read_only=True),
         capabilities=frozenset({"filesystem.read"}),
     )
     return session
@@ -177,20 +176,19 @@ async def _delegating_session(root: Path, store: InMemoryEventStore) -> Session:
     tools = ToolRegistry([ReadTestTool()])
     sandbox = HostBackend(root, unsafe=True)
     runner = ChildRunSubagentRunner(
-        lambda spec, child_sandbox: RunCoordinator(
+        lambda spec: RunCoordinator(
             FakeProvider([FakeStep(text="the child looked around")]),
             registry=restrict_registry(tools, frozenset(spec.capabilities)),
-            sandbox=child_sandbox,
+            sandbox=sandbox,
         ),
         subagent_session_factory(store, provider="fake", model="fake-model"),
-        sandbox=sandbox,
         model="fake-model",
+        child_context_factory=lambda spec, context: ChildRunContext(),
     )
     tool = SubagentTool(
         runner,
         authority=SubagentAuthority(
             budget=AgentBudget(max_tokens=512, timeout_seconds=10.0, max_tool_calls=2),
-            workspace=WorkspaceScope(root=str(root), read_only=True),
             capabilities=frozenset({SPAWN_CAPABILITY, "filesystem.read"}),
         ),
     )
@@ -348,6 +346,10 @@ def without_additive_v1_fields(payload: object) -> object:
         for event in session.get("events", []):
             if not isinstance(event, dict):
                 continue
+            # The frozen corpus keeps v1 envelopes. Current events are reduced
+            # to that shape only for writer-drift comparison; the migration is
+            # tested independently in the Agent contract suite.
+            event["schema_version"] = 1
             data = event.get("data")
             if isinstance(data, dict):
                 if event.get("type") == "model.usage":
@@ -399,4 +401,8 @@ def without_additive_v1_fields(payload: object) -> object:
                         and descriptor.get("mount_scope") == "/workspace"
                     ):
                         descriptor["mount_scope"] = None
+                if event.get("type") == "subagent.spawned":
+                    task = data.get("task")
+                    if isinstance(task, dict):
+                        task.pop("workspace", None)
     return normalized

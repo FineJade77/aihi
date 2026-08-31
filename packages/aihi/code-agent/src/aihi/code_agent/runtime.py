@@ -27,7 +27,6 @@ from aihi.agent import (
     StdioMcpTransport,
     SubagentAuthority,
     SubagentTypeSpec,
-    WorkspaceScope,
     register_mcp_tools,
 )
 from aihi.agent.runtime import RunResult
@@ -56,7 +55,7 @@ from .permissions import (
 )
 from .prompts import build_subagent_prompt, build_system_prompt
 from .skills import builtin_skill_root
-from .subagents import CODING_SUBAGENTS
+from .subagents import CODING_SUBAGENTS, coding_child_context_factory
 from .tools import ToolBuildContext, build_tools
 from .turns import TurnEvent, TurnEventPump, TurnFinished, drive_turn
 
@@ -149,13 +148,6 @@ class CodeAgentRuntime:
                     timeout_seconds=config.subagents.timeout_seconds,
                     max_tool_calls=config.subagents.max_tool_calls,
                 ),
-                workspace=WorkspaceScope(
-                    root=str(permission_context.workspace),
-                    read_only=(
-                        config.run_mode is RunMode.PLAN
-                        or config.access_mode is AccessMode.READ_ONLY
-                    ),
-                ),
                 capabilities=config.subagents.capabilities,
                 max_depth=config.subagents.max_depth,
                 max_children=config.subagents.max_children,
@@ -165,6 +157,7 @@ class CodeAgentRuntime:
                 store=session.store,
                 provider=provider,
                 model=config.subagents.model or config.provider.model,
+                child_context_factory=coding_child_context_factory(sandbox.descriptor),
                 agent_types=_build_agent_types(config, permission_context.workspace),
             )
         runtime = builder.build()

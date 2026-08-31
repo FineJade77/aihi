@@ -15,10 +15,10 @@ from aihi.agent import (
 from aihi.agent.agents import (
     SPAWN_CAPABILITY,
     AgentBudget,
+    ChildRunContext,
     ChildRunSubagentRunner,
     SubagentAuthority,
     SubagentTool,
-    WorkspaceScope,
     restrict_registry,
     subagent_session_factory,
 )
@@ -37,25 +37,24 @@ async def delegated_run(tmp_path: Path) -> tuple[Session, InMemoryEventStore, st
     sandbox = HostBackend(tmp_path, unsafe=True)
     tools = ToolRegistry([ReadTestTool()])
 
-    def coordinator_factory(spec: object, child_sandbox: object) -> RunCoordinator:
+    def coordinator_factory(spec: object) -> RunCoordinator:
         capabilities = frozenset(getattr(spec, "capabilities", frozenset()))
         return RunCoordinator(
             FakeProvider([FakeStep(text="the child read the code")]),
             registry=restrict_registry(tools, capabilities),
-            sandbox=child_sandbox,  # type: ignore[arg-type]
+            sandbox=sandbox,
         )
 
     runner = ChildRunSubagentRunner(
         coordinator_factory,
         subagent_session_factory(store, provider="fake", model="fake-model"),
-        sandbox=sandbox,
         model="fake-model",
+        child_context_factory=lambda spec, context: ChildRunContext(),
     )
     tool = SubagentTool(
         runner,
         authority=SubagentAuthority(
             budget=AgentBudget(max_tokens=2_048, timeout_seconds=30.0, max_tool_calls=4),
-            workspace=WorkspaceScope(root=str(tmp_path), read_only=True),
             capabilities=frozenset({SPAWN_CAPABILITY, "filesystem.read"}),
         ),
     )

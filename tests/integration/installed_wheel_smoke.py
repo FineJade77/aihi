@@ -11,6 +11,7 @@ from aihi.agent import (
     SPAWN_CAPABILITY,
     AgentBudget,
     ApprovalOutcome,
+    ChildRunContext,
     ChildRunSubagentRunner,
     ContextCompiler,
     ContextState,
@@ -23,7 +24,6 @@ from aihi.agent import (
     SubagentAuthority,
     SubagentTool,
     ToolRegistry,
-    WorkspaceScope,
     restrict_registry,
     subagent_session_factory,
 )
@@ -181,20 +181,22 @@ async def main(workspace: Path) -> None:
     store = InMemoryEventStore()
     full_registry = ToolRegistry([ReadFileTool()])
     child_runner = ChildRunSubagentRunner(
-        lambda spec, child_sandbox: RunCoordinator(
+        lambda spec: RunCoordinator(
             FakeProvider([FakeStep(text="child done")]),
             registry=restrict_registry(full_registry, frozenset(spec.capabilities)),
-            sandbox=child_sandbox,
+            sandbox=sandbox,
         ),
         subagent_session_factory(store, provider="fake", model="fake-model"),
-        sandbox=sandbox,
         model="fake-model",
+        child_context_factory=lambda spec, context: ChildRunContext(
+            app_context=code_context,
+            run_profile={"scope": "read_only_child"},
+        ),
     )
     task = SubagentTool(
         child_runner,
         authority=SubagentAuthority(
             budget=AgentBudget(max_tokens=512, timeout_seconds=10, max_tool_calls=2),
-            workspace=WorkspaceScope(root=str(workspace), read_only=True),
             capabilities=frozenset({SPAWN_CAPABILITY, "filesystem.read"}),
         ),
     )

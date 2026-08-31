@@ -6,6 +6,7 @@ Types are an application concern; the ceilings they run under stay in
 
 from __future__ import annotations
 
+from .authority import coding_child_context_factory, narrow_coding_child_context
 from .registry import SubagentDefinition
 
 CODING_SUBAGENTS: tuple[SubagentDefinition, ...] = (
@@ -27,7 +28,7 @@ CODING_SUBAGENTS: tuple[SubagentDefinition, ...] = (
         name="test",
         description="Write and run tests. Needs process execution, so it is off by default.",
         prompt_file="test.md",
-        capabilities=frozenset({"filesystem.read", "filesystem.write", "process.spawn"}),
+        capabilities=frozenset({"filesystem.read", "filesystem.write", "process.exec"}),
         tools=("read_file", "glob", "grep", "edit_file", "write_file", "bash"),
     ),
     SubagentDefinition(
@@ -53,5 +54,7 @@ __all__ = [
     "CODING_SUBAGENTS",
     "SUBAGENT_TYPE_NAMES",
     "SubagentDefinition",
+    "coding_child_context_factory",
     "definition_for",
+    "narrow_coding_child_context",
 ]

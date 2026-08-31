@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Any
 
 from aihi.agent.agents.subagent import (
+    ChildContextFactory,
     ChildRunSubagentRunner,
     SubagentAuthority,
     SubagentRunner,
@@ -196,6 +197,7 @@ class RuntimeBuilder:
         store: EventStore,
         provider: Provider,
         model: str,
+        child_context_factory: ChildContextFactory,
         runners: Mapping[str, SubagentRunner] | None = None,
         agent_types: Mapping[str, SubagentTypeSpec] | None = None,
     ) -> RuntimeBuilder:
@@ -214,6 +216,7 @@ class RuntimeBuilder:
                 store=store,
                 provider=provider,
                 model=model,
+                child_context_factory=child_context_factory,
             ),
         )
 
@@ -256,9 +259,7 @@ class RuntimeBuilder:
     def _subagent_tool(self, parent: ToolRegistry) -> SubagentTool:
         plan = self._subagents
         assert plan is not None
-        sandbox = self.sandbox
-
-        def coordinator_factory(spec: object, child_sandbox: SandboxBackend) -> RunCoordinator:
+        def coordinator_factory(spec: object) -> RunCoordinator:
             capabilities = frozenset(getattr(spec, "capabilities", frozenset()))
             registry = restrict_registry(parent, capabilities)
             # A type may also name the tools it needs. Capabilities alone are
@@ -279,7 +280,7 @@ class RuntimeBuilder:
             return RunCoordinator(
                 plan.provider,
                 registry=registry,
-                sandbox=child_sandbox,
+                sandbox=self.sandbox,
                 policy=self.policy or DefaultPolicyEngine(),
                 # Contributors are read-only context: a child that cannot see the
                 # skill index cannot load a skill. Recorders are deliberately not
@@ -298,8 +299,8 @@ class RuntimeBuilder:
                     provider=getattr(plan.provider, "name", "provider"),
                     model=model,
                 ),
-                sandbox=sandbox,
                 model=model,
+                child_context_factory=plan.child_context_factory,
                 system_prompt=system_prompt,
             )
 
@@ -328,6 +329,7 @@ class _SubagentPlan:
     store: EventStore
     provider: Provider
     model: str
+    child_context_factory: ChildContextFactory
     runners: Mapping[str, SubagentRunner] | None = None
     agent_types: Mapping[str, SubagentTypeSpec] | None = None
 
