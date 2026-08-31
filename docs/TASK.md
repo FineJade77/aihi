@@ -109,6 +109,31 @@ PEP 420 smoke coverage.
 | H-19.5 | Evidence-backed ContextState hard compaction | Deterministic event projection precedes model enrichment; recent complete groups remain raw; repeated compactions preserve all critical facts and reach the target budget |
 | H-19.6 | Joint eval, compatibility, documentation and packaging gates | Cache/compaction golden traces, long-session evals, frozen fixture replay, installed-wheel checks and synchronized English/Chinese docs pass |
 
+### H-20 — Application context and command-sandbox boundary
+
+**Status: In progress.** Make the reusable Harness application-neutral: Tool and Policy execution
+receive an opaque typed application context, applications persist an opaque run authority profile,
+and Sandbox becomes an explicitly injected command-execution capability rather than a Runtime-wide
+filesystem abstraction.
+
+| Slice | Scope | Acceptance |
+| --- | --- | --- |
+| H-20.1 | `PreparedToolCall`, typed application context and opaque run profile | Validation precedes side-effect-free preparation; Policy and Tool execution consume the same normalized input; Resume rejects profile drift |
+| H-20.2 | Command-only Sandbox and Runtime decoupling | Sandbox exposes only command execution; Runtime, Session, Hook and generic Tool context contain no workspace or global Sandbox assumption |
+| H-20.3 | Generic delegation scope | Base Subagent types contain no Coding workspace or permission mode; an injected application policy proves child authority is a subset |
+
+### P-07 — Coding workspace and permission ownership
+
+**Status: In progress.** Move Coding tools, canonical workspace handling, `AccessMode`, `RunMode` and
+command-sandbox selection into `aihi-code-agent`. The Coding workspace is the canonical `cwd` supplied
+when its Session is created; TOML discovers configuration from that workspace but never defines it.
+
+| Slice | Scope | Acceptance |
+| --- | --- | --- |
+| P-07.1 | Application-owned workspace and Coding tools | File tools use guarded local I/O; only Bash owns a Sandbox; `sandbox.root` and `workspace_read_only` are removed |
+| P-07.2 | `AccessMode` and `RunMode` policy | `read_only`, `workspace_write`, `full_access` and `execute`/`plan` have tested ALLOW/ASK/DENY matrices; Plan cannot be upgraded within a Run |
+| P-07.3 | Worker, Protocol and CLI | Code Protocol 0.3 exposes access/run modes without a configured workspace root; Resume prevents authority drift; CLI reflects the effective modes |
+
 ### P-06 — Coding Agent benchmark
 
 **Status: Done.** The deterministic corpus, live execution path, repeat-aware

@@ -121,7 +121,7 @@ The default coordinator turn budget is finite (`100`) and can be lowered for a p
 | Runtime and runs | `Runtime`, `RuntimeBuilder`, `RunCoordinator`, `RunResult`, `RunState` |
 | Sessions and storage | `Session`, `EventStore`, `InMemoryEventStore`, `SQLiteEventStore`, `Event` |
 | Context | `ContextCompiler`, `CompactionPolicy`, `ContextState`, summaries and compaction generators |
-| Tools | `Tool`, `ToolSpec`, `ToolContext`, `ToolRegistry`, built-in file/shell tools |
+| Tools | `Tool`, `ToolSpec`, `ToolContext`, `PreparedToolCall`, `ToolRegistry`, built-in file/shell tools |
 | Policy and approval | `PermissionMode`, `DefaultPolicyEngine`, `Approval`, approval resolvers |
 | Sandbox | `HostBackend`, `LocalIsolatedBackend`, `DockerBackend` |
 | Integrations | Skills, MCP, plugins, subagents, memory, artifacts |
@@ -131,6 +131,12 @@ The default coordinator turn budget is finite (`100`) and can be lowered for a p
 ## Tool and approval model
 
 Tools are registered with explicit `ToolSpec` metadata. The policy engine decides whether an invocation is allowed, denied, or must ask for approval. Approval leases can scope a decision to a request, a tool, or a run according to the application policy.
+
+An application may pass typed, opaque state through `ToolContext.app_context` and
+`PermissionContext.app_context`. A Tool can implement a deterministic, side-effect-free `prepare()`
+method that returns `PreparedToolCall`; the normalized input is then shared by Policy and execution.
+`RunCoordinator.run_profile` persists a JSON application authority snapshot and rejects a different
+snapshot when the same Run is resumed.
 
 Use the built-in tools only with a sandbox and policy appropriate for the workspace. File reads, glob/grep, edits, writes, and shell execution should not be treated as interchangeable capabilities.
 

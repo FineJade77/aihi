@@ -88,6 +88,30 @@ Tool Result 清理、结构化压缩、持久化和 Replay 属于 `aihi-agent`�
 | H-19.5 | 带证据的 ContextState Hard Compaction | 先确定性投影 Event，再由模型补充；近期完整 Group 保留原文；多轮压缩保留所有关键事实并达到目标预算 |
 | H-19.6 | 联合 Eval、兼容性、文档和打包门禁 | Cache/Compaction Golden Trace、长 Session Eval、冻结 Fixture Replay、installed-wheel 检查和中英文文档全部通过 |
 
+### H-20：应用 Context 与命令 Sandbox 边界
+
+**状态：In progress。** 让可复用 Harness 保持应用无关：Tool 和 Policy 执行接收不透明的类型化应用
+Context，应用持久化不透明的 Run 权限 Profile；Sandbox 从 Runtime 全局文件系统抽象收缩为显式注入的
+命令执行能力。
+
+| 切片 | 范围 | 验收 |
+| --- | --- | --- |
+| H-20.1 | `PreparedToolCall`、类型化应用 Context 和不透明 Run Profile | 先校验再做无副作用 Prepare；Policy 与 Tool 执行消费同一份规范化输入；Resume 拒绝 Profile 漂移 |
+| H-20.2 | 纯命令 Sandbox 与 Runtime 解耦 | Sandbox 只暴露命令执行；Runtime、Session、Hook 和通用 Tool Context 不包含 workspace 或全局 Sandbox 假设 |
+| H-20.3 | 通用委派 Scope | 基础 Subagent 类型不包含 Coding workspace 或权限模式；由注入的应用 Policy 证明子权限是父权限子集 |
+
+### P-07：Coding Workspace 与权限归属
+
+**状态：In progress。** 将 Coding Tool、canonical workspace、`AccessMode`、`RunMode` 和命令
+Sandbox 选择移入 `aihi-code-agent`。Coding workspace 是创建 Session 时传入的 canonical `cwd`；
+TOML 只从该 workspace 发现配置，不能定义 workspace。
+
+| 切片 | 范围 | 验收 |
+| --- | --- | --- |
+| P-07.1 | 应用拥有 Workspace 与 Coding Tool | 文件 Tool 使用受约束的本地 I/O；只有 Bash 持有 Sandbox；删除 `sandbox.root` 和 `workspace_read_only` |
+| P-07.2 | `AccessMode` 与 `RunMode` Policy | `read_only`、`workspace_write`、`full_access` 和 `execute`/`plan` 的 ALLOW/ASK/DENY 矩阵均有测试；Plan 不能在同一 Run 内升级 |
+| P-07.3 | Worker、Protocol 与 CLI | Code Protocol 0.3 暴露 Access/Run Mode 且不配置 workspace root；Resume 阻止权限漂移；CLI 展示实际生效模式 |
+
 ### P-06：Coding Agent 基准
 
 **状态：Done。** 确定性语料、真实执行路径、重复采样指标、完整 CI 门禁和一份审核后的真实 Provider

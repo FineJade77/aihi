@@ -6,11 +6,13 @@ import fnmatch
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Generic, Protocol, TypeVar
 
 from aihi.agent.policy.leases import Approval, CapabilityLease
 from aihi.agent.sandbox.base import SandboxDescriptor
 from aihi.agent.tools.spec import ToolSpec
+
+TAppContext = TypeVar("TAppContext")
 
 
 class PermissionMode(StrEnum):
@@ -27,7 +29,7 @@ class DecisionEffect(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class PermissionContext:
+class PermissionContext(Generic[TAppContext]):
     cwd: Path
     mode: PermissionMode
     sandbox: SandboxDescriptor
@@ -36,6 +38,9 @@ class PermissionContext:
     require_capability_lease: bool = False
     require_isolation: bool = False
     run_id: str | None = None
+    # Opaque application-owned state. Generic Harness policy may ignore it;
+    # product policy can interpret its own typed context.
+    app_context: TAppContext | None = None
 
     def has_capabilities(self, required: tuple[str, ...]) -> bool:
         return not required or (
@@ -60,12 +65,12 @@ class Decision:
         return {"effect": self.effect.value, "reason": self.reason, "rule_id": self.rule_id}
 
 
-class PolicyEngine(Protocol):
+class PolicyEngine(Protocol, Generic[TAppContext]):
     def evaluate(
         self,
         spec: ToolSpec,
         input: dict[str, Any],
-        context: PermissionContext,
+        context: PermissionContext[TAppContext],
     ) -> Decision: ...
 
 
@@ -113,7 +118,7 @@ class DefaultPolicyEngine:
         self,
         spec: ToolSpec,
         input: dict[str, Any],
-        context: PermissionContext,
+        context: PermissionContext[Any],
     ) -> Decision:
         candidates: list[str] = []
         for key in ("path", "file_path"):

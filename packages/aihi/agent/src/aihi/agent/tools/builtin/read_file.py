@@ -35,7 +35,7 @@ class ReadFileTool:
         self.max_chars = max_chars
         self.ledger = ledger
 
-    async def run(self, input: dict[str, Any], context: ToolContext) -> ToolExecutionResult:
+    async def run(self, input: dict[str, Any], context: ToolContext[Any]) -> ToolExecutionResult:
         path = str(input["path"])
         offset = max(0, int(input.get("offset", 0)))
         limit = max(1, min(int(input.get("limit", 2_000)), 10_000))

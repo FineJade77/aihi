@@ -376,13 +376,21 @@ def without_additive_v1_fields(payload: object) -> object:
                 data.pop("message_schema_version", None)
                 data.pop("summary_message_schema_version", None)
                 if event.get("type") == "approval.requested":
-                    for additive in ("tool_input", "required_capabilities", "sandbox"):
+                    for additive in (
+                        "tool_input",
+                        "required_capabilities",
+                        "sandbox",
+                        "execution",
+                    ):
                         data.pop(additive, None)
+                if event.get("type") == "tool.started":
+                    data.pop("execution", None)
                 if event.get("type") in {"run.started", "run.resumed"}:
                     data.pop("max_output_tokens", None)
                     data.pop("max_turns", None)
                     data.pop("system_prompt_sha256", None)
                     data.pop("workspace_root", None)
+                    data.pop("application_profile", None)
                     descriptor = data.get("sandbox_descriptor")
                     if (
                         isinstance(descriptor, dict)

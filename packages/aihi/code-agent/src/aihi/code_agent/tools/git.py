@@ -31,7 +31,7 @@ class GitStatusTool:
         timeout_seconds=30.0,
     )
 
-    async def run(self, input: dict[str, Any], context: ToolContext) -> ToolExecutionResult:
+    async def run(self, input: dict[str, Any], context: ToolContext[Any]) -> ToolExecutionResult:
         if input:
             raise ToolInputError("git_status does not accept input fields")
         result = await context.sandbox.run_command(
@@ -59,7 +59,7 @@ class GitDiffTool:
         timeout_seconds=60.0,
     )
 
-    async def run(self, input: dict[str, Any], context: ToolContext) -> ToolExecutionResult:
+    async def run(self, input: dict[str, Any], context: ToolContext[Any]) -> ToolExecutionResult:
         path = input.get("path")
         if path is not None and (not isinstance(path, str) or not path.strip()):
             raise ToolInputError("path must be a non-empty string when provided")

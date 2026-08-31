@@ -178,7 +178,14 @@ from aihi.agent.skills import (
     SkillScope,
     SkillTrustManager,
 )
-from aihi.agent.tools import Tool, ToolContext, ToolExecutionResult, ToolRegistry, ToolSpec
+from aihi.agent.tools import (
+    PreparedToolCall,
+    Tool,
+    ToolContext,
+    ToolExecutionResult,
+    ToolRegistry,
+    ToolSpec,
+)
 from aihi.agent.tools.builtin import (
     BashTool,
     EditFileTool,
@@ -282,6 +289,7 @@ __all__ = [
     "PluginRemoteTool",
     "PluginTrustManager",
     "PolicyEngine",
+    "PreparedToolCall",
     "ReadFileTool",
     "ReadLedger",
     "ReplayEngine",

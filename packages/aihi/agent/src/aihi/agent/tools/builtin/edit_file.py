@@ -36,7 +36,7 @@ class EditFileTool:
     def __init__(self, *, ledger: ReadLedger | None = None) -> None:
         self.ledger = ledger
 
-    def _unread(self, path: str, context: ToolContext) -> ToolExecutionResult | None:
+    def _unread(self, path: str, context: ToolContext[Any]) -> ToolExecutionResult | None:
         """Refuse to modify a file this run has not read."""
 
         if self.ledger is None:
@@ -53,7 +53,7 @@ class EditFileTool:
             metadata={"error_code": "file_not_read"},
         )
 
-    async def run(self, input: dict[str, Any], context: ToolContext) -> ToolExecutionResult:
+    async def run(self, input: dict[str, Any], context: ToolContext[Any]) -> ToolExecutionResult:
         path = str(input["path"])
         refusal = self._unread(path, context)
         if refusal is not None:

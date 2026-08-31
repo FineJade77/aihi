@@ -51,7 +51,7 @@ class GlobTool:
         timeout_seconds=30.0,
     )
 
-    async def run(self, input: dict[str, Any], context: ToolContext) -> ToolExecutionResult:
+    async def run(self, input: dict[str, Any], context: ToolContext[Any]) -> ToolExecutionResult:
         pattern = input.get("pattern")
         if not isinstance(pattern, str) or not pattern.strip():
             raise ToolInputError("pattern must be a non-empty string")
@@ -101,7 +101,7 @@ class GrepTool:
         timeout_seconds=60.0,
     )
 
-    async def run(self, input: dict[str, Any], context: ToolContext) -> ToolExecutionResult:
+    async def run(self, input: dict[str, Any], context: ToolContext[Any]) -> ToolExecutionResult:
         raw_pattern = input.get("pattern")
         if not isinstance(raw_pattern, str) or not raw_pattern.strip():
             raise ToolInputError("pattern must be a non-empty string")

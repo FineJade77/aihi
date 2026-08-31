@@ -123,7 +123,7 @@ Coordinator 的默认 turn budget 是有限的（\`100\`），应用可以进一
 | Runtime 与 Run | \`Runtime\`、\`RuntimeBuilder\`、\`RunCoordinator\`、\`RunResult\`、\`RunState\` |
 | Session 与存储 | \`Session\`、\`EventStore\`、\`InMemoryEventStore\`、\`SQLiteEventStore\`、\`Event\` |
 | Context | \`ContextCompiler\`、`CompactionPolicy`、`ContextState`、摘要和 Compaction Generator |
-| Tool | \`Tool\`、\`ToolSpec\`、\`ToolContext\`、\`ToolRegistry\`、内置文件/Shell Tool |
+| Tool | \`Tool\`、\`ToolSpec\`、\`ToolContext\`、`PreparedToolCall`、\`ToolRegistry\`、内置文件/Shell Tool |
 | Policy 与 Approval | \`PermissionMode\`、\`DefaultPolicyEngine\`、\`Approval\`、Approval Resolver |
 | Sandbox | \`HostBackend\`、\`LocalIsolatedBackend\`、\`DockerBackend\` |
 | 集成 | Skill、MCP、Plugin、Subagent、Memory、Artifact |
@@ -134,6 +134,10 @@ Coordinator 的默认 turn budget 是有限的（\`100\`），应用可以进一
 
 Tool 通过显式 \`ToolSpec\` metadata 注册。Policy Engine 决定某次调用是允许、拒绝还是需要
 Approval。Approval Lease 可以根据应用 Policy，将决定限定到一次请求、某个 Tool 或整个 Run。
+
+应用可以通过 `ToolContext.app_context` 和 `PermissionContext.app_context` 传递类型化的不透明状态。
+Tool 可以实现确定性且无副作用的 `prepare()`，返回 `PreparedToolCall`；Policy 和实际执行随后共享同一份
+规范化输入。`RunCoordinator.run_profile` 会持久化 JSON 应用权限快照，并在同一 Run Resume 时拒绝不同快照。
 
 内置 Tool 必须配合适合当前 Workspace 的 Sandbox 和 Policy 使用。文件读取、Glob/Grep、编辑、
 写入和 Shell 执行不是可以互换的能力。

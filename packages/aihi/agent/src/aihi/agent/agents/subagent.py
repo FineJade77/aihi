@@ -77,7 +77,7 @@ class SubagentTypeSpec:
 class SubagentRunner(Protocol):
     """Execute one already-authorized child task."""
 
-    async def run(self, spec: TaskSpec, context: ToolContext) -> TaskResult: ...
+    async def run(self, spec: TaskSpec, context: ToolContext[Any]) -> TaskResult: ...
 
 
 @runtime_checkable
@@ -102,14 +102,14 @@ class ChildCoordinator(Protocol):
     ) -> Any: ...
 
 
-SessionFactory = Callable[[TaskSpec, ToolContext], Session]
+SessionFactory = Callable[[TaskSpec, ToolContext[Any]], Session]
 CoordinatorFactory = Callable[[TaskSpec, SandboxBackend], ChildCoordinator]
 
 
 def restrict_registry(registry: ToolRegistry, capabilities: frozenset[str]) -> ToolRegistry:
     """Keep only the tools whose required capabilities the child actually holds."""
 
-    allowed: list[Tool] = []
+    allowed: list[Tool[Any]] = []
     for spec in registry.specs:
         tool = registry.get(spec.name)
         if tool is None:
@@ -122,7 +122,7 @@ def restrict_registry(registry: ToolRegistry, capabilities: frozenset[str]) -> T
 def subagent_session_factory(store: EventStore, *, provider: str, model: str) -> SessionFactory:
     """Create each child run its own session, linked back to the parent."""
 
-    def factory(spec: TaskSpec, context: ToolContext) -> Session:
+    def factory(spec: TaskSpec, context: ToolContext[Any]) -> Session:
         return Session.create(
             store,
             cwd=spec.workspace.root,
@@ -159,14 +159,14 @@ class ChildRunSubagentRunner:
         self.system_prompt = system_prompt
         self.permission_mode = permission_mode
 
-    def _effective_mode(self, context: ToolContext) -> PermissionMode:
+    def _effective_mode(self, context: ToolContext[Any]) -> PermissionMode:
         parent_rank = _MODE_RANK.get(context.permission_mode, 0)
         configured_rank = _MODE_RANK[self.permission_mode.value]
         if parent_rank >= configured_rank:
             return self.permission_mode
         return PermissionMode(context.permission_mode)
 
-    async def run(self, spec: TaskSpec, context: ToolContext) -> TaskResult:
+    async def run(self, spec: TaskSpec, context: ToolContext[Any]) -> TaskResult:
         session = self.session_factory(spec, context)
         child_sandbox = ScopedSandboxBackend(self.sandbox, spec.workspace)
         coordinator = self.coordinator_factory(spec, child_sandbox)
@@ -276,7 +276,7 @@ class ChildRunSubagentRunner:
 
     @staticmethod
     def _finish(
-        session: Session, spec: TaskSpec, context: ToolContext, result: TaskResult
+        session: Session, spec: TaskSpec, context: ToolContext[Any], result: TaskResult
     ) -> TaskResult:
         session.append(
             Event(
@@ -424,7 +424,7 @@ class SubagentTool:
 
         return self.runners[agent_type]
 
-    async def run(self, input: dict[str, Any], context: ToolContext) -> ToolExecutionResult:
+    async def run(self, input: dict[str, Any], context: ToolContext[Any]) -> ToolExecutionResult:
         objective = input.get("objective")
         if not isinstance(objective, str) or not objective.strip():
             raise AgentValidationError("Subagent objective must be a non-empty string")
@@ -499,7 +499,7 @@ class SubagentTool:
             metadata={**metadata, "error_code": "subagent_failed"},
         )
 
-    def _graph_for(self, context: ToolContext) -> tuple[TaskGraph, str]:
+    def _graph_for(self, context: ToolContext[Any]) -> tuple[TaskGraph, str]:
         """One task graph per parent run, so sibling limits actually bind."""
 
         key = (context.session_id, context.run_id)

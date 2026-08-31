@@ -484,7 +484,7 @@ class PluginRemoteTool:
             exposed_name=f"plugin.{plugin_id}.{self.definition.name}"
         )
 
-    async def run(self, input: dict[str, Any], context: ToolContext) -> ToolExecutionResult:
+    async def run(self, input: dict[str, Any], context: ToolContext[Any]) -> ToolExecutionResult:
         result = await self.host.call_tool(self.definition.name, input)
         content_parts: list[str] = []
         for item in result.content:

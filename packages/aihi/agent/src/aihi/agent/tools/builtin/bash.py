@@ -71,7 +71,7 @@ class BashTool:
     def __init__(self, *, shell_path: str | Path | None = None) -> None:
         self.shell_path = resolve_bash(shell_path)
 
-    async def run(self, input: dict[str, Any], context: ToolContext) -> ToolExecutionResult:
+    async def run(self, input: dict[str, Any], context: ToolContext[Any]) -> ToolExecutionResult:
         command = input.get("command")
         if not isinstance(command, str) or not command.strip():
             raise ToolInputError("command must be a non-empty string")

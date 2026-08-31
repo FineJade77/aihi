@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import hashlib
+import json
 from collections.abc import Coroutine
 from dataclasses import asdict, dataclass, replace
 from typing import Any
@@ -127,7 +129,7 @@ class RunCoordinator:
         *,
         registry: ToolRegistry,
         sandbox: SandboxBackend,
-        policy: PolicyEngine | None = None,
+        policy: PolicyEngine[Any] | None = None,
         hooks: HookBus | None = None,
         context_compiler: ContextCompiler | None = None,
         artifact_store: ArtifactStore | None = None,
@@ -188,6 +190,8 @@ class RunCoordinator:
         max_output_tokens: int = 4_096,
         max_turns: int | None = None,
         cancel_event: asyncio.Event | None = None,
+        app_context: object | None = None,
+        run_profile: dict[str, Any] | None = None,
     ) -> RunResult:
         if (
             not isinstance(max_output_tokens, int)
@@ -215,6 +219,7 @@ class RunCoordinator:
             system_prompt=system_prompt,
             max_output_tokens=max_output_tokens,
             max_turns=resolved_max_turns,
+            run_profile=run_profile,
         )
         if already_started:
             started = self._run_started_event(session, rid)
@@ -257,6 +262,7 @@ class RunCoordinator:
                 max_turns=resolved_max_turns,
                 cancel_event=cancel_event,
                 pending_tool_call_ids=suspended_calls,
+                app_context=app_context,
             )
             self._record_outcome(session, rid, RunState.COMPLETED, response)
             self._finish(session, rid, machine, RunState.COMPLETED, "run.completed")
@@ -363,8 +369,10 @@ class RunCoordinator:
         system_prompt: str,
         max_output_tokens: int,
         max_turns: int,
+        run_profile: dict[str, Any] | None,
     ) -> dict[str, Any]:
         descriptor = self.sandbox.descriptor
+        application_profile = self._validated_run_profile(run_profile)
         return {
             "model": model,
             "provider": self.provider.name,
@@ -377,6 +385,7 @@ class RunCoordinator:
             "system_prompt_sha256": self._system_prompt_sha256(system_prompt),
             "max_output_tokens": max_output_tokens,
             "max_turns": max_turns,
+            "application_profile": application_profile,
         }
 
     @staticmethod
@@ -394,6 +403,7 @@ class RunCoordinator:
             "system_prompt_sha256",
             "max_output_tokens",
             "max_turns",
+            "application_profile",
         )
         mismatches = [
             key
@@ -409,6 +419,19 @@ class RunCoordinator:
     def _system_prompt_sha256(system_prompt: str) -> str:
         return hashlib.sha256(system_prompt.encode("utf-8")).hexdigest()
 
+    @staticmethod
+    def _validated_run_profile(value: dict[str, Any] | None) -> dict[str, Any]:
+        if value is None:
+            return {}
+        if not isinstance(value, dict):
+            raise TypeError("run_profile must be a JSON object")
+        profile = copy.deepcopy(value)
+        try:
+            json.dumps(profile, allow_nan=False)
+        except (TypeError, ValueError) as error:
+            raise ValueError("run_profile must be JSON serializable") from error
+        return profile
+
     async def resume(
         self,
         session: Session,
@@ -421,6 +444,8 @@ class RunCoordinator:
         max_output_tokens: int | None = None,
         max_turns: int | None = None,
         cancel_event: asyncio.Event | None = None,
+        app_context: object | None = None,
+        run_profile: dict[str, Any] | None = None,
     ) -> RunResult:
         """Continue an interrupted or approval-suspended run from persisted events."""
 
@@ -465,6 +490,10 @@ class RunCoordinator:
         self._validate_max_turns(persisted_max_turns)
         resolved_max_turns = max_turns if max_turns is not None else persisted_max_turns
         self._validate_max_turns(resolved_max_turns)
+        persisted_profile = persisted.get("application_profile", {})
+        if not isinstance(persisted_profile, dict):
+            raise ValueError("Persisted run configuration has invalid application_profile")
+        resolved_profile = persisted_profile if run_profile is None else run_profile
         expected_prompt_hash = persisted.get("system_prompt_sha256")
         if system_prompt is None:
             if expected_prompt_hash is None:
@@ -489,6 +518,8 @@ class RunCoordinator:
             max_output_tokens=resolved_max_output,
             max_turns=resolved_max_turns,
             cancel_event=cancel_event,
+            app_context=app_context,
+            run_profile=resolved_profile,
         )
 
     async def _loop(
@@ -505,6 +536,7 @@ class RunCoordinator:
         max_turns: int,
         cancel_event: asyncio.Event | None,
         pending_tool_call_ids: tuple[str, ...] = (),
+        app_context: object | None = None,
     ) -> ModelResponse:
         provider_context_retry_used = False
         # Built once per run: re-deriving it from the whole event log on every
@@ -534,6 +566,7 @@ class RunCoordinator:
                     cancel_event=cancel_event,
                     allow_inline_approval=False,
                     allow_parallel_tools=capabilities.parallel_tools,
+                    app_context=app_context,
                 )
                 self._transition(session, run_id, machine, RunState.RUNNING)
                 pending_calls = ()
@@ -554,7 +587,9 @@ class RunCoordinator:
                 tools=self.registry.specs,
                 safety_margin=self.context_safety_margin,
             )
-            sections = self._context_sections(session, run_id, permission_mode)
+            sections = self._context_sections(
+                session, run_id, permission_mode, app_context=app_context
+            )
             try:
                 compiled = self.context_compiler.compile(
                     session.messages,
@@ -765,6 +800,7 @@ class RunCoordinator:
                 cancel_event=cancel_event,
                 allow_inline_approval=True,
                 allow_parallel_tools=capabilities.parallel_tools,
+                app_context=app_context,
             )
             self._transition(session, run_id, machine, RunState.RUNNING)
 
@@ -780,6 +816,7 @@ class RunCoordinator:
         cancel_event: asyncio.Event | None,
         allow_inline_approval: bool,
         allow_parallel_tools: bool = True,
+        app_context: object | None = None,
     ) -> None:
         index = 0
         while index < len(calls):
@@ -801,6 +838,7 @@ class RunCoordinator:
                     require_capability_lease=require_capability_lease,
                     cancel_event=cancel_event,
                     allow_inline_approval=allow_inline_approval,
+                    app_context=app_context,
                 )
                 for call in group
             ]
@@ -910,6 +948,7 @@ class RunCoordinator:
         require_capability_lease: bool,
         cancel_event: asyncio.Event | None,
         allow_inline_approval: bool,
+        app_context: object | None,
     ) -> DispatchResult:
         result = await self._dispatch(
             session,
@@ -918,6 +957,7 @@ class RunCoordinator:
             permission_mode=permission_mode,
             require_capability_lease=require_capability_lease,
             cancel_event=cancel_event,
+            app_context=app_context,
         )
         decision = result.decision
         if result.started or decision is None or decision.effect != DecisionEffect.ASK:
@@ -936,13 +976,14 @@ class RunCoordinator:
         approval_metadata = {
             "tool_call_id": call.id,
             "tool_name": call.name,
-            "tool_input": approval_input_preview(call.input),
+            "tool_input": approval_input_preview(result.prepared_input or call.input),
             "rule_id": decision.rule_id,
             "reason": decision.reason,
             "required_capabilities": list(
                 spec.required_capabilities if spec is not None else ()
             ),
             "sandbox": sandbox_descriptor,
+            "execution": dict(result.execution),
         }
         if not allow_inline_approval:
             if approval is None:
@@ -970,7 +1011,7 @@ class RunCoordinator:
             run_id=run_id,
             tool_call_id=call.id,
             tool_name=call.name,
-            tool_input=dict(call.input),
+            tool_input=dict(result.prepared_input or call.input),
             reason=decision.reason,
             rule_id=decision.rule_id,
             required_capabilities=spec.required_capabilities if spec is not None else (),
@@ -1008,6 +1049,7 @@ class RunCoordinator:
             permission_mode=permission_mode,
             require_capability_lease=require_capability_lease,
             cancel_event=cancel_event,
+            app_context=app_context,
         )
         self._consume_one_shot(session, run_id, call.name, retried)
         if not retried.started and retried.decision is not None:
@@ -1044,6 +1086,7 @@ class RunCoordinator:
         permission_mode: PermissionMode,
         require_capability_lease: bool,
         cancel_event: asyncio.Event | None,
+        app_context: object | None,
     ) -> DispatchResult:
         authorization = session.authorization
         permission = PermissionContext(
@@ -1054,6 +1097,7 @@ class RunCoordinator:
             approvals=authorization.active_approvals(run_id),
             require_capability_lease=require_capability_lease,
             run_id=run_id,
+            app_context=app_context,
         )
         context = ToolContext(
             cwd=str(session.cwd),
@@ -1061,6 +1105,7 @@ class RunCoordinator:
             run_id=run_id,
             sandbox=self.sandbox,
             permission_mode=permission_mode.value,
+            app_context=app_context,
         )
         return await self.dispatcher.dispatch(
             call,
@@ -1175,7 +1220,12 @@ class RunCoordinator:
         return tuple(calls)
 
     def _context_sections(
-        self, session: Session, run_id: str, permission_mode: PermissionMode
+        self,
+        session: Session,
+        run_id: str,
+        permission_mode: PermissionMode,
+        *,
+        app_context: object | None,
     ) -> tuple[ContextSection, ...]:
         """Compose optional sections. A broken contributor fails the run.
 
@@ -1191,6 +1241,7 @@ class RunCoordinator:
             cwd=str(session.cwd),
             permission_mode=permission_mode.value,
             user_text=self._last_text(session, "user"),
+            app_context=app_context,
         )
         sections: list[ContextSection] = []
         for contributor in self.extensions.context_contributors:

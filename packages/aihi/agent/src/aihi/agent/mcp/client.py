@@ -238,7 +238,7 @@ class McpRemoteTool:
         exposed_name = model_tool_name(self.server_name, self.definition.name)
         return self.definition.to_tool_spec(exposed_name=exposed_name)
 
-    async def run(self, input: dict[str, Any], context: ToolContext) -> ToolExecutionResult:
+    async def run(self, input: dict[str, Any], context: ToolContext[Any]) -> ToolExecutionResult:
         result = await self.client.call_tool(self.definition.name, input)
         content_parts: list[str] = []
         for item in result.content:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from aihi.agent import (
     BashTool,
     EditFileTool,
@@ -18,7 +20,7 @@ from .registry import ToolBuildContext, ToolDefinition
 from .skill import LoadSkillTool
 
 
-def _load_skill(context: ToolBuildContext) -> Tool:
+def _load_skill(context: ToolBuildContext) -> Tool[Any]:
     assert context.skill_loader is not None  # guarded by ToolDefinition.requires
     return LoadSkillTool(context.skill_loader)
 
@@ -36,7 +38,7 @@ CODING_TOOLSET: tuple[ToolDefinition, ...] = (
 )
 
 
-def build_tools(context: ToolBuildContext) -> tuple[Tool, ...]:
+def build_tools(context: ToolBuildContext) -> tuple[Tool[Any], ...]:
     """Build the configured tools in configured order.
 
     An unknown name is an error rather than a silent omission: a typo in the
@@ -51,7 +53,7 @@ def build_tools(context: ToolBuildContext) -> tuple[Tool, ...]:
         and "load_skill" not in names
     ):
         names.append("load_skill")
-    tools: list[Tool] = []
+    tools: list[Tool[Any]] = []
     for name in names:
         definition = definitions.get(name)
         if definition is None:

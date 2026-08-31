@@ -29,6 +29,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
+from typing import Any
 
 from aihi.agent.agents.subagent import (
     ChildRunSubagentRunner,
@@ -79,8 +80,8 @@ class RuntimeBuilder:
     provider: Provider
     model: str
     sandbox: SandboxBackend
-    tools: Sequence[Tool]
-    policy: PolicyEngine | None = None
+    tools: Sequence[Tool[Any]]
+    policy: PolicyEngine[Any] | None = None
     approval_resolver: ApprovalResolver | None = None
     hooks: HookBus | None = None
     artifact_store: ArtifactStore | None = None
@@ -128,7 +129,7 @@ class RuntimeBuilder:
 
         return replace(self, approval_resolver=resolver)
 
-    def with_policy(self, policy: PolicyEngine) -> RuntimeBuilder:
+    def with_policy(self, policy: PolicyEngine[Any]) -> RuntimeBuilder:
         return replace(self, policy=policy)
 
     def with_context_window(self, tokens: int) -> RuntimeBuilder:

@@ -33,7 +33,7 @@ class WriteFileTool:
     def __init__(self, *, ledger: ReadLedger | None = None) -> None:
         self.ledger = ledger
 
-    def _unread(self, path: str, context: ToolContext) -> ToolExecutionResult | None:
+    def _unread(self, path: str, context: ToolContext[Any]) -> ToolExecutionResult | None:
         """Refuse to modify a file this run has not read."""
 
         if self.ledger is None:
@@ -50,7 +50,7 @@ class WriteFileTool:
             metadata={"error_code": "file_not_read"},
         )
 
-    async def run(self, input: dict[str, Any], context: ToolContext) -> ToolExecutionResult:
+    async def run(self, input: dict[str, Any], context: ToolContext[Any]) -> ToolExecutionResult:
         path = str(input["path"])
         # Creating a file needs no prior read; there is nothing to overwrite.
         if context.sandbox.resolve_path(path).exists():

@@ -288,6 +288,35 @@ async def test_resume_rejects_other_persisted_configuration_drift(
 
 
 @pytest.mark.asyncio
+async def test_resume_rejects_application_run_profile_drift(tmp_path: Path) -> None:
+    session = session_for(tmp_path, "ses-run-profile")
+    coordinator = coordinator_for(tmp_path, FakeProvider(write_steps()))
+    profile = {
+        "schema": "test-application/run-profile-v1",
+        "workspace": str(tmp_path.resolve()),
+        "access_mode": "read_only",
+    }
+
+    suspended = await coordinator.run(
+        session,
+        model="fake-model",
+        user_message=Message.text("user", "write"),
+        run_profile=profile,
+    )
+
+    started = next(event for event in session.events if event.type == "run.started")
+    assert started.data["application_profile"] == profile
+    with pytest.raises(ValueError, match="application_profile"):
+        await coordinator.resume(
+            session,
+            run_id=suspended.run_id,
+            model="fake-model",
+            run_profile={**profile, "access_mode": "full_access"},
+        )
+    assert not any(event.type == "run.resumed" for event in session.events)
+
+
+@pytest.mark.asyncio
 async def test_out_of_band_denial_is_consumed_as_the_unique_tool_result(
     tmp_path: Path,
 ) -> None:

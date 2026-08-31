@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, Generic, Protocol, TypeVar
 
 from aihi.agent._core.errors import ToolInputError
 from aihi.agent.sandbox.base import SandboxBackend
 from aihi.agent.tools.spec import ToolSpec
+
+TAppContext = TypeVar("TAppContext")
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,7 +20,7 @@ class ToolExecutionResult:
 
 
 @dataclass(frozen=True, slots=True)
-class ToolContext:
+class ToolContext(Generic[TAppContext]):
     cwd: str
     session_id: str
     run_id: str
@@ -26,16 +28,36 @@ class ToolContext:
     # The permission mode of the enclosing run. Tools that delegate work must
     # not hand a child more authority than the parent currently holds.
     permission_mode: str = "default"
+    # Application-owned execution state. The Harness passes this through
+    # without interpreting workspace, product mode, credentials or UI policy.
+    # The legacy cwd/sandbox/mode fields are removed once Coding tools migrate
+    # to this explicit boundary.
+    app_context: TAppContext | None = None
 
 
-class Tool(Protocol):
+@dataclass(frozen=True, slots=True)
+class PreparedToolCall:
+    """Validated, normalized input and non-secret execution metadata.
+
+    Preparation must be deterministic and side-effect free. Policy and the
+    eventual tool body consume the same normalized input, preventing policy
+    from approving one path or target while execution interprets another.
+    """
+
+    input: dict[str, Any]
+    execution: dict[str, Any] = field(default_factory=dict)
+
+
+class Tool(Protocol, Generic[TAppContext]):
     # Read-only on purpose: a plain class attribute satisfies this, and so does
     # a computed property (remote plugin/MCP tools derive their spec from the
     # server's advertised definition).
     @property
     def spec(self) -> ToolSpec: ...
 
-    async def run(self, input: dict[str, Any], context: ToolContext) -> ToolExecutionResult: ...
+    async def run(
+        self, input: dict[str, Any], context: ToolContext[TAppContext]
+    ) -> ToolExecutionResult: ...
 
 
 def validate_tool_input(spec: ToolSpec, value: dict[str, Any]) -> None:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import Any
 
 from aihi.agent import ReadLedger, SkillLoader, Tool
 
@@ -31,7 +32,7 @@ class ToolDefinition:
     """
 
     name: str
-    factory: Callable[[ToolBuildContext], Tool]
+    factory: Callable[[ToolBuildContext], Tool[Any]]
     default_enabled: bool = True
     requires: tuple[str, ...] = ()
 
