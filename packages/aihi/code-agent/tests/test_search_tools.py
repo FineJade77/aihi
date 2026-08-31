@@ -20,14 +20,15 @@ def workspace(tmp_path: Path) -> Path:
 
 
 def ctx(root: Path) -> ToolContext:
+    sandbox = HostBackend(root, unsafe=True)
     return ToolContext(
-        cwd=str(root),
         session_id="ses-search",
         run_id="run-search",
         app_context=CodeAgentPermissionContext(
             workspace=root,
             access_mode=AccessMode.WORKSPACE_WRITE,
             run_mode=RunMode.EXECUTE,
+            command_sandbox=sandbox.descriptor,
         ),
     )
 

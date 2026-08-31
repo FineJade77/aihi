@@ -21,7 +21,6 @@ from typing import Any, Protocol, runtime_checkable
 from aihi.agent._core.errors import AgentRuntimeError
 from aihi.agent._core.events import Event
 from aihi.agent.sessions.session import Session
-from aihi.agent.sessions.store import EventStore
 from aihi.agent.tools.base import Tool, ToolContext, ToolExecutionResult
 from aihi.agent.tools.registry import ToolRegistry
 from aihi.agent.tools.spec import ToolSpec
@@ -111,26 +110,6 @@ def restrict_registry(registry: ToolRegistry, capabilities: frozenset[str]) -> T
         if set(spec.required_capabilities) <= capabilities:
             allowed.append(tool)
     return ToolRegistry(allowed)
-
-
-def subagent_session_factory(store: EventStore, *, provider: str, model: str) -> SessionFactory:
-    """Create each child run its own session, linked back to the parent."""
-
-    def factory(spec: TaskSpec, context: ToolContext[Any]) -> Session:
-        return Session.create(
-            store,
-            cwd=context.cwd,
-            provider=provider,
-            model=model,
-            metadata={
-                "parent_session_id": context.session_id,
-                "parent_run_id": context.run_id,
-                "task_id": spec.task_id,
-                "depth": spec.depth,
-            },
-        )
-
-    return factory
 
 
 class ChildRunSubagentRunner:
@@ -550,5 +529,4 @@ __all__ = [
     "SubagentTool",
     "SubagentTypeSpec",
     "restrict_registry",
-    "subagent_session_factory",
 ]

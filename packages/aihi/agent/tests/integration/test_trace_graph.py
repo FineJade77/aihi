@@ -4,7 +4,6 @@ from pathlib import Path
 
 import pytest
 from aihi.agent import (
-    HostBackend,
     InMemoryEventStore,
     RunCoordinator,
     RunState,
@@ -20,34 +19,31 @@ from aihi.agent.agents import (
     SubagentAuthority,
     SubagentTool,
     restrict_registry,
-    subagent_session_factory,
 )
 from aihi.agent.evals import TraceGraph, replay_graph
 from aihi.agent.evals.errors import EvalValidationError
 from aihi.agent.policy import ApprovalOutcome
 from aihi.models import FakeProvider, FakeStep, Message
 
-from packages.aihi.agent.tests.support_tools import ReadTestTool
+from packages.aihi.agent.tests.support_tools import ReadTestTool, app_session_factory
 
 
 async def delegated_run(tmp_path: Path) -> tuple[Session, InMemoryEventStore, str]:
     """Run a parent that delegates one task, and return both logs."""
 
     store = InMemoryEventStore()
-    sandbox = HostBackend(tmp_path, unsafe=True)
-    tools = ToolRegistry([ReadTestTool()])
+    tools = ToolRegistry([ReadTestTool(tmp_path)])
 
     def coordinator_factory(spec: object) -> RunCoordinator:
         capabilities = frozenset(getattr(spec, "capabilities", frozenset()))
         return RunCoordinator(
             FakeProvider([FakeStep(text="the child read the code")]),
             registry=restrict_registry(tools, capabilities),
-            sandbox=sandbox,
         )
 
     runner = ChildRunSubagentRunner(
         coordinator_factory,
-        subagent_session_factory(store, provider="fake", model="fake-model"),
+        app_session_factory(store, workspace=tmp_path),
         model="fake-model",
         child_context_factory=lambda spec, context: ChildRunContext(),
     )
@@ -63,7 +59,6 @@ async def delegated_run(tmp_path: Path) -> tuple[Session, InMemoryEventStore, st
             [FakeStep.call_tool("task", {"objective": "read the code"}), FakeStep(text="done")]
         ),
         registry=ToolRegistry([tool]),
-        sandbox=sandbox,
         approval_resolver=StaticApprovalResolver(ApprovalOutcome.GRANTED),
     )
     session = Session.create(
@@ -151,7 +146,6 @@ async def test_a_lone_parent_is_still_a_valid_graph(tmp_path: Path) -> None:
     coordinator = RunCoordinator(
         FakeProvider([FakeStep(text="no delegation here")]),
         registry=ToolRegistry(),
-        sandbox=HostBackend(tmp_path, unsafe=True),
     )
     await coordinator.run(session, model="fake-model", user_message=Message.text("user", "hi"))
 

@@ -4,7 +4,6 @@ from pathlib import Path
 
 import pytest
 from aihi.agent import (
-    HostBackend,
     InMemoryEventStore,
     RunCoordinator,
     RunState,
@@ -32,7 +31,6 @@ async def two_turn_session(tmp_path: Path, store: object | None = None) -> Sessi
     coordinator = RunCoordinator(
         FakeProvider([FakeStep(text="first answer"), FakeStep(text="second answer")]),
         registry=ToolRegistry(),
-        sandbox=HostBackend(tmp_path, unsafe=True),
     )
     await coordinator.run(session, model="fake-model", user_message=Message.text("user", "one"))
     await coordinator.run(session, model="fake-model", user_message=Message.text("user", "two"))
@@ -88,7 +86,6 @@ async def test_a_child_is_a_normal_session_that_can_keep_running(tmp_path: Path)
     coordinator = RunCoordinator(
         FakeProvider([FakeStep(text="a different direction")]),
         registry=ToolRegistry(),
-        sandbox=HostBackend(tmp_path, unsafe=True),
     )
 
     result = await coordinator.run(
@@ -132,8 +129,7 @@ async def test_forking_mid_tool_call_leaves_an_orphan_the_next_run_repairs(
                 FakeStep(text="ok"),
             ]
         ),
-        registry=ToolRegistry([WriteTestTool()]),
-        sandbox=HostBackend(tmp_path, unsafe=True),
+        registry=ToolRegistry([WriteTestTool(tmp_path)]),
         approval_resolver=StaticApprovalResolver(ApprovalOutcome.GRANTED),
     )
     await coordinator.run(session, model="fake-model", user_message=Message.text("user", "write"))

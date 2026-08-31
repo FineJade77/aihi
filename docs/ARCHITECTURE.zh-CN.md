@@ -227,8 +227,10 @@ TUI 只拥有 viewport、折叠 Tool 输出、Slash 补全和草稿历史等展�
 
 默认使用 SQLite WAL；大型输出、Diff 和附件存入 Artifact Store，并带 Session/Run retention 和
 访问检查。Snapshot 与 Compaction 只是派生加速数据，不替代原始事件。Event envelope v2 从
-`subagent.spawned` 的 Task payload 中删除旧的 Harness-owned Workspace；注册的 v1 migration 继续读取
-冻结 Session，但当前 Task 类型不再保留这一应用字段。`audit.jsonl` 是本地脱敏、
+`subagent.spawned` 的 Task payload 中删除旧的 Harness-owned Workspace；envelope v3 从
+Run/Tool/Approval/Compaction Event 中删除 Runtime 全局 Workspace、Sandbox 和权限模式字段。应用权限
+保留在不透明 Run profile 中，命令 Sandbox 事实保留在 Tool 自有 execution metadata 中；注册的
+v1 → v2 → v3 migration 继续读取冻结 Session，而不会恢复已退役的基础层概念。`audit.jsonl` 是本地脱敏、
 尽力而为的运维日志，不能成为事实源；`/doctor` 检查审计目标及其父目录可写性。Trace、Replay 和
 Eval 只处理脱敏事件 Bundle，不重新执行 Tool 或 Provider。
 

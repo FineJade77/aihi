@@ -5,7 +5,6 @@ from pathlib import Path
 import pytest
 from aihi.agent.observability import Telemetry
 from aihi.agent.runtime import RunCoordinator, RunState
-from aihi.agent.sandbox import HostBackend
 from aihi.agent.sessions import InMemoryEventStore, Session
 from aihi.agent.tools import ToolRegistry
 from aihi.models import FakeProvider, FakeStep, Message, ProviderFailure
@@ -43,7 +42,6 @@ async def test_runtime_flushes_shared_telemetry_after_success_and_failure(tmp_pa
     success = RunCoordinator(
         FakeProvider([FakeStep(text="done")]),
         registry=ToolRegistry(),
-        sandbox=HostBackend(tmp_path, unsafe=True),
         telemetry=success_telemetry,
     )
     result = await success.run(
@@ -59,7 +57,6 @@ async def test_runtime_flushes_shared_telemetry_after_success_and_failure(tmp_pa
     failure = RunCoordinator(
         FakeProvider([FakeStep(error=ProviderFailure("provider unavailable"))]),
         registry=ToolRegistry(),
-        sandbox=HostBackend(tmp_path, unsafe=True),
         telemetry=failure_telemetry,
     )
     failed = await failure.run(failure_session, model="fake-model")

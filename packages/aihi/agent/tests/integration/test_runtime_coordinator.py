@@ -14,7 +14,6 @@ from aihi.agent.artifacts import (
 from aihi.agent.context import CompactionPolicy, ContextState
 from aihi.agent.hooks import HookBus
 from aihi.agent.runtime import RunCoordinator, RunState
-from aihi.agent.sandbox import HostBackend
 from aihi.agent.sessions import InMemoryEventStore, Session
 from aihi.agent.tools import ToolExecutionResult, ToolRegistry, ToolSpec
 from aihi.agent.tools.base import ToolContext
@@ -108,7 +107,6 @@ async def test_fake_provider_completes_plain_response_and_streams_to_observers(
     coordinator = RunCoordinator(
         provider,
         registry=ToolRegistry(),
-        sandbox=HostBackend(session_tmp_path, unsafe=True),
     )
 
     result = await coordinator.run(
@@ -137,8 +135,7 @@ async def test_runtime_stops_an_unbounded_tool_loop_at_max_turns(tmp_path: Path)
     )
     coordinator = RunCoordinator(
         provider,
-        registry=ToolRegistry([ReadTestTool()]),
-        sandbox=HostBackend(tmp_path, unsafe=True),
+        registry=ToolRegistry([ReadTestTool(tmp_path)]),
     )
 
     result = await coordinator.run(
@@ -159,7 +156,6 @@ def test_runtime_rejects_invalid_max_turns(tmp_path: Path) -> None:
         RunCoordinator(
             FakeProvider(),
             registry=ToolRegistry(),
-            sandbox=HostBackend(tmp_path, unsafe=True),
             max_turns=0,
         )
 
@@ -172,8 +168,7 @@ async def test_runtime_projects_only_model_visible_tool_fields(
     session = make_session(session_tmp_path, "ses-tool-projection")
     coordinator = RunCoordinator(
         provider,
-        registry=ToolRegistry([ReadTestTool()]),
-        sandbox=HostBackend(session_tmp_path, unsafe=True),
+        registry=ToolRegistry([ReadTestTool(session_tmp_path)]),
     )
 
     result = await coordinator.run(
@@ -199,8 +194,7 @@ async def test_runtime_builds_one_stable_cache_family_for_the_base_prompt(
     session = make_session(session_tmp_path, "ses-cache-prefix")
     coordinator = RunCoordinator(
         provider,
-        registry=ToolRegistry([ReadTestTool()]),
-        sandbox=HostBackend(session_tmp_path, unsafe=True),
+        registry=ToolRegistry([ReadTestTool(session_tmp_path)]),
     )
 
     result = await coordinator.run(
@@ -241,8 +235,7 @@ async def test_runtime_persists_redacted_cache_observability(
 
     result = await RunCoordinator(
         provider,
-        registry=ToolRegistry([ReadTestTool()]),
-        sandbox=HostBackend(session_tmp_path, unsafe=True),
+        registry=ToolRegistry([ReadTestTool(session_tmp_path)]),
     ).run(
         session,
         model="fake-model",
@@ -270,7 +263,6 @@ async def test_runtime_records_pressure_and_count_fallback_without_failing(
     coordinator = RunCoordinator(
         provider,
         registry=ToolRegistry(),
-        sandbox=HostBackend(session_tmp_path, unsafe=True),
         context_window=256,
         context_safety_margin=0,
     )
@@ -303,7 +295,6 @@ async def test_exact_over_capacity_count_forces_preflight_compaction_and_recount
     coordinator = RunCoordinator(
         provider,
         registry=ToolRegistry(),
-        sandbox=HostBackend(session_tmp_path, unsafe=True),
         context_window=512,
         context_safety_margin=0,
         compaction_policy=CompactionPolicy(exact_count_ratio=0.01),
@@ -335,7 +326,6 @@ async def test_runtime_never_retries_a_provider_after_its_first_chunk(
     coordinator = RunCoordinator(
         provider,
         registry=ToolRegistry(),
-        sandbox=HostBackend(session_tmp_path, unsafe=True),
     )
 
     result = await coordinator.run(
@@ -363,7 +353,6 @@ async def test_runtime_compacts_history_without_dropping_raw_events(
     coordinator = RunCoordinator(
         provider,
         registry=ToolRegistry(),
-        sandbox=HostBackend(session_tmp_path, unsafe=True),
         context_window=2_000,
         context_safety_margin=0,
     )
@@ -403,7 +392,6 @@ async def test_context_state_survives_reload_fork_and_provider_switch(
     first = RunCoordinator(
         first_provider,
         registry=ToolRegistry(),
-        sandbox=HostBackend(session_tmp_path, unsafe=True),
         context_window=2_000,
         context_safety_margin=0,
     )
@@ -420,7 +408,6 @@ async def test_context_state_survives_reload_fork_and_provider_switch(
     second = RunCoordinator(
         second_provider,
         registry=ToolRegistry(),
-        sandbox=HostBackend(session_tmp_path, unsafe=True),
         context_window=2_000,
         context_safety_margin=0,
     )
@@ -450,8 +437,7 @@ async def test_resume_after_context_state_compaction_executes_tool_once(
     )
     coordinator = RunCoordinator(
         provider,
-        registry=ToolRegistry([WriteTestTool()]),
-        sandbox=HostBackend(session_tmp_path, unsafe=True),
+        registry=ToolRegistry([WriteTestTool(session_tmp_path)]),
         context_window=2_000,
         context_safety_margin=0,
     )
@@ -510,7 +496,6 @@ async def test_runtime_records_artifact_reference_for_large_tool_result(
     coordinator = RunCoordinator(
         provider,
         registry=ToolRegistry(),
-        sandbox=HostBackend(session_tmp_path, unsafe=True),
         artifact_store=artifact_store,
     )
 
@@ -571,8 +556,7 @@ async def test_runtime_soft_prunes_old_results_without_rewriting_raw_events(
     artifact_store = FileArtifactStore(session_tmp_path / "soft-prune-artifacts")
     coordinator = RunCoordinator(
         provider,
-        registry=ToolRegistry([ReadTestTool()]),
-        sandbox=HostBackend(session_tmp_path, unsafe=True),
+        registry=ToolRegistry([ReadTestTool(session_tmp_path)]),
         artifact_store=artifact_store,
         context_window=15_000,
         context_safety_margin=0,
@@ -662,7 +646,6 @@ async def test_runtime_retries_once_after_provider_context_length_error(
     coordinator = RunCoordinator(
         provider,
         registry=ToolRegistry(),
-        sandbox=HostBackend(session_tmp_path, unsafe=True),
     )
 
     result = await coordinator.run(
@@ -695,7 +678,6 @@ async def test_runtime_does_not_retry_context_length_error_more_than_once(
     coordinator = RunCoordinator(
         provider,
         registry=ToolRegistry(),
-        sandbox=HostBackend(session_tmp_path, unsafe=True),
     )
 
     result = await coordinator.run(
@@ -729,8 +711,7 @@ async def test_tool_call_is_persisted_before_host_execution_and_then_summarized(
     hooks.register("tool.after", record_hook)
     coordinator = RunCoordinator(
         provider,
-        registry=ToolRegistry([ReadTestTool()]),
-        sandbox=HostBackend(session_tmp_path, unsafe=True),
+        registry=ToolRegistry([ReadTestTool(session_tmp_path)]),
         hooks=hooks,
     )
 
@@ -755,9 +736,9 @@ async def test_tool_call_is_persisted_before_host_execution_and_then_summarized(
         index for index, event in enumerate(events) if event.type == "tool.result"
     )
     assert assistant_index < started_index < result_index
-    assert events[started_index].data["unsafe"] is True
-    assert events[started_index].data["sandbox"] == "host"
-    assert events[started_index].data["sandbox_descriptor"]["name"] == "host"
+    assert events[started_index].data["execution"] == {}
+    assert "sandbox" not in events[started_index].data
+    assert "unsafe" not in events[started_index].data
     assert hook_names == ["tool.before", "tool.after"]
     assert provider.requests[1].messages[-1].tool_results[0].content.startswith(
         "     1\tline one"
@@ -773,7 +754,6 @@ async def test_unknown_tool_produces_recoverable_tool_result() -> None:
     coordinator = RunCoordinator(
         provider,
         registry=ToolRegistry(),
-        sandbox=HostBackend(session.cwd, unsafe=True),
     )
 
     result = await coordinator.run(
@@ -811,7 +791,6 @@ async def test_cancellation_repairs_tool_call_without_replay() -> None:
     coordinator = RunCoordinator(
         provider,
         registry=ToolRegistry([SlowTool()]),
-        sandbox=HostBackend(session.cwd, unsafe=True),
     )
 
     task = asyncio.create_task(
@@ -834,7 +813,6 @@ async def test_cancel_event_interrupts_in_flight_tool_and_repairs_call() -> None
     coordinator = RunCoordinator(
         provider,
         registry=ToolRegistry([SlowTool()]),
-        sandbox=HostBackend(session.cwd, unsafe=True),
     )
     cancel_event = asyncio.Event()
     task = asyncio.create_task(
@@ -868,8 +846,7 @@ async def test_duplicate_tool_call_id_fails_before_second_execution() -> None:
     )
     coordinator = RunCoordinator(
         provider,
-        registry=ToolRegistry([ReadTestTool()]),
-        sandbox=HostBackend(session.cwd, unsafe=True),
+        registry=ToolRegistry([ReadTestTool(Path.cwd())]),
     )
 
     result = await coordinator.run(

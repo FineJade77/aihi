@@ -37,6 +37,7 @@ from aihi.agent.agents import (
     ChildContextFactory,
     ChildRunContext,
     ChildRunSubagentRunner,
+    SessionFactory,
     SubagentAuthority,
     SubagentRunner,
     SubagentTool,
@@ -46,7 +47,6 @@ from aihi.agent.agents import (
     TaskResult,
     TaskSpec,
     restrict_registry,
-    subagent_session_factory,
 )
 from aihi.agent.artifacts import (
     ArtifactAccess,
@@ -146,7 +146,6 @@ from aihi.agent.policy import (
     DecisionEffect,
     DefaultPolicyEngine,
     PermissionContext,
-    PermissionMode,
     PolicyEngine,
     StaticApprovalResolver,
     SuspendingApprovalResolver,
@@ -272,7 +271,6 @@ __all__ = [
     "MemoryStore",
     "ModelSummaryGenerator",
     "PermissionContext",
-    "PermissionMode",
     "PluginCandidate",
     "PluginDiscovery",
     "PluginHost",
@@ -299,6 +297,7 @@ __all__ = [
     "SandboxDescriptor",
     "SandboxViolation",
     "Session",
+    "SessionFactory",
     "SessionNotFound",
     "SkillDiscovery",
     "SkillIndexContributor",
@@ -339,6 +338,5 @@ __all__ = [
     "register_plugin_tools",
     "replay_graph",
     "restrict_registry",
-    "subagent_session_factory",
 ]
 __version__ = "0.1.0"

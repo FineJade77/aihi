@@ -32,13 +32,13 @@ async def test_git_status_and_diff_are_read_only_workspace_tools(tmp_path: Path)
     )
     tracked.write_text("after\n", encoding="utf-8")
     context = ToolContext(
-        cwd=str(tmp_path),
         session_id="session",
         run_id="run",
         app_context=CodeAgentPermissionContext(
             workspace=tmp_path,
             access_mode=AccessMode.WORKSPACE_WRITE,
             run_mode=RunMode.EXECUTE,
+            command_sandbox=sandbox.descriptor,
         ),
     )
 

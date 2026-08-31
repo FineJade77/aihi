@@ -11,7 +11,6 @@ from aihi.code_agent.tools.bash import MAX_COMMAND_LENGTH
 
 def ctx(tmp_path: Path) -> ToolContext:
     return ToolContext(
-        cwd=str(tmp_path),
         session_id="ses-bash",
         run_id="run-bash",
     )

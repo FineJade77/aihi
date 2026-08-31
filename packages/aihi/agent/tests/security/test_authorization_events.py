@@ -4,9 +4,7 @@ from pathlib import Path
 import pytest
 from aihi.agent._core.errors import EventInvariantViolation
 from aihi.agent._core.events import Event
-from aihi.agent.policy import PermissionMode
 from aihi.agent.runtime import RunCoordinator, RunState
-from aihi.agent.sandbox import HostBackend
 from aihi.agent.sessions import InMemoryEventStore, Session, SQLiteEventStore
 from aihi.agent.tools import ToolRegistry
 from aihi.models import FakeProvider, FakeStep, Message
@@ -142,8 +140,7 @@ async def test_runtime_uses_persisted_run_bound_lease(tmp_path: Path) -> None:
     )
     coordinator = RunCoordinator(
         provider,
-        registry=ToolRegistry([WriteTestTool()]),
-        sandbox=HostBackend(tmp_path, unsafe=True),
+        registry=ToolRegistry([WriteTestTool(tmp_path)]),
     )
 
     result = await coordinator.run(
@@ -151,14 +148,15 @@ async def test_runtime_uses_persisted_run_bound_lease(tmp_path: Path) -> None:
         model="fake-model",
         user_message=Message.text("user", "create file"),
         run_id=run_id,
-        permission_mode=PermissionMode.ACCEPT_EDITS,
         require_capability_lease=True,
     )
 
     assert result.state == RunState.COMPLETED
     assert (tmp_path / "created.txt").read_text(encoding="utf-8") == "ok"
     assert any(
-        event.type == "tool.started" and event.data["unsafe"] is True
+        event.type == "tool.started"
+        and event.data["execution"] == {}
+        and "sandbox" not in event.data
         for event in session.events
     )
 
@@ -177,8 +175,7 @@ async def test_runtime_rejects_lease_from_another_run(tmp_path: Path) -> None:
     )
     coordinator = RunCoordinator(
         provider,
-        registry=ToolRegistry([WriteTestTool()]),
-        sandbox=HostBackend(tmp_path, unsafe=True),
+        registry=ToolRegistry([WriteTestTool(tmp_path)]),
     )
 
     result = await coordinator.run(
@@ -186,7 +183,6 @@ async def test_runtime_rejects_lease_from_another_run(tmp_path: Path) -> None:
         model="fake-model",
         user_message=Message.text("user", "do not create file"),
         run_id="current-run",
-        permission_mode=PermissionMode.ACCEPT_EDITS,
         require_capability_lease=True,
     )
 

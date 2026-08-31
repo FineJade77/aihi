@@ -179,7 +179,6 @@ def _as_kwargs(summary: StructuredSummary) -> dict[str, Any]:
         "verified_state": summary.verified_state,
         "open_questions": summary.open_questions,
         "next_steps": summary.next_steps,
-        "permission_mode": summary.permission_mode,
         "skills": summary.skills,
         "subagents": summary.subagents,
         "artifacts": summary.artifacts,

@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pytest
 from aihi.agent import (
-    HostBackend,
     InMemoryEventStore,
     RunCoordinator,
     RunState,
@@ -65,7 +64,6 @@ async def run_with(tmp_path: Path, tools: list[TracingTool], names: list[str], s
     coordinator = RunCoordinator(
         provider,
         registry=registry,
-        sandbox=HostBackend(tmp_path, unsafe=True),
     )
     session = session_for(tmp_path, session_id)
     result = await coordinator.run(
@@ -121,7 +119,6 @@ async def test_provider_without_parallel_tool_capability_runs_reads_serially(
     result = await RunCoordinator(
         provider,
         registry=ToolRegistry(tools),  # type: ignore[arg-type]
-        sandbox=HostBackend(tmp_path, unsafe=True),
     ).run(session, model="fake-model", user_message=Message.text("user", "go"))
 
     assert result.state == RunState.COMPLETED

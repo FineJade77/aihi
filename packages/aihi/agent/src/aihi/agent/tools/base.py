@@ -20,16 +20,10 @@ class ToolExecutionResult:
 
 @dataclass(frozen=True, slots=True)
 class ToolContext(Generic[TAppContext]):
-    cwd: str
     session_id: str
     run_id: str
-    # The permission mode of the enclosing run. Tools that delegate work must
-    # not hand a child more authority than the parent currently holds.
-    permission_mode: str = "default"
     # Application-owned execution state. The Harness passes this through
     # without interpreting workspace, product mode, credentials or UI policy.
-    # The legacy cwd/mode fields are removed once Coding tools migrate to this
-    # explicit boundary.
     app_context: TAppContext | None = None
 
 

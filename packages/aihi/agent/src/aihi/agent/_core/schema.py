@@ -18,15 +18,16 @@ Compatibility rules:
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Mapping
 from copy import deepcopy
 from typing import Any
 
 #: The envelope version this harness writes.
-EVENT_SCHEMA_VERSION = 2
+EVENT_SCHEMA_VERSION = 3
 
 #: Envelope versions this harness can read, oldest first.
-SUPPORTED_EVENT_SCHEMA_VERSIONS: tuple[int, ...] = (1, 2)
+SUPPORTED_EVENT_SCHEMA_VERSIONS: tuple[int, ...] = (1, 2, 3)
 
 #: Types the harness writes and persists. Every one of these must appear in the
 #: frozen corpus contract test, so adding a durable type without a
@@ -101,8 +102,62 @@ def _upgrade_v1_to_v2(value: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
+def _upgrade_v2_to_v3(value: dict[str, Any]) -> dict[str, Any]:
+    """Remove Harness-owned product authority and global Sandbox evidence."""
+
+    payload = deepcopy(value)
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        return payload
+    event_type = payload.get("type")
+    if event_type in {"run.started", "run.resumed"}:
+        for key in (
+            "sandbox",
+            "sandbox_descriptor",
+            "workspace_root",
+            "unsafe",
+            "permission_mode",
+        ):
+            data.pop(key, None)
+    elif event_type == "tool.started":
+        for key in ("sandbox", "sandbox_descriptor", "unsafe"):
+            data.pop(key, None)
+    elif event_type == "approval.requested":
+        data.pop("sandbox", None)
+    elif event_type == "compaction.created":
+        _remove_summary_permission_mode(data.get("summary"))
+    return payload
+
+
+def _remove_summary_permission_mode(value: object) -> None:
+    if not isinstance(value, dict):
+        return
+    content = value.get("content")
+    if not isinstance(content, list):
+        return
+    for block in content:
+        if not isinstance(block, dict) or not isinstance(block.get("text"), str):
+            continue
+        try:
+            summary = json.loads(block["text"])
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(summary, dict) or summary.get("kind") != "context_compaction_summary":
+            continue
+        summary.pop("permission_mode", None)
+        block["text"] = json.dumps(
+            summary,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+
+
 #: Registered upgrades keyed by the version they read.
-EVENT_UPGRADES: Mapping[int, EventUpgrade] = {1: _upgrade_v1_to_v2}
+EVENT_UPGRADES: Mapping[int, EventUpgrade] = {
+    1: _upgrade_v1_to_v2,
+    2: _upgrade_v2_to_v3,
+}
 
 
 class UnsupportedEventSchema(ValueError):

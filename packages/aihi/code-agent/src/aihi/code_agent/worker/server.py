@@ -939,7 +939,7 @@ class WorkerServer:
                 "rule_id",
                 "reason",
                 "required_capabilities",
-                "sandbox",
+                "execution",
             ):
                 if key in event.data:
                     descriptor[key] = (
@@ -947,6 +947,9 @@ class WorkerServer:
                         if key == "tool_input" and isinstance(event.data[key], dict)
                         else event.data[key]
                     )
+            execution = event.data.get("execution")
+            if isinstance(execution, dict) and isinstance(execution.get("sandbox"), dict):
+                descriptor["sandbox"] = deepcopy(execution["sandbox"])
             break
         return descriptor
 

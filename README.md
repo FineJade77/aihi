@@ -138,7 +138,7 @@ The session event log is the source of truth. A run can be interrupted, resumed,
 
 ### Explicit side effects
 
-Tool calls are persisted before execution and produce exactly one result. The execution path is policy → approval → hook → sandbox → tool. An `ASK` decision suspends a run and is recoverable through the protocol.
+Tool calls are persisted before execution and produce exactly one result. The execution path is validation/preparation → policy → approval → hooks → governed tool execution. Only tools that execute arbitrary commands receive a Sandbox backend. An `ASK` decision suspends a run and is recoverable through the protocol.
 
 ### Safe defaults
 

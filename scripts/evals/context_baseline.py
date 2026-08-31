@@ -9,7 +9,6 @@ from pathlib import Path
 
 from aihi.agent import (
     EventStore,
-    HostBackend,
     RunCoordinator,
     RunState,
     Session,
@@ -126,7 +125,6 @@ async def context_reference_executor(
     coordinator = RunCoordinator(
         provider,
         registry=ToolRegistry(),
-        sandbox=HostBackend(workspace, unsafe=True),
         context_window=context_window,
         context_safety_margin=0,
         summary_generator=_ContextEvalSummaryGenerator(),

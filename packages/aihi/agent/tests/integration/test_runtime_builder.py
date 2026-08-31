@@ -10,7 +10,6 @@ from aihi.agent import (
     ChildRunContext,
     DefaultPolicyEngine,
     HookBus,
-    HostBackend,
     InMemoryEventStore,
     InMemoryMemoryStore,
     MemoryAccess,
@@ -28,15 +27,14 @@ from aihi.agent import (
 )
 from aihi.models import FakeProvider, FakeStep, Message
 
-from packages.aihi.agent.tests.support_tools import ReadTestTool
+from packages.aihi.agent.tests.support_tools import ReadTestTool, app_session_factory
 
 
 def builder_for(tmp_path: Path, steps: list[FakeStep] | None = None) -> RuntimeBuilder:
     return RuntimeBuilder(
         provider=FakeProvider(steps or [FakeStep(text="ok")]),
         model="fake-model",
-        sandbox=HostBackend(tmp_path, unsafe=True),
-        tools=[ReadTestTool()],
+        tools=[ReadTestTool(tmp_path)],
     )
 
 
@@ -47,7 +45,6 @@ def test_policy_decisions_have_no_defaults(tmp_path: Path) -> None:
         RuntimeBuilder(
             provider=FakeProvider(),
             model="fake-model",
-            sandbox=HostBackend(tmp_path, unsafe=True),
             tools=[],
         )
     with pytest.raises(TypeError):
@@ -72,8 +69,7 @@ def test_the_provider_is_injected_without_hidden_wrapping(tmp_path: Path) -> Non
     runtime = RuntimeBuilder(
         provider=provider,
         model="fake-model",
-        sandbox=HostBackend(tmp_path, unsafe=True),
-        tools=[ReadTestTool()],
+        tools=[ReadTestTool(tmp_path)],
     ).build()
 
     assert runtime.provider is provider
@@ -84,7 +80,7 @@ def test_the_provider_is_injected_without_hidden_wrapping(tmp_path: Path) -> Non
 def test_each_with_call_returns_a_new_builder(tmp_path: Path) -> None:
     base = builder_for(tmp_path)
 
-    extended = base.with_artifacts()
+    extended = base.with_artifacts(tmp_path / "artifacts")
 
     assert base.artifact_store is None
     assert extended.artifact_store is not None
@@ -95,7 +91,7 @@ def test_each_with_call_returns_a_new_builder(tmp_path: Path) -> None:
 async def test_an_assembled_runtime_actually_runs(tmp_path: Path) -> None:
     runtime = (
         builder_for(tmp_path, [FakeStep(text="assembled")])
-        .with_artifacts()
+        .with_artifacts(tmp_path / "artifacts")
         .with_telemetry(tmp_path / "telemetry.jsonl")
         .with_approvals(StaticApprovalResolver(ApprovalOutcome.GRANTED))
         .build()
@@ -172,17 +168,17 @@ def test_subagents_require_an_explicit_authority_and_model(tmp_path: Path) -> No
     # Provider/model are required by the API; the builder never invents either.
     with pytest.raises(TypeError):
         builder_for(tmp_path).with_subagents(  # type: ignore[call-arg]
-            authority=authority, store=store
+            authority=authority
         )
 
     runtime = (
         builder_for(tmp_path)
         .with_subagents(
             authority=authority,
-            store=store,
             provider=FakeProvider(),
             model="small",
             child_context_factory=lambda spec, context: ChildRunContext(),
+            session_factory=app_session_factory(store, workspace=tmp_path, model="small"),
         )
         .build()
     )
@@ -205,19 +201,18 @@ async def test_subagent_runtime_persists_injected_application_authority(tmp_path
                 [FakeStep.call_tool("task", {"objective": "read outside"}), FakeStep(text="done")]
             ),
             model="fake-model",
-            sandbox=HostBackend(tmp_path, unsafe=True),
-            tools=[ReadTestTool()],
+            tools=[ReadTestTool(tmp_path)],
         )
         .with_approvals(StaticApprovalResolver(ApprovalOutcome.GRANTED))
         .with_subagents(
             authority=authority,
-            store=store,
             provider=FakeProvider([FakeStep(text="child done")]),
             model="fake-model",
             child_context_factory=lambda spec, context: ChildRunContext(
                 app_context={"scope": "child"},
                 run_profile={"scope": "child"},
             ),
+            session_factory=app_session_factory(store, workspace=tmp_path),
         )
         .build()
     )

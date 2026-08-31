@@ -87,14 +87,14 @@ def test_coding_child_context_narrows_access_to_capabilities(
     child_access: AccessMode,
 ) -> None:
     sandbox = HostBackend(tmp_path, unsafe=True)
-    factory = coding_child_context_factory(sandbox.descriptor)
+    factory = coding_child_context_factory()
     parent = CodeAgentPermissionContext(
         workspace=tmp_path,
         access_mode=parent_access,
         run_mode=RunMode.EXECUTE,
+        command_sandbox=sandbox.descriptor,
     )
     context = ToolContext(
-        cwd=str(tmp_path),
         session_id="ses-parent",
         run_id="run-parent",
         app_context=parent,
@@ -119,11 +119,11 @@ def test_plan_child_is_always_read_only(tmp_path) -> None:
         workspace=tmp_path,
         access_mode=AccessMode.FULL_ACCESS,
         run_mode=RunMode.PLAN,
+        command_sandbox=sandbox.descriptor,
     )
-    child = coding_child_context_factory(sandbox.descriptor)(
+    child = coding_child_context_factory()(
         _task_spec({"filesystem.write", "process.exec"}),
         ToolContext(
-            cwd=str(tmp_path),
             session_id="ses-parent",
             run_id="run-parent",
             app_context=parent,

@@ -67,6 +67,8 @@ Protocol 0.3 makes application authority explicit without treating it as generic
 - `ConfigDescriptor.access_mode` and `run_mode` are configured defaults; `command_sandbox` describes only arbitrary-command execution and has no workspace root.
 - `RunDescriptor.access_mode` and `run_mode` report the persisted effective profile and take precedence in clients once a Run exists.
 - Task request and response DTOs carry generic delegation scope only; workspace authority is derived by the application and is never accepted from a task caller.
+- Approval descriptors carry tool-owned `execution` metadata; Bash approvals also project
+  `execution.sandbox` for clients that display command isolation details.
 
 ## Repository layout
 

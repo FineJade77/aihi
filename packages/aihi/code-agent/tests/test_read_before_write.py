@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from aihi.agent import ToolContext
+from aihi.agent import HostBackend, ToolContext
 from aihi.code_agent.permissions import AccessMode, CodeAgentPermissionContext, RunMode
 from aihi.code_agent.tools import (
     EditFileTool,
@@ -12,14 +12,15 @@ from aihi.code_agent.tools import (
 
 
 def _context(tmp_path) -> ToolContext:
+    sandbox = HostBackend(tmp_path, unsafe=True)
     return ToolContext(
-        cwd=str(tmp_path),
         session_id="ses_test",
         run_id="run_test",
         app_context=CodeAgentPermissionContext(
             workspace=tmp_path,
             access_mode=AccessMode.WORKSPACE_WRITE,
             run_mode=RunMode.EXECUTE,
+            command_sandbox=sandbox.descriptor,
         ),
     )
 
@@ -59,7 +60,6 @@ async def test_a_read_in_another_run_does_not_count(tmp_path) -> None:
     await ReadFileTool(ledger=ledger).run({"path": "a.py"}, first)
 
     second = ToolContext(
-        cwd=str(tmp_path),
         session_id="ses_test",
         run_id="run_other",
         app_context=first.app_context,

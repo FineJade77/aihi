@@ -90,7 +90,7 @@ Tool Result 清理、结构化压缩、持久化和 Replay 属于 `aihi-agent`�
 
 ### H-20：应用 Context 与命令 Sandbox 边界
 
-**状态：In progress。** 让可复用 Harness 保持应用无关：Tool 和 Policy 执行接收不透明的类型化应用
+**状态：Done。** 可复用 Harness 已保持应用无关：Tool 和 Policy 执行接收不透明的类型化应用
 Context，应用持久化不透明的 Run 权限 Profile；Sandbox 从 Runtime 全局文件系统抽象收缩为显式注入的
 命令执行能力。
 
@@ -102,8 +102,8 @@ Context，应用持久化不透明的 Run 权限 Profile；Sandbox 从 Runtime �
 
 ### P-07：Coding Workspace 与权限归属
 
-**状态：In progress。** 将 Coding Tool、canonical workspace、`AccessMode`、`RunMode` 和命令
-Sandbox 选择移入 `aihi-code-agent`。Coding workspace 是创建 Session 时传入的 canonical `cwd`；
+**状态：Done。** Coding Tool、canonical workspace、`AccessMode`、`RunMode` 和命令
+Sandbox 选择均已归属 `aihi-code-agent`。Coding workspace 是创建 Session 时传入的 canonical `cwd`；
 TOML 只从该 workspace 发现配置，不能定义 workspace。
 
 | 切片 | 范围 | 验收 |

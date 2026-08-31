@@ -28,6 +28,7 @@
       "type": "array",
       "items": { "type": "string" }
     },
+    "execution": { "type": "object" },
     "sandbox": { "type": "object" }
   },
   "additionalProperties": true

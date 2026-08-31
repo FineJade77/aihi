@@ -6,11 +6,10 @@ import hashlib
 from pathlib import Path
 from typing import Any
 
-from aihi.agent import SandboxViolation, ToolContext, ToolExecutionResult, ToolSpec
+from aihi.agent import SandboxViolation, Session, ToolContext, ToolExecutionResult, ToolSpec
 
 
-def _path(context: ToolContext[Any], value: object) -> Path:
-    root = Path(context.cwd).resolve()
+def _path(root: Path, value: object) -> Path:
     requested = Path(str(value))
     resolved = (requested if requested.is_absolute() else root / requested).resolve()
     if not resolved.is_relative_to(root):
@@ -38,10 +37,14 @@ class ReadTestTool:
         timeout_seconds=10.0,
     )
 
+    def __init__(self, root: str | Path) -> None:
+        self._root = Path(root).resolve()
+
     async def run(
         self, input: dict[str, Any], context: ToolContext[Any]
     ) -> ToolExecutionResult:
-        path = _path(context, input["path"])
+        del context
+        path = _path(self._root, input["path"])
         lines = path.read_text(encoding="utf-8").splitlines()
         content = "\n".join(
             f"{line_number:>6}\t{line}"
@@ -78,10 +81,14 @@ class WriteTestTool:
         timeout_seconds=30.0,
     )
 
+    def __init__(self, root: str | Path) -> None:
+        self._root = Path(root).resolve()
+
     async def run(
         self, input: dict[str, Any], context: ToolContext[Any]
     ) -> ToolExecutionResult:
-        path = _path(context, input["path"])
+        del context
+        path = _path(self._root, input["path"])
         content = str(input["content"])
         path.write_text(content, encoding="utf-8")
         return ToolExecutionResult(
@@ -93,4 +100,29 @@ class WriteTestTool:
         )
 
 
-__all__ = ["ReadTestTool", "WriteTestTool"]
+def app_session_factory(
+    store: Any,
+    *,
+    workspace: str | Path,
+    provider: str = "fake",
+    model: str = "fake-model",
+) -> Any:
+    """Return the explicit application-owned child Session factory used by tests."""
+
+    def create(spec: Any, context: ToolContext[Any]) -> Session:
+        return Session.create(
+            store,
+            cwd=workspace,
+            provider=provider,
+            model=model,
+            metadata={
+                "parent_session_id": context.session_id,
+                "parent_run_id": context.run_id,
+                "task_id": spec.task_id,
+            },
+        )
+
+    return create
+
+
+__all__ = ["ReadTestTool", "WriteTestTool", "app_session_factory"]

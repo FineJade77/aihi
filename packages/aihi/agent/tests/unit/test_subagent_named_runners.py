@@ -108,7 +108,6 @@ def test_child_runs_inherit_context_contributors() -> None:
     from aihi.agent import (
         AgentBudget,
         ChildRunContext,
-        HostBackend,
         InMemoryEventStore,
         RuntimeBuilder,
         SubagentAuthority,
@@ -116,7 +115,7 @@ def test_child_runs_inherit_context_contributors() -> None:
     from aihi.agent.runtime.extensions import ContextSection
     from aihi.models import FakeProvider
 
-    from packages.aihi.agent.tests.support_tools import ReadTestTool
+    from packages.aihi.agent.tests.support_tools import ReadTestTool, app_session_factory
 
     class Marker:
         def sections(self, request: object) -> tuple[ContextSection, ...]:
@@ -126,22 +125,22 @@ def test_child_runs_inherit_context_contributors() -> None:
     from pathlib import Path
 
     workspace = Path(tempfile.mkdtemp())
+    store = InMemoryEventStore()
     runtime = (
         RuntimeBuilder(
             provider=FakeProvider(),
             model="demo",
-            sandbox=HostBackend(workspace, unsafe=True),
-            tools=[ReadTestTool()],
+            tools=[ReadTestTool(workspace)],
         )
         .with_context_contributors(Marker())
         .with_subagents(
             authority=SubagentAuthority(
                 budget=AgentBudget(max_tokens=1000, timeout_seconds=30.0, max_tool_calls=5),
             ),
-            store=InMemoryEventStore(),
             provider=FakeProvider(),
             model="demo",
             child_context_factory=lambda spec, context: ChildRunContext(),
+            session_factory=app_session_factory(store, workspace=workspace, model="demo"),
         )
         .build()
     )

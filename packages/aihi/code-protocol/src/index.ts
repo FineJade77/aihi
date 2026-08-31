@@ -199,6 +199,9 @@ export interface ApprovalDescriptor extends JsonObject {
   reason?: string;
   rule_id?: string;
   required_capabilities?: string[];
+  /** Tool-owned non-secret execution metadata; Bash includes its command sandbox here. */
+  execution?: JsonObject;
+  /** Bash-specific convenience projection of execution.sandbox. */
   sandbox?: JsonObject;
 }
 
@@ -720,6 +723,7 @@ export function isApprovalDescriptor(value: unknown): value is ApprovalDescripto
     (value.required_capabilities === undefined ||
       (Array.isArray(value.required_capabilities) &&
         value.required_capabilities.every((capability) => typeof capability === "string"))) &&
+    (value.execution === undefined || isJsonObject(value.execution)) &&
     (value.sandbox === undefined || isJsonObject(value.sandbox))
   );
 }

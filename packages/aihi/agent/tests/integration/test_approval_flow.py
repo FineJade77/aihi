@@ -7,12 +7,10 @@ from aihi.agent._core.ids import new_id
 from aihi.agent.evals import ReplayEngine, TraceBundle
 from aihi.agent.policy import (
     ApprovalOutcome,
-    PermissionMode,
     StaticApprovalResolver,
     SuspendingApprovalResolver,
 )
 from aihi.agent.runtime import RunCoordinator, RunState
-from aihi.agent.sandbox import HostBackend
 from aihi.agent.sessions import InMemoryEventStore, Session, SQLiteEventStore
 from aihi.agent.tools import ToolRegistry
 from aihi.models import FakeProvider, FakeStep, Message, ToolCallBlock
@@ -33,8 +31,7 @@ def session_for(tmp_path: Path, name: str, store: object | None = None) -> Sessi
 def coordinator_for(tmp_path: Path, provider: FakeProvider, **kwargs: object) -> RunCoordinator:
     return RunCoordinator(
         provider,
-        registry=ToolRegistry([WriteTestTool()]),
-        sandbox=HostBackend(tmp_path, unsafe=True),
+        registry=ToolRegistry([WriteTestTool(tmp_path)]),
         **kwargs,  # type: ignore[arg-type]
     )
 
@@ -71,7 +68,8 @@ async def test_suspended_run_resumes_after_out_of_band_approval(tmp_path: Path) 
             "content": "TOKEN=<redacted>",
         }
         assert requested.data["required_capabilities"] == ["filesystem.write"]
-        assert requested.data["sandbox"]["root"] == str(tmp_path)
+        assert requested.data["execution"] == {}
+        assert "sandbox" not in requested.data
     finally:
         store.close()
 
@@ -128,7 +126,7 @@ async def test_interactive_resolver_grants_without_suspending(tmp_path: Path) ->
     assert request.tool_name == "write_file"
     assert request.tool_input == {"path": "note.txt", "content": "approved"}
     assert request.rule_id == "default.mutation_requires_approval"
-    assert request.sandbox["unsafe"] is True
+    assert request.execution == {}
     resolved = next(event for event in session.events if event.type == "approval.resolved")
     assert resolved.data["status"] == "granted"
     assert resolved.data["resolved_by"] == "static"
@@ -227,7 +225,6 @@ async def test_resume_cannot_weaken_the_persisted_run_authority(tmp_path: Path) 
             session,
             run_id=suspended.run_id,
             model="fake-model",
-            permission_mode=PermissionMode.BYPASS,
             require_capability_lease=False,
         )
 
@@ -240,12 +237,12 @@ async def test_resume_cannot_weaken_the_persisted_run_authority(tmp_path: Path) 
     assert resumed.state == RunState.WAITING_APPROVAL
     assert resumed.pending_approval_id == suspended.pending_approval_id
     resumed_event = next(e for e in session.events if e.type == "run.resumed")
-    assert resumed_event.data["permission_mode"] == PermissionMode.DEFAULT.value
+    assert "permission_mode" not in resumed_event.data
     assert resumed_event.data["require_capability_lease"] is True
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("drift", ["model", "provider", "sandbox", "system_prompt"])
+@pytest.mark.parametrize("drift", ["model", "provider", "system_prompt"])
 async def test_resume_rejects_other_persisted_configuration_drift(
     tmp_path: Path,
     drift: str,
@@ -263,18 +260,15 @@ async def test_resume_rejects_other_persisted_configuration_drift(
     )
 
     provider = FakeProvider([FakeStep(text="not reached")])
-    sandbox_root = workspace
     model = "fake-model"
     system_prompt = "locked prompt"
     if drift == "provider":
         provider.name = "other-provider"
-    elif drift == "sandbox":
-        sandbox_root = tmp_path
     elif drift == "model":
         model = "other-model"
     else:
         system_prompt = "changed prompt"
-    second = coordinator_for(sandbox_root, provider)
+    second = coordinator_for(workspace, provider)
 
     with pytest.raises(ValueError, match="run configuration"):
         await second.resume(

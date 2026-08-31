@@ -5,7 +5,6 @@ from pathlib import Path
 
 import pytest
 from aihi.agent import (
-    HostBackend,
     InMemoryEventStore,
     RunCoordinator,
     RunState,
@@ -27,8 +26,7 @@ def session_for(tmp_path: Path, name: str) -> Session:
 def coordinator_for(tmp_path: Path, steps: list[FakeStep]) -> RunCoordinator:
     return RunCoordinator(
         FakeProvider(steps),
-        registry=ToolRegistry([WriteTestTool()]),
-        sandbox=HostBackend(tmp_path, unsafe=True),
+        registry=ToolRegistry([WriteTestTool(tmp_path)]),
     )
 
 

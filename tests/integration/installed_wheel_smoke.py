@@ -25,7 +25,6 @@ from aihi.agent import (
     SubagentTool,
     ToolRegistry,
     restrict_registry,
-    subagent_session_factory,
 )
 from aihi.code_agent import AccessMode, RunMode
 from aihi.code_agent.config import CodeAgentConfig
@@ -49,6 +48,7 @@ async def main(workspace: Path) -> None:
         workspace=workspace,
         access_mode=AccessMode.WORKSPACE_WRITE,
         run_mode=RunMode.EXECUTE,
+        command_sandbox=sandbox.descriptor,
     )
 
     basic_session = Session.create(
@@ -71,7 +71,6 @@ async def main(workspace: Path) -> None:
     basic = await RunCoordinator(
         cache_provider,
         registry=ToolRegistry(),
-        sandbox=sandbox,
     ).run(
         basic_session,
         model="fake-model",
@@ -98,7 +97,6 @@ async def main(workspace: Path) -> None:
             ]
         ),
         registry=ToolRegistry([ReadFileTool()]),
-        sandbox=sandbox,
     ).run(
         tool_session,
         model="fake-model",
@@ -120,7 +118,6 @@ async def main(workspace: Path) -> None:
             [FakeStep.call_tool("write_file", {"path": "blocked.txt", "content": "x"})]
         ),
         registry=ToolRegistry([WriteFileTool()]),
-        sandbox=sandbox,
     ).run(
         approval_session,
         model="fake-model",
@@ -139,7 +136,6 @@ async def main(workspace: Path) -> None:
     interrupted = await RunCoordinator(
         FakeProvider([FakeStep(text="not reached")]),
         registry=ToolRegistry(),
-        sandbox=sandbox,
     ).run(
         interrupted_session,
         model="fake-model",
@@ -151,7 +147,6 @@ async def main(workspace: Path) -> None:
     resumed = await RunCoordinator(
         FakeProvider([FakeStep(text="resumed")]),
         registry=ToolRegistry(),
-        sandbox=sandbox,
     ).resume(reloaded, run_id=interrupted.run_id, model="fake-model")
     assert resumed.state == RunState.COMPLETED
     assert reloaded.orphan_tool_calls == ()
@@ -166,7 +161,6 @@ async def main(workspace: Path) -> None:
     compact = await RunCoordinator(
         FakeProvider([FakeStep(text="compacted")]),
         registry=ToolRegistry(),
-        sandbox=sandbox,
         context_compiler=ContextCompiler(),
         context_window=input_capacity + 64,
         context_safety_margin=0,
@@ -180,13 +174,22 @@ async def main(workspace: Path) -> None:
 
     store = InMemoryEventStore()
     full_registry = ToolRegistry([ReadFileTool()])
+
+    def child_session(spec, context):
+        return Session.create(
+            store,
+            cwd=workspace,
+            provider="fake",
+            model="fake-model",
+            metadata={"parent_session_id": context.session_id, "task_id": spec.task_id},
+        )
+
     child_runner = ChildRunSubagentRunner(
         lambda spec: RunCoordinator(
             FakeProvider([FakeStep(text="child done")]),
             registry=restrict_registry(full_registry, frozenset(spec.capabilities)),
-            sandbox=sandbox,
         ),
-        subagent_session_factory(store, provider="fake", model="fake-model"),
+        child_session,
         model="fake-model",
         child_context_factory=lambda spec, context: ChildRunContext(
             app_context=code_context,
@@ -208,7 +211,6 @@ async def main(workspace: Path) -> None:
             [FakeStep.call_tool("task", {"objective": "inspect"}), FakeStep(text="parent done")]
         ),
         registry=ToolRegistry([task]),
-        sandbox=sandbox,
         approval_resolver=StaticApprovalResolver(ApprovalOutcome.GRANTED),
     ).run(
         parent_session,

@@ -11,7 +11,6 @@ from aihi.agent import (
     HostBackend,
     InMemoryEventStore,
     PermissionContext,
-    PermissionMode,
     RunState,
     Session,
     ToolSpec,
@@ -35,22 +34,20 @@ def permission(
     run_mode: RunMode = RunMode.EXECUTE,
     approved: str | None = None,
 ) -> PermissionContext[CodeAgentPermissionContext]:
+    sandbox = HostBackend(tmp_path, unsafe=True)
     approvals = (
         (Approval(scope=approved, granted_by="user", run_id="run-policy"),)
         if approved is not None
         else ()
     )
     return PermissionContext(
-        cwd=tmp_path,
-        # The generic Harness mode is deliberately inert for this application.
-        mode=PermissionMode.DEFAULT,
-        sandbox=HostBackend(tmp_path, unsafe=True).descriptor,
         approvals=approvals,
         run_id="run-policy",
         app_context=CodeAgentPermissionContext(
             workspace=tmp_path,
             access_mode=access_mode,
             run_mode=run_mode,
+            command_sandbox=sandbox.descriptor,
         ),
     )
 
@@ -170,11 +167,7 @@ def test_policy_fails_closed_without_application_context(tmp_path: Path) -> None
     decision = CodeAgentPolicy().evaluate(
         ReadFileTool.spec,
         {"path": "note.txt"},
-        PermissionContext(
-            cwd=tmp_path,
-            mode=PermissionMode.DEFAULT,
-            sandbox=HostBackend(tmp_path, unsafe=True).descriptor,
-        ),
+        PermissionContext(),
     )
 
     assert decision.effect is DecisionEffect.DENY
@@ -187,9 +180,10 @@ def test_run_profile_persists_workspace_modes_and_command_sandbox(tmp_path: Path
         workspace=tmp_path,
         access_mode=AccessMode.WORKSPACE_WRITE,
         run_mode=RunMode.EXECUTE,
+        command_sandbox=sandbox.descriptor,
     )
 
-    assert build_run_profile(context, sandbox.descriptor) == {
+    assert build_run_profile(context) == {
         "schema": "aihi.code_agent.run_profile.v1",
         "workspace": str(tmp_path.resolve()),
         "access_mode": "workspace_write",

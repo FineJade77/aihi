@@ -111,7 +111,7 @@ PEP 420 smoke coverage.
 
 ### H-20 — Application context and command-sandbox boundary
 
-**Status: In progress.** Make the reusable Harness application-neutral: Tool and Policy execution
+**Status: Done.** The reusable Harness is application-neutral: Tool and Policy execution
 receive an opaque typed application context, applications persist an opaque run authority profile,
 and Sandbox becomes an explicitly injected command-execution capability rather than a Runtime-wide
 filesystem abstraction.
@@ -124,8 +124,8 @@ filesystem abstraction.
 
 ### P-07 — Coding workspace and permission ownership
 
-**Status: In progress.** Move Coding tools, canonical workspace handling, `AccessMode`, `RunMode` and
-command-sandbox selection into `aihi-code-agent`. The Coding workspace is the canonical `cwd` supplied
+**Status: Done.** `aihi-code-agent` now owns Coding tools, canonical workspace handling,
+`AccessMode`, `RunMode` and command-sandbox selection. The Coding workspace is the canonical `cwd` supplied
 when its Session is created; TOML discovers configuration from that workspace but never defines it.
 
 | Slice | Scope | Acceptance |

@@ -10,33 +10,35 @@ from aihi.agent.policy import (
     CapabilityLease,
     DefaultPolicyEngine,
     PermissionContext,
-    PermissionMode,
 )
 from aihi.agent.sandbox import HostBackend
 from aihi.agent.tools import ToolContext, ToolDispatcher, ToolRegistry
-from aihi.code_agent.permissions import AccessMode, CodeAgentPermissionContext, RunMode
+from aihi.code_agent.permissions import (
+    AccessMode,
+    CodeAgentPermissionContext,
+    CodeAgentPolicy,
+    RunMode,
+)
 from aihi.code_agent.tools import BashTool, EditFileTool, LocalWorkspace, WriteFileTool
 from aihi.models import ToolCallBlock
 
 
 def context(tmp_path: Path) -> ToolContext:
+    sandbox = HostBackend(tmp_path, unsafe=True)
     return ToolContext(
-        cwd=str(tmp_path),
         session_id="ses-tools",
         run_id="run-tools",
         app_context=CodeAgentPermissionContext(
             workspace=tmp_path,
             access_mode=AccessMode.WORKSPACE_WRITE,
             run_mode=RunMode.EXECUTE,
+            command_sandbox=sandbox.descriptor,
         ),
     )
 
 
-def permission(tmp_path: Path, *, mode: PermissionMode = PermissionMode.DEFAULT, **kwargs):
+def permission(tmp_path: Path, **kwargs):
     return PermissionContext(
-        cwd=tmp_path,
-        mode=mode,
-        sandbox=HostBackend(tmp_path, unsafe=True).descriptor,
         run_id="run-tools",
         **kwargs,
     )
@@ -167,7 +169,7 @@ async def test_policy_requires_approval_or_lease_before_mutating_tool(tmp_path: 
     no_lease = DefaultPolicyEngine().evaluate(
         WriteFileTool.spec,
         call.input,
-        permission(tmp_path, mode=PermissionMode.ACCEPT_EDITS, require_capability_lease=True),
+        permission(tmp_path, require_capability_lease=True),
     )
     assert no_lease.rule_id == "capability.lease_required"
     lease = CapabilityLease.issue("run-tools", {"filesystem.write"})
@@ -176,7 +178,6 @@ async def test_policy_requires_approval_or_lease_before_mutating_tool(tmp_path: 
         call.input,
         permission(
             tmp_path,
-            mode=PermissionMode.ACCEPT_EDITS,
             require_capability_lease=True,
             leases=(lease,),
         ),
@@ -187,9 +188,6 @@ async def test_policy_requires_approval_or_lease_before_mutating_tool(tmp_path: 
         WriteFileTool.spec,
         call.input,
         PermissionContext(
-            cwd=tmp_path,
-            mode=PermissionMode.ACCEPT_EDITS,
-            sandbox=HostBackend(tmp_path, unsafe=True).descriptor,
             run_id="other-run",
             require_capability_lease=True,
             leases=(lease,),
@@ -244,10 +242,19 @@ async def test_local_workspace_read_does_not_require_directory_write_access(
 def test_policy_denies_obvious_sensitive_paths_in_a_command(tmp_path: Path) -> None:
     """A heuristic, not a boundary: it catches the plain form only (ADR-0028)."""
 
-    decision = DefaultPolicyEngine().evaluate(
+    sandbox = HostBackend(tmp_path, unsafe=True)
+    decision = CodeAgentPolicy().evaluate(
         BashTool.spec,
-        {"argv": ["/bin/bash", "-c", "cat ~/.ssh/id_rsa"]},
-        permission(tmp_path, mode=PermissionMode.BYPASS),
+        {"command": "cat ~/.ssh/id_rsa"},
+        permission(
+            tmp_path,
+            app_context=CodeAgentPermissionContext(
+                workspace=tmp_path,
+                access_mode=AccessMode.FULL_ACCESS,
+                run_mode=RunMode.EXECUTE,
+                command_sandbox=sandbox.descriptor,
+            ),
+        ),
     )
     assert decision.effect.value == "deny"
-    assert decision.rule_id == "builtin.sensitive_path"
+    assert decision.rule_id == "code_agent.sensitive_path"

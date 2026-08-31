@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from aihi.agent import (
-    HostBackend,
     InMemoryEventStore,
     RuntimeBuilder,
     Session,
@@ -17,8 +16,7 @@ async def test_a_run_persists_usage_and_context_size(tmp_path) -> None:
     runtime = RuntimeBuilder(
         provider=FakeProvider([FakeStep(text="done")]),
         model="demo",
-        sandbox=HostBackend(tmp_path, unsafe=True),
-        tools=[ReadTestTool()],
+        tools=[ReadTestTool(tmp_path)],
     ).build()
 
     await runtime.coordinator.run(

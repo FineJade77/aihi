@@ -9,7 +9,6 @@ from aihi.agent.mcp import (
     McpToolDefinition,
 )
 from aihi.agent.policy import DefaultPolicyEngine, PermissionContext
-from aihi.agent.sandbox import HostBackend
 from aihi.agent.tools import ToolContext, ToolDispatcher, ToolRegistry
 from aihi.models import ToolCallBlock
 
@@ -33,15 +32,10 @@ async def test_mcp_mutating_tool_is_denied_before_remote_execution(tmp_path) -> 
     client = McpClient(InMemoryMcpTransport(server))
     tool = (await client.remote_tools("remote"))[0]
     dispatcher = ToolDispatcher(ToolRegistry([tool]), DefaultPolicyEngine())
-    sandbox = HostBackend(tmp_path, unsafe=True)
-
     result = await dispatcher.dispatch(
         ToolCallBlock("mcp-call", tool.spec.name, {}),
-        context=ToolContext(str(tmp_path), "ses-mcp", "run-mcp"),
+        context=ToolContext("ses-mcp", "run-mcp"),
         permission=PermissionContext(
-            cwd=tmp_path,
-            mode="default",
-            sandbox=sandbox.descriptor,
             run_id="run-mcp",
         ),
     )

@@ -131,7 +131,6 @@ async def test_a_stdio_server_round_trips_through_the_registry(tmp_path: Path) -
         result = await tool.run(
             {"text": "hello"},
             ToolContext(
-                cwd=str(tmp_path),
                 session_id="ses-mcp",
                 run_id="run-mcp",
             ),

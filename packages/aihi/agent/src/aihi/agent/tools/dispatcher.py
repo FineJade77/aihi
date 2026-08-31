@@ -123,7 +123,6 @@ class ToolDispatcher:
             governance=HookGovernance(
                 run_id=permission.run_id,
                 policy_allowed=decision.effect == DecisionEffect.ALLOW,
-                sandbox=permission.sandbox.to_dict(),
             ),
         )
         if decision.effect != DecisionEffect.ALLOW:
@@ -150,9 +149,6 @@ class ToolDispatcher:
             {
                 "tool_call_id": call.id,
                 "tool_name": call.name,
-                "sandbox": permission.sandbox.name,
-                "sandbox_descriptor": permission.sandbox.to_dict(),
-                "unsafe": permission.sandbox.unsafe,
                 "execution": dict(prepared.execution),
             },
         )
@@ -160,13 +156,11 @@ class ToolDispatcher:
             "tool_call_id": call.id,
             "tool_name": call.name,
             "input": dict(prepared.input),
-            "sandbox": permission.sandbox.to_dict(),
             "execution": dict(prepared.execution),
         }
         hook_governance = HookGovernance(
             run_id=permission.run_id,
             policy_allowed=decision.effect == DecisionEffect.ALLOW,
-            sandbox=permission.sandbox.to_dict(),
         )
         try:
             await await_cancelable(

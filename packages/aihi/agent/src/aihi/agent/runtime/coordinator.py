@@ -41,7 +41,6 @@ from aihi.agent.policy import (
     DecisionEffect,
     DefaultPolicyEngine,
     PermissionContext,
-    PermissionMode,
     PolicyEngine,
     SuspendingApprovalResolver,
     approval_input_preview,
@@ -53,7 +52,6 @@ from aihi.agent.runtime.extensions import (
     RuntimeExtensions,
 )
 from aihi.agent.runtime.state import RunState, RunStateMachine
-from aihi.agent.sandbox.base import SandboxBackend
 from aihi.agent.sessions.session import Session
 from aihi.agent.tools.base import ToolContext, ToolExecutionResult
 from aihi.agent.tools.dispatcher import DispatchResult, ToolDispatcher
@@ -128,7 +126,6 @@ class RunCoordinator:
         provider: Provider,
         *,
         registry: ToolRegistry,
-        sandbox: SandboxBackend,
         policy: PolicyEngine[Any] | None = None,
         hooks: HookBus | None = None,
         context_compiler: ContextCompiler | None = None,
@@ -151,7 +148,6 @@ class RunCoordinator:
         self._validate_max_turns(max_turns)
         self.provider = provider
         self.registry = registry
-        self.sandbox = sandbox
         self.policy = policy or DefaultPolicyEngine()
         self.hooks = hooks or HookBus()
         self.dispatcher = ToolDispatcher(self.registry, self.policy, self.hooks)
@@ -184,7 +180,6 @@ class RunCoordinator:
         model: str,
         user_message: Message | None = None,
         run_id: str | None = None,
-        permission_mode: PermissionMode = PermissionMode.DEFAULT,
         require_capability_lease: bool = False,
         system_prompt: str = "",
         max_output_tokens: int = 4_096,
@@ -214,7 +209,6 @@ class RunCoordinator:
             raise ValueError(f"Run id is already terminal and cannot be reused: {rid}")
         configuration = self._run_configuration_data(
             model=model,
-            permission_mode=permission_mode,
             require_capability_lease=require_capability_lease,
             system_prompt=system_prompt,
             max_output_tokens=max_output_tokens,
@@ -255,7 +249,6 @@ class RunCoordinator:
                 rid,
                 model=model,
                 machine=machine,
-                permission_mode=permission_mode,
                 require_capability_lease=require_capability_lease,
                 system_prompt=system_prompt,
                 max_output_tokens=max_output_tokens,
@@ -364,23 +357,16 @@ class RunCoordinator:
         self,
         *,
         model: str,
-        permission_mode: PermissionMode,
         require_capability_lease: bool,
         system_prompt: str,
         max_output_tokens: int,
         max_turns: int,
         run_profile: dict[str, Any] | None,
     ) -> dict[str, Any]:
-        descriptor = self.sandbox.descriptor
         application_profile = self._validated_run_profile(run_profile)
         return {
             "model": model,
             "provider": self.provider.name,
-            "sandbox": descriptor.name,
-            "sandbox_descriptor": descriptor.to_dict(),
-            "workspace_root": str(self.sandbox.root.resolve()),
-            "unsafe": descriptor.unsafe,
-            "permission_mode": permission_mode.value,
             "require_capability_lease": require_capability_lease,
             "system_prompt_sha256": self._system_prompt_sha256(system_prompt),
             "max_output_tokens": max_output_tokens,
@@ -394,11 +380,6 @@ class RunCoordinator:
         compared_keys = (
             "model",
             "provider",
-            "sandbox",
-            "sandbox_descriptor",
-            "workspace_root",
-            "unsafe",
-            "permission_mode",
             "require_capability_lease",
             "system_prompt_sha256",
             "max_output_tokens",
@@ -438,7 +419,6 @@ class RunCoordinator:
         *,
         run_id: str,
         model: str | None = None,
-        permission_mode: PermissionMode | None = None,
         require_capability_lease: bool | None = None,
         system_prompt: str | None = None,
         max_output_tokens: int | None = None,
@@ -462,12 +442,6 @@ class RunCoordinator:
         resolved_model = model if model is not None else str(persisted.get("model", ""))
         if not resolved_model:
             raise ValueError("Persisted run configuration is missing model")
-        persisted_mode = persisted.get("permission_mode", PermissionMode.DEFAULT.value)
-        resolved_mode = (
-            permission_mode
-            if permission_mode is not None
-            else PermissionMode(str(persisted_mode))
-        )
         persisted_lease = persisted.get("require_capability_lease", False)
         if not isinstance(persisted_lease, bool):
             raise ValueError("Persisted run configuration has invalid capability lease mode")
@@ -512,7 +486,6 @@ class RunCoordinator:
             model=resolved_model,
             user_message=None,
             run_id=run_id,
-            permission_mode=resolved_mode,
             require_capability_lease=resolved_lease,
             system_prompt=resolved_system_prompt,
             max_output_tokens=resolved_max_output,
@@ -529,7 +502,6 @@ class RunCoordinator:
         *,
         model: str,
         machine: RunStateMachine,
-        permission_mode: PermissionMode,
         require_capability_lease: bool,
         system_prompt: str,
         max_output_tokens: int,
@@ -561,7 +533,6 @@ class RunCoordinator:
                     run_id,
                     pending_calls,
                     machine=machine,
-                    permission_mode=permission_mode,
                     require_capability_lease=require_capability_lease,
                     cancel_event=cancel_event,
                     allow_inline_approval=False,
@@ -587,9 +558,7 @@ class RunCoordinator:
                 tools=self.registry.specs,
                 safety_margin=self.context_safety_margin,
             )
-            sections = self._context_sections(
-                session, run_id, permission_mode, app_context=app_context
-            )
+            sections = self._context_sections(session, run_id, app_context=app_context)
             try:
                 compiled = self.context_compiler.compile(
                     session.messages,
@@ -795,7 +764,6 @@ class RunCoordinator:
                 run_id,
                 response.message.tool_calls,
                 machine=machine,
-                permission_mode=permission_mode,
                 require_capability_lease=require_capability_lease,
                 cancel_event=cancel_event,
                 allow_inline_approval=True,
@@ -811,7 +779,6 @@ class RunCoordinator:
         calls: tuple[ToolCallBlock, ...],
         *,
         machine: RunStateMachine,
-        permission_mode: PermissionMode,
         require_capability_lease: bool,
         cancel_event: asyncio.Event | None,
         allow_inline_approval: bool,
@@ -834,7 +801,6 @@ class RunCoordinator:
                     run_id,
                     call,
                     machine=machine,
-                    permission_mode=permission_mode,
                     require_capability_lease=require_capability_lease,
                     cancel_event=cancel_event,
                     allow_inline_approval=allow_inline_approval,
@@ -944,7 +910,6 @@ class RunCoordinator:
         call: ToolCallBlock,
         *,
         machine: RunStateMachine,
-        permission_mode: PermissionMode,
         require_capability_lease: bool,
         cancel_event: asyncio.Event | None,
         allow_inline_approval: bool,
@@ -954,7 +919,6 @@ class RunCoordinator:
             session,
             run_id,
             call,
-            permission_mode=permission_mode,
             require_capability_lease=require_capability_lease,
             cancel_event=cancel_event,
             app_context=app_context,
@@ -969,10 +933,7 @@ class RunCoordinator:
             return self._denied(call, f"Approval denied for tool {call.name}.")
         approval = self._pending_approval_for_call(session, run_id, call.id)
         spec = self._tool_spec(call.name)
-        sandbox_descriptor = {
-            **self.sandbox.descriptor.to_dict(),
-            "root": str(self.sandbox.root),
-        }
+        execution = dict(result.execution)
         approval_metadata = {
             "tool_call_id": call.id,
             "tool_name": call.name,
@@ -982,8 +943,7 @@ class RunCoordinator:
             "required_capabilities": list(
                 spec.required_capabilities if spec is not None else ()
             ),
-            "sandbox": sandbox_descriptor,
-            "execution": dict(result.execution),
+            "execution": execution,
         }
         if not allow_inline_approval:
             if approval is None:
@@ -1015,7 +975,7 @@ class RunCoordinator:
             reason=decision.reason,
             rule_id=decision.rule_id,
             required_capabilities=spec.required_capabilities if spec is not None else (),
-            sandbox=sandbox_descriptor,
+            execution=execution,
         )
         outcome = ApprovalOutcome(
             await await_cancelable(self.approval_resolver.resolve(request), cancel_event)
@@ -1046,7 +1006,6 @@ class RunCoordinator:
             session,
             run_id,
             call,
-            permission_mode=permission_mode,
             require_capability_lease=require_capability_lease,
             cancel_event=cancel_event,
             app_context=app_context,
@@ -1083,16 +1042,12 @@ class RunCoordinator:
         run_id: str,
         call: ToolCallBlock,
         *,
-        permission_mode: PermissionMode,
         require_capability_lease: bool,
         cancel_event: asyncio.Event | None,
         app_context: object | None,
     ) -> DispatchResult:
         authorization = session.authorization
         permission = PermissionContext(
-            cwd=session.cwd,
-            mode=permission_mode,
-            sandbox=self.sandbox.descriptor,
             leases=authorization.active_leases(run_id),
             approvals=authorization.active_approvals(run_id),
             require_capability_lease=require_capability_lease,
@@ -1100,10 +1055,8 @@ class RunCoordinator:
             app_context=app_context,
         )
         context = ToolContext(
-            cwd=str(session.cwd),
             session_id=session.id,
             run_id=run_id,
-            permission_mode=permission_mode.value,
             app_context=app_context,
         )
         return await self.dispatcher.dispatch(
@@ -1222,7 +1175,6 @@ class RunCoordinator:
         self,
         session: Session,
         run_id: str,
-        permission_mode: PermissionMode,
         *,
         app_context: object | None,
     ) -> tuple[ContextSection, ...]:
@@ -1237,8 +1189,6 @@ class RunCoordinator:
         request = ContextRequest(
             session_id=session.id,
             run_id=run_id,
-            cwd=str(session.cwd),
-            permission_mode=permission_mode.value,
             user_text=self._last_text(session, "user"),
             app_context=app_context,
         )

@@ -4,7 +4,7 @@ The split this follows: **an application decides policy, the Harness does the
 plumbing.** A choice belongs here only if every reasonable application would
 make the same one *and* getting it wrong would be silent. Anything an
 application should genuinely differ on is a required argument with no default —
-`provider`, `model`, `sandbox` and `tools` cannot be omitted, and a subagent authority
+`provider`, `model` and `tools` cannot be omitted, and a subagent authority
 cannot be guessed.
 
 Nothing security-relevant is defaulted. There is deliberately no
@@ -15,7 +15,6 @@ library ends up shipping product decisions.
         RuntimeBuilder(
             provider=provider,
             model="model-id",
-            sandbox=sandbox,
             tools=[application_tool],
         )
         .with_artifacts()
@@ -34,12 +33,12 @@ from typing import Any
 from aihi.agent.agents.subagent import (
     ChildContextFactory,
     ChildRunSubagentRunner,
+    SessionFactory,
     SubagentAuthority,
     SubagentRunner,
     SubagentTool,
     SubagentTypeSpec,
     restrict_registry,
-    subagent_session_factory,
 )
 from aihi.agent.artifacts import ArtifactStore, FileArtifactStore
 from aihi.agent.context import ContextCompiler, ModelSummaryGenerator, SummaryGenerator
@@ -50,8 +49,6 @@ from aihi.agent.observability import JsonlTelemetrySink, Telemetry
 from aihi.agent.policy import ApprovalResolver, DefaultPolicyEngine, PolicyEngine
 from aihi.agent.runtime import RunCoordinator, RuntimeExtensions
 from aihi.agent.runtime.coordinator import DEFAULT_MAX_TURNS
-from aihi.agent.sandbox import SandboxBackend
-from aihi.agent.sessions import EventStore
 from aihi.agent.skills import SkillDiscovery, SkillIndexContributor
 from aihi.agent.tools import Tool, ToolRegistry
 from aihi.models import Provider
@@ -65,7 +62,6 @@ class Runtime:
     provider: Provider
     model: str
     registry: ToolRegistry
-    sandbox: SandboxBackend
     extensions: RuntimeExtensions
     artifact_store: ArtifactStore | None = None
     telemetry: Telemetry | None = None
@@ -80,7 +76,6 @@ class RuntimeBuilder:
 
     provider: Provider
     model: str
-    sandbox: SandboxBackend
     tools: Sequence[Tool[Any]]
     policy: PolicyEngine[Any] | None = None
     approval_resolver: ApprovalResolver | None = None
@@ -111,11 +106,10 @@ class RuntimeBuilder:
 
     # --- plumbing, opt in ------------------------------------------------
 
-    def with_artifacts(self, path: str | Path | None = None) -> RuntimeBuilder:
+    def with_artifacts(self, path: str | Path) -> RuntimeBuilder:
         """Keep large tool output out of the context and out of the event log."""
 
-        root = Path(path) if path is not None else self.sandbox.root / ".aihi" / "artifacts"
-        return replace(self, artifact_store=FileArtifactStore(root))
+        return replace(self, artifact_store=FileArtifactStore(Path(path)))
 
     def with_telemetry(self, path: str | Path) -> RuntimeBuilder:
         """Write redacted observations as JSON Lines."""
@@ -194,10 +188,10 @@ class RuntimeBuilder:
         self,
         *,
         authority: SubagentAuthority,
-        store: EventStore,
         provider: Provider,
         model: str,
         child_context_factory: ChildContextFactory,
+        session_factory: SessionFactory,
         runners: Mapping[str, SubagentRunner] | None = None,
         agent_types: Mapping[str, SubagentTypeSpec] | None = None,
     ) -> RuntimeBuilder:
@@ -213,10 +207,10 @@ class RuntimeBuilder:
                 runners=runners,
                 agent_types=agent_types,
                 authority=authority,
-                store=store,
                 provider=provider,
                 model=model,
                 child_context_factory=child_context_factory,
+                session_factory=session_factory,
             ),
         )
 
@@ -233,7 +227,6 @@ class RuntimeBuilder:
         coordinator = RunCoordinator(
             self.provider,
             registry=registry,
-            sandbox=self.sandbox,
             policy=self.policy or DefaultPolicyEngine(),
             hooks=self.hooks,
             context_compiler=ContextCompiler(summary_generator=self.summary_generator),
@@ -250,7 +243,6 @@ class RuntimeBuilder:
             provider=self.provider,
             model=self.model,
             registry=registry,
-            sandbox=self.sandbox,
             extensions=extensions,
             artifact_store=self.artifact_store,
             telemetry=self.telemetry,
@@ -280,7 +272,6 @@ class RuntimeBuilder:
             return RunCoordinator(
                 plan.provider,
                 registry=registry,
-                sandbox=self.sandbox,
                 policy=self.policy or DefaultPolicyEngine(),
                 # Contributors are read-only context: a child that cannot see the
                 # skill index cannot load a skill. Recorders are deliberately not
@@ -294,11 +285,7 @@ class RuntimeBuilder:
         def make_runner(system_prompt: str, model: str) -> ChildRunSubagentRunner:
             return ChildRunSubagentRunner(
                 coordinator_factory,
-                subagent_session_factory(
-                    plan.store,
-                    provider=getattr(plan.provider, "name", "provider"),
-                    model=model,
-                ),
+                plan.session_factory,
                 model=model,
                 child_context_factory=plan.child_context_factory,
                 system_prompt=system_prompt,
@@ -326,10 +313,10 @@ class RuntimeBuilder:
 @dataclass(frozen=True, slots=True)
 class _SubagentPlan:
     authority: SubagentAuthority
-    store: EventStore
     provider: Provider
     model: str
     child_context_factory: ChildContextFactory
+    session_factory: SessionFactory
     runners: Mapping[str, SubagentRunner] | None = None
     agent_types: Mapping[str, SubagentTypeSpec] | None = None
 

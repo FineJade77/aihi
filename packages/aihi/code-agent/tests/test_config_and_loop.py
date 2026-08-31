@@ -132,7 +132,9 @@ async def test_runtime_derives_workspace_and_command_root_from_session_cwd(tmp_p
     runtime = await CodeAgentRuntime.create(config, session=session)
     try:
         assert runtime.permission_context.workspace == workspace.resolve()
-        assert runtime.runtime.sandbox.root == workspace.resolve()
+        bash = runtime.runtime.registry.get("bash")
+        assert bash is not None
+        assert bash.sandbox.root == workspace.resolve()  # type: ignore[attr-defined]
         assert runtime.permission_context.workspace != config.base_dir
     finally:
         await runtime.close()
@@ -589,7 +591,6 @@ async def test_skill_trust_commands_enable_explicit_skill_loading(tmp_path) -> N
         result = await tool.run(
             {"name": "coding.demo"},
             ToolContext(
-                cwd=str(tmp_path),
                 session_id=session_id,
                 run_id="run_skill_test",
             ),
@@ -634,7 +635,11 @@ def test_worker_approval_commands_are_event_backed(tmp_path) -> None:
             },
             "reason": "exec",
             "required_capabilities": ["process.exec"],
-            "sandbox": {"name": "host", "root": str(tmp_path), "unsafe": True},
+            "execution": {
+                "transport": "sandbox",
+                "cwd": str(tmp_path),
+                "sandbox": {"name": "host", "unsafe": True},
+            },
         },
     )
 
@@ -654,6 +659,8 @@ def test_worker_approval_commands_are_event_backed(tmp_path) -> None:
         "api_key": "<redacted>",
     }
     assert descriptor["required_capabilities"] == ["process.exec"]
+    assert descriptor["execution"]["cwd"] == str(tmp_path)
+    assert descriptor["sandbox"] == {"name": "host", "unsafe": True}
 
     resolved = server.handle(
         {

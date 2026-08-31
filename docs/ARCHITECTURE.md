@@ -264,8 +264,10 @@ history are not persisted. User messages and runtime events are persisted by the
 SQLite WAL is the default local store. Artifacts hold large outputs, diffs and attachments outside the
 prompt with session/run retention and explicit access checks. Snapshots and compaction are derived
 accelerators; they never replace original events. Event envelope v2 removes the legacy Harness-owned
-workspace from `subagent.spawned` task payloads; the registered v1 migration keeps frozen sessions
-readable without preserving that application-specific field in current task types.
+workspace from `subagent.spawned` task payloads. Envelope v3 removes Runtime-wide workspace, Sandbox
+and permission-mode fields from Run/Tool/Approval/Compaction events; application authority remains in
+the opaque Run profile and command Sandbox facts remain in tool-owned execution metadata. Registered
+v1 → v2 → v3 migrations keep frozen sessions readable without restoring retired base-layer concepts.
 
 audit.jsonl is a local, redacted operational log and never runtime truth. /doctor checks its configured
 target and recent writable parent; failures are surfaced without changing the run result. Trace export,

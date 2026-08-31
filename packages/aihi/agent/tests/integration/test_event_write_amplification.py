@@ -7,7 +7,6 @@ from aihi.agent._core.errors import EventInvariantViolation
 from aihi.agent._core.events import Event
 from aihi.agent.observability import InMemoryTelemetrySink, Telemetry
 from aihi.agent.runtime import RunCoordinator, RunState
-from aihi.agent.sandbox import HostBackend
 from aihi.agent.sessions import InMemoryEventStore, Session
 from aihi.agent.tools import ToolRegistry
 from aihi.models import FakeProvider, FakeStep, Message
@@ -64,7 +63,6 @@ async def test_streaming_run_writes_no_chunk_rows(tmp_path: Path) -> None:
     coordinator = RunCoordinator(
         FakeProvider([FakeStep(text="x" * 2_000)]),
         registry=ToolRegistry(),
-        sandbox=HostBackend(tmp_path, unsafe=True),
     )
     baseline = store.transactions
 
@@ -90,7 +88,6 @@ async def test_telemetry_ignores_ephemeral_stream_deltas(tmp_path: Path) -> None
     coordinator = RunCoordinator(
         FakeProvider([FakeStep(text="y" * 500)]),
         registry=ToolRegistry(),
-        sandbox=HostBackend(tmp_path, unsafe=True),
         telemetry=telemetry,
     )
 
@@ -112,7 +109,6 @@ async def test_artifact_projection_does_not_rescan_history_each_turn(
     coordinator = RunCoordinator(
         FakeProvider([FakeStep(text="one"), FakeStep(text="two")]),
         registry=ToolRegistry(),
-        sandbox=HostBackend(tmp_path, unsafe=True),
     )
     scans = 0
     original = RunCoordinator._recorded_artifact_ids

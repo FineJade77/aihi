@@ -69,7 +69,6 @@ uv pip install -e packages/aihi/agent
 from pathlib import Path
 
 from aihi.agent import (
-    HostBackend,
     InMemoryEventStore,
     RuntimeBuilder,
     Session,
@@ -98,7 +97,6 @@ runtime = (
     RuntimeBuilder(
         provider=provider,
         model="fake-model",
-        sandbox=HostBackend(Path.cwd(), unsafe=True),
         tools=[InspectTool()],
     )
     .with_max_turns(20)
@@ -127,11 +125,13 @@ acknowledgement.
 
 ## Runtime composition
 
-`RuntimeBuilder` requires the important dependencies up front:
+`RuntimeBuilder` requires the application-wide dependencies up front:
 
 - `provider` and `model`;
-- a `sandbox` backend;
 - the application-approved `tools` collection.
+
+A command tool may separately require a `SandboxBackend` in its own constructor. The Runtime does
+not own or distribute a global Sandbox.
 
 Optional extensions are added explicitly with methods such as:
 
@@ -143,7 +143,7 @@ Optional extensions are added explicitly with methods such as:
 Generic subagent governance covers capability and budget subsets, depth, and child count. The Harness
 does not interpret a workspace or product permission mode. An application that enables subagents must
 provide a child-context factory that derives its own opaque application authority and durable run
-profile for every child Run.
+profile for every child Run, plus a Session factory that decides where and how child Sessions live.
 
 The default coordinator turn budget is finite (`100`) and can be lowered for a product-specific safety envelope.
 
@@ -155,7 +155,7 @@ The default coordinator turn budget is finite (`100`) and can be lowered for a p
 | Sessions and storage | `Session`, `EventStore`, `InMemoryEventStore`, `SQLiteEventStore`, `Event` |
 | Context | `ContextCompiler`, `CompactionPolicy`, `ContextState`, summaries and compaction generators |
 | Tools | `Tool`, `ToolSpec`, `ToolContext`, `PreparedToolCall`, `ToolRegistry` |
-| Policy and approval | `PermissionMode`, `DefaultPolicyEngine`, `Approval`, approval resolvers |
+| Policy and approval | `PermissionContext`, `DefaultPolicyEngine`, `Approval`, approval resolvers |
 | Sandbox | `HostBackend`, `LocalIsolatedBackend`, `DockerBackend` |
 | Integrations | Skills, MCP, plugins, subagents, memory, artifacts |
 | Observability | `Telemetry`, `JsonlTelemetrySink`, `InMemoryTelemetrySink` |
@@ -185,7 +185,7 @@ Telemetry is an observation stream, not the event log. `JsonlTelemetrySink` emit
 runtime `ContextSection` values in the dynamic suffix. `RunCoordinator` derives one cache-family key
 from that stable prefix and canonical model-visible tool definitions. Dynamic memory, skills,
 compaction state and current turns remain after the cache boundary. Cache availability never changes
-Event replay, policy, approval, sandbox or tool persistence semantics.
+Event replay, policy, approval, command execution or tool persistence semantics.
 
 `ContextPressureController` measures the complete normalized request against `ContextBudget.input_capacity`.
 It uses the conservative local estimate by default, asks a capable Provider for an exact count at 65%,

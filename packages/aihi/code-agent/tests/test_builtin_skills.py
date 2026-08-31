@@ -97,7 +97,6 @@ async def test_load_skill_is_available_without_any_skills_configuration(tmp_path
         result = await tool.run(
             {"name": "code_review@1.0.0"},
             ToolContext(
-                cwd=str(tmp_path),
                 session_id="session_builtin",
                 run_id="run_builtin",
             ),

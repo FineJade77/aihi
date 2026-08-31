@@ -7,9 +7,7 @@ import pytest
 from aihi.agent import (
     Decision,
     DecisionEffect,
-    HostBackend,
     PermissionContext,
-    PermissionMode,
     PreparedToolCall,
     ToolContext,
     ToolExecutionResult,
@@ -101,21 +99,16 @@ async def test_dispatch_prepares_valid_input_before_policy_and_execution(tmp_pat
             observed["policy_context"] = context.app_context
             return Decision(DecisionEffect.ALLOW, "allowed", "test.allowed")
 
-    sandbox = HostBackend(tmp_path, unsafe=True)
     app_context = {"workspace": str(tmp_path)}
     dispatcher = ToolDispatcher(ToolRegistry([PreparingTool()]), RecordingPolicy())
     result = await dispatcher.dispatch(
         ToolCallBlock("toolu-prepared", "prepared", {"path": "note.txt"}),
         context=ToolContext(
-            cwd=str(tmp_path),
             session_id="ses-prepared",
             run_id="run-prepared",
             app_context=app_context,
         ),
         permission=PermissionContext(
-            cwd=tmp_path,
-            mode=PermissionMode.DEFAULT,
-            sandbox=sandbox.descriptor,
             run_id="run-prepared",
             app_context=app_context,
         ),

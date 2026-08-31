@@ -6,7 +6,6 @@ import pytest
 from aihi.agent import (
     ContextRequest,
     ContextSection,
-    HostBackend,
     InMemoryEventStore,
     InMemoryMemoryStore,
     MemoryAccess,
@@ -56,7 +55,6 @@ def coordinator_for(
     return RunCoordinator(
         provider or FakeProvider([FakeStep(text="done")]),
         registry=ToolRegistry(),
-        sandbox=HostBackend(tmp_path, unsafe=True),
         extensions=extensions,
     )
 

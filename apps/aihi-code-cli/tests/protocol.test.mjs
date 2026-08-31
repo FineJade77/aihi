@@ -39,6 +39,7 @@ test("protocol 0.3 freezes authority-aware Worker envelopes", () => {
     one_shot: false,
     tool_input: { command: "git status" },
     required_capabilities: ["process.exec"],
+    execution: { transport: "sandbox", sandbox: { name: "host" } },
     sandbox: { name: "host" },
   }), true);
   assert.equal(isApprovalDescriptor({
@@ -49,6 +50,15 @@ test("protocol 0.3 freezes authority-aware Worker envelopes", () => {
     run_id: "run_1",
     one_shot: false,
     tool_input: "not an object",
+  }), false);
+  assert.equal(isApprovalDescriptor({
+    approval_id: "approval_1",
+    scope: "process.exec",
+    granted_by: "policy",
+    expires_at: null,
+    run_id: "run_1",
+    one_shot: false,
+    execution: "not an object",
   }), false);
 
   assert.equal(isRunErrorNotification({

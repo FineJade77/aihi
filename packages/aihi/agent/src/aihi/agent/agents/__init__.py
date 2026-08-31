@@ -14,12 +14,12 @@ from .subagent import (
     ChildContextFactory,
     ChildRunContext,
     ChildRunSubagentRunner,
+    SessionFactory,
     SubagentAuthority,
     SubagentRunner,
     SubagentTool,
     SubagentTypeSpec,
     restrict_registry,
-    subagent_session_factory,
 )
 from .types import AgentBudget, AgentState, TaskNode, TaskResult, TaskSpec
 
@@ -36,6 +36,7 @@ __all__ = [
     "ChildRunContext",
     "ChildRunSubagentRunner",
     "SPAWN_CAPABILITY",
+    "SessionFactory",
     "SubagentAuthority",
     "SubagentRunner",
     "SubagentTool",
@@ -45,5 +46,4 @@ __all__ = [
     "TaskResult",
     "TaskSpec",
     "restrict_registry",
-    "subagent_session_factory",
 ]

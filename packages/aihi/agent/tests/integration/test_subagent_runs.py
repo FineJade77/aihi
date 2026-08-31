@@ -5,7 +5,6 @@ from pathlib import Path
 import pytest
 from aihi.agent import (
     ChildRunContext,
-    HostBackend,
     InMemoryEventStore,
     RunCoordinator,
     RunState,
@@ -20,12 +19,15 @@ from aihi.agent.agents import (
     SubagentAuthority,
     SubagentTool,
     restrict_registry,
-    subagent_session_factory,
 )
 from aihi.agent.policy import ApprovalOutcome
 from aihi.models import FakeProvider, FakeStep, Message
 
-from packages.aihi.agent.tests.support_tools import ReadTestTool, WriteTestTool
+from packages.aihi.agent.tests.support_tools import (
+    ReadTestTool,
+    WriteTestTool,
+    app_session_factory,
+)
 
 CHILD_ANSWER = "child summarized the workspace"
 
@@ -50,21 +52,19 @@ def build(
     child_resolver: object | None = None,
 ) -> tuple[RunCoordinator, Session, InMemoryEventStore, ToolRegistry]:
     store = InMemoryEventStore()
-    sandbox = HostBackend(tmp_path, unsafe=True)
-    full_registry = ToolRegistry([ReadTestTool()])
+    full_registry = ToolRegistry([ReadTestTool(tmp_path)])
 
     def coordinator_factory(spec: object) -> RunCoordinator:
         capabilities = frozenset(getattr(spec, "capabilities", frozenset()))
         return RunCoordinator(
             FakeProvider(list(child_steps)),
             registry=restrict_registry(full_registry, capabilities),
-            sandbox=sandbox,
             approval_resolver=child_resolver,  # type: ignore[arg-type]
         )
 
     runner = ChildRunSubagentRunner(
         coordinator_factory,
-        subagent_session_factory(store, provider="fake", model="fake-model"),
+        app_session_factory(store, workspace=tmp_path),
         model="fake-model",
         child_context_factory=lambda spec, context: ChildRunContext(),
     )
@@ -72,7 +72,6 @@ def build(
     parent = RunCoordinator(
         FakeProvider(list(parent_steps)),
         registry=ToolRegistry([tool]),
-        sandbox=sandbox,
         approval_resolver=StaticApprovalResolver(ApprovalOutcome.GRANTED),
     )
     session = Session.create(
@@ -166,7 +165,6 @@ async def test_child_budget_is_clamped_to_the_parent_ceiling(tmp_path: Path) -> 
             ]
         ),
         registry=ToolRegistry([tool]),
-        sandbox=HostBackend(tmp_path, unsafe=True),
         approval_resolver=StaticApprovalResolver(ApprovalOutcome.GRANTED),
     )
     session = Session.create(
@@ -210,7 +208,7 @@ async def test_sibling_limit_binds_across_calls_in_one_parent_run(tmp_path: Path
 
 @pytest.mark.asyncio
 async def test_child_restricted_registry_hides_tools_it_cannot_hold(tmp_path: Path) -> None:
-    registry = ToolRegistry([ReadTestTool()])
+    registry = ToolRegistry([ReadTestTool(tmp_path)])
 
     kept = restrict_registry(registry, frozenset({"filesystem.read"}))
     dropped = restrict_registry(registry, frozenset())
@@ -224,19 +222,17 @@ async def test_a_suspended_child_is_reported_without_failing_the_parent(tmp_path
     workspace = tmp_path / "ws"
     workspace.mkdir()
     store = InMemoryEventStore()
-    sandbox = HostBackend(workspace, unsafe=True)
 
     def coordinator_factory(spec: object) -> RunCoordinator:
         # The child has no resolver, so its mutating call suspends the child run.
         return RunCoordinator(
             FakeProvider([FakeStep.call_tool("write_file", {"path": "x.txt", "content": "x"})]),
-            registry=ToolRegistry([WriteTestTool()]),
-            sandbox=sandbox,
+            registry=ToolRegistry([WriteTestTool(tmp_path)]),
         )
 
     runner = ChildRunSubagentRunner(
         coordinator_factory,
-        subagent_session_factory(store, provider="fake", model="fake-model"),
+        app_session_factory(store, workspace=workspace),
         model="fake-model",
         child_context_factory=lambda spec, context: ChildRunContext(),
     )
@@ -246,7 +242,6 @@ async def test_a_suspended_child_is_reported_without_failing_the_parent(tmp_path
             [FakeStep.call_tool("task", {"objective": "write a file"}), FakeStep(text="noted")]
         ),
         registry=ToolRegistry([tool]),
-        sandbox=sandbox,
         approval_resolver=StaticApprovalResolver(ApprovalOutcome.GRANTED),
     )
     session = Session.create(
@@ -281,7 +276,7 @@ async def test_child_run_receives_injected_application_authority(tmp_path: Path)
     def parent_for() -> tuple[RunCoordinator, Session]:
         runner = ChildRunSubagentRunner(
             lambda spec: Recording(),  # type: ignore[arg-type,return-value]
-            subagent_session_factory(InMemoryEventStore(), provider="fake", model="fake-model"),
+            app_session_factory(InMemoryEventStore(), workspace=tmp_path),
             model="fake-model",
             child_context_factory=lambda spec, context: ChildRunContext(
                 app_context=child_context,
@@ -293,7 +288,6 @@ async def test_child_run_receives_injected_application_authority(tmp_path: Path)
                 [FakeStep.call_tool("task", {"objective": "edit things"}), FakeStep(text="done")]
             ),
             registry=ToolRegistry([SubagentTool(runner, authority=authority_for())]),
-            sandbox=HostBackend(tmp_path, unsafe=True),
             approval_resolver=StaticApprovalResolver(ApprovalOutcome.GRANTED),
         )
         session = Session.create(

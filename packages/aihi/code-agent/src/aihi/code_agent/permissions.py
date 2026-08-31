@@ -7,7 +7,8 @@ have no filesystem, no shell and an entirely different authority model.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+import fnmatch
+from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
@@ -15,9 +16,7 @@ from typing import Any
 from aihi.agent import (
     Decision,
     DecisionEffect,
-    DefaultPolicyEngine,
     PermissionContext,
-    PermissionMode,
     SandboxDescriptor,
     ToolSpec,
 )
@@ -45,6 +44,7 @@ class CodeAgentPermissionContext:
     workspace: Path
     access_mode: AccessMode
     run_mode: RunMode
+    command_sandbox: SandboxDescriptor
 
     def __post_init__(self) -> None:
         workspace = self.workspace.expanduser().resolve(strict=True)
@@ -63,11 +63,34 @@ class CodeAgentPolicy:
 
     _process_capability = "process.exec"
     _local_file_capabilities = frozenset({"filesystem.read", "filesystem.write"})
-
-    def __init__(self) -> None:
-        # Reuse the Harness's generic hard-deny layer (sensitive paths and
-        # required isolation) without inheriting its legacy product modes.
-        self._hard_safety = DefaultPolicyEngine()
+    _sensitive_patterns = (
+        "*/.ssh/*",
+        "*/.aws/credentials",
+        "*/.config/gcloud/*",
+        "*/.azure/*",
+        "*/.gnupg/*",
+        "*/.docker/config.json",
+        "*/.kube/config",
+    )
+    _sensitive_fragments = (
+        "/.ssh/",
+        "/.aws/credentials",
+        "/.config/gcloud/",
+        "/.azure/",
+        "/.gnupg/",
+        "/.docker/config.json",
+        "/.kube/config",
+        ".ssh/",
+        ".aws/credentials",
+        ".config/gcloud/",
+        ".azure/",
+        ".gnupg/",
+        ".docker/config.json",
+        ".kube/config",
+    )
+    _sensitive_components = frozenset(
+        {".ssh", ".aws", ".config", ".azure", ".gnupg", ".docker", ".kube"}
+    )
 
     def evaluate(
         self,
@@ -82,20 +105,9 @@ class CodeAgentPolicy:
                 "Coding tools require an application permission context.",
                 "code_agent.context_required",
             )
-        if app.workspace != context.cwd.expanduser().resolve(strict=False):
-            return Decision(
-                DecisionEffect.DENY,
-                "The permission context workspace must match the Session cwd.",
-                "code_agent.workspace_mismatch",
-            )
-
-        safety = self._hard_safety.evaluate(
-            spec,
-            input,
-            replace(context, mode=PermissionMode.BYPASS),
-        )
-        if safety.effect is DecisionEffect.DENY:
-            return safety
+        sensitive = self._sensitive_path_decision(input, app.workspace)
+        if sensitive is not None:
+            return sensitive
 
         required = frozenset(spec.required_capabilities)
         executes_process = self._process_capability in required
@@ -126,6 +138,17 @@ class CodeAgentPolicy:
                 DecisionEffect.ALLOW,
                 "An active approval grant allows this privileged tool.",
                 "approval.granted",
+            )
+        if (
+            context.require_capability_lease
+            and privileged
+            and bool(spec.required_capabilities)
+            and context.has_capabilities(spec.required_capabilities)
+        ):
+            return Decision(
+                DecisionEffect.ALLOW,
+                "An active capability lease allows this privileged tool.",
+                "capability.lease_granted",
             )
         if app.access_mode is AccessMode.FULL_ACCESS:
             return Decision(
@@ -162,10 +185,42 @@ class CodeAgentPolicy:
             "code_agent.read_only",
         )
 
+    @classmethod
+    def _sensitive_path_decision(
+        cls, input: dict[str, Any], workspace: Path
+    ) -> Decision | None:
+        candidates: list[str] = []
+        for key in ("path", "file_path"):
+            candidate = input.get(key)
+            if isinstance(candidate, str):
+                candidates.append(candidate)
+        argv = input.get("argv")
+        if isinstance(argv, list):
+            candidates.extend(item for item in argv if isinstance(item, str))
+        command = input.get("command")
+        if isinstance(command, str):
+            candidates.append(command)
+        for candidate in candidates:
+            normalized_token = candidate.replace("\\", "/")
+            components = {item for item in normalized_token.split("/") if item}
+            requested = Path(candidate).expanduser()
+            absolute = requested if requested.is_absolute() else workspace / requested
+            normalized = str(absolute.resolve(strict=False))
+            if (
+                any(fnmatch.fnmatch(normalized, pattern) for pattern in cls._sensitive_patterns)
+                or any(fragment in normalized_token for fragment in cls._sensitive_fragments)
+                or bool(components & cls._sensitive_components)
+            ):
+                return Decision(
+                    DecisionEffect.DENY,
+                    "Sensitive credential paths are never available to Coding tools.",
+                    "code_agent.sensitive_path",
+                )
+        return None
+
 
 def build_run_profile(
     context: CodeAgentPermissionContext,
-    command_sandbox: SandboxDescriptor,
 ) -> dict[str, object]:
     """Return the durable application authority profile for one Run."""
 
@@ -174,7 +229,7 @@ def build_run_profile(
         "workspace": str(context.workspace),
         "access_mode": context.access_mode.value,
         "run_mode": context.run_mode.value,
-        "command_sandbox": command_sandbox.to_dict(),
+        "command_sandbox": context.command_sandbox.to_dict(),
     }
 
 

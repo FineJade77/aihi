@@ -8,8 +8,16 @@ must keep every child read-only in the same Session workspace.
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 
-from aihi.agent import ChildRunContext, SandboxDescriptor, TaskSpec, ToolContext
+from aihi.agent import (
+    ChildRunContext,
+    EventStore,
+    Session,
+    SessionFactory,
+    TaskSpec,
+    ToolContext,
+)
 
 from ..permissions import (
     AccessMode,
@@ -43,12 +51,11 @@ def narrow_coding_child_context(
         workspace=parent.workspace,
         access_mode=access_mode,
         run_mode=parent.run_mode,
+        command_sandbox=parent.command_sandbox,
     )
 
 
-def coding_child_context_factory(
-    command_sandbox: SandboxDescriptor,
-) -> Callable[[TaskSpec, ToolContext[object]], ChildRunContext]:
+def coding_child_context_factory() -> Callable[[TaskSpec, ToolContext[object]], ChildRunContext]:
     """Build the application callback required by generic delegation."""
 
     def factory(spec: TaskSpec, context: ToolContext[object]) -> ChildRunContext:
@@ -58,7 +65,33 @@ def coding_child_context_factory(
         child = narrow_coding_child_context(parent, spec.capabilities)
         return ChildRunContext(
             app_context=child,
-            run_profile=build_run_profile(child, command_sandbox),
+            run_profile=build_run_profile(child),
+        )
+
+    return factory
+
+
+def coding_session_factory(
+    store: EventStore,
+    *,
+    workspace: Path,
+    provider: str,
+    model: str,
+) -> SessionFactory:
+    """Create child Sessions in the parent Coding workspace."""
+
+    def factory(spec: TaskSpec, context: ToolContext[object]) -> Session:
+        return Session.create(
+            store,
+            cwd=workspace,
+            provider=provider,
+            model=model,
+            metadata={
+                "parent_session_id": context.session_id,
+                "parent_run_id": context.run_id,
+                "task_id": spec.task_id,
+                "depth": spec.depth,
+            },
         )
 
     return factory
@@ -72,4 +105,8 @@ def _access_for_capabilities(capabilities: frozenset[str]) -> AccessMode:
     return AccessMode.READ_ONLY
 
 
-__all__ = ["coding_child_context_factory", "narrow_coding_child_context"]
+__all__ = [
+    "coding_child_context_factory",
+    "coding_session_factory",
+    "narrow_coding_child_context",
+]

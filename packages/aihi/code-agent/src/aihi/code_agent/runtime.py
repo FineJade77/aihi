@@ -55,7 +55,11 @@ from .permissions import (
 )
 from .prompts import build_subagent_prompt, build_system_prompt
 from .skills import builtin_skill_root
-from .subagents import CODING_SUBAGENTS, coding_child_context_factory
+from .subagents import (
+    CODING_SUBAGENTS,
+    coding_child_context_factory,
+    coding_session_factory,
+)
 from .tools import ToolBuildContext, build_tools
 from .turns import TurnEvent, TurnEventPump, TurnFinished, drive_turn
 
@@ -91,13 +95,15 @@ class CodeAgentRuntime:
         either value separately would permit a mismatched authority boundary.
         """
 
+        workspace = Path(session.cwd)
+        provider = _build_provider(config)
+        sandbox = _build_sandbox(config, workspace)
         permission_context = CodeAgentPermissionContext(
-            workspace=Path(session.cwd),
+            workspace=workspace,
             access_mode=config.access_mode,
             run_mode=config.run_mode,
+            command_sandbox=sandbox.descriptor,
         )
-        provider = _build_provider(config)
-        sandbox = _build_sandbox(config, permission_context.workspace)
         configured_roots = [SkillRoot(root.path, root.scope) for root in config.skill_roots]
         # Only configured roots need a lockfile: a BUILTIN Skill's integrity is
         # the package's integrity, so demanding extra trust adds ceremony, not
@@ -124,7 +130,6 @@ class CodeAgentRuntime:
         builder = RuntimeBuilder(
             provider=provider,
             model=config.provider.model,
-            sandbox=sandbox,
             tools=tools,
             policy=CodeAgentPolicy(),
         )
@@ -154,10 +159,15 @@ class CodeAgentRuntime:
             )
             builder = builder.with_subagents(
                 authority=authority,
-                store=session.store,
                 provider=provider,
                 model=config.subagents.model or config.provider.model,
-                child_context_factory=coding_child_context_factory(sandbox.descriptor),
+                child_context_factory=coding_child_context_factory(),
+                session_factory=coding_session_factory(
+                    session.store,
+                    workspace=permission_context.workspace,
+                    provider=provider.name,
+                    model=config.subagents.model or config.provider.model,
+                ),
                 agent_types=_build_agent_types(config, permission_context.workspace),
             )
         runtime = builder.build()
@@ -211,9 +221,7 @@ class CodeAgentRuntime:
                 max_turns=max_turns,
                 cancel_event=cancel_event,
                 app_context=self.permission_context,
-                run_profile=build_run_profile(
-                    self.permission_context, self.runtime.sandbox.descriptor
-                ),
+                run_profile=build_run_profile(self.permission_context),
             )
 
         return drive_turn(session=session, pump=self.pump, invoke=invoke)
@@ -274,9 +282,7 @@ class CodeAgentRuntime:
                 max_output_tokens=max_output_tokens,
                 cancel_event=cancel_event,
                 app_context=self.permission_context,
-                run_profile=build_run_profile(
-                    self.permission_context, self.runtime.sandbox.descriptor
-                ),
+                run_profile=build_run_profile(self.permission_context),
             )
 
         return drive_turn(session=session, pump=self.pump, invoke=invoke)

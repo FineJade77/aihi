@@ -6,7 +6,11 @@ Types are an application concern; the ceilings they run under stay in
 
 from __future__ import annotations
 
-from .authority import coding_child_context_factory, narrow_coding_child_context
+from .authority import (
+    coding_child_context_factory,
+    coding_session_factory,
+    narrow_coding_child_context,
+)
 from .registry import SubagentDefinition
 
 CODING_SUBAGENTS: tuple[SubagentDefinition, ...] = (
@@ -55,6 +59,7 @@ __all__ = [
     "SUBAGENT_TYPE_NAMES",
     "SubagentDefinition",
     "coding_child_context_factory",
+    "coding_session_factory",
     "definition_for",
     "narrow_coding_child_context",
 ]

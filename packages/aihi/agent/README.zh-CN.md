@@ -70,7 +70,6 @@ uv pip install -e packages/aihi/agent
 from pathlib import Path
 
 from aihi.agent import (
-    HostBackend,
     InMemoryEventStore,
     RuntimeBuilder,
     Session,
@@ -99,7 +98,6 @@ runtime = (
     RuntimeBuilder(
         provider=provider,
         model="fake-model",
-        sandbox=HostBackend(Path.cwd(), unsafe=True),
         tools=[InspectTool()],
     )
     .with_max_turns(20)
@@ -127,11 +125,13 @@ Sandbox backend 只暴露命令执行，不提供文件读取、Glob 或写入 A
 
 ## Runtime 组合
 
-\`RuntimeBuilder\` 要求调用方提前提供关键依赖：
+\`RuntimeBuilder\` 要求调用方提前提供应用级关键依赖：
 
 - \`provider\` 和 \`model\`；
-- 一个 \`sandbox\` backend；
 - 由应用批准的 \`tools\` 集合。
+
+命令 Tool 可以在自己的构造函数中单独要求 \`SandboxBackend\`；Runtime 不拥有、也不向所有 Tool
+分发全局 Sandbox。
 
 可通过以下方法显式增加可选扩展：
 
@@ -142,7 +142,7 @@ Sandbox backend 只暴露命令执行，不提供文件读取、Glob 或写入 A
 
 通用 Subagent 治理只负责能力与预算子集、深度和子任务数量。Harness 不解释 Workspace 或产品权限模式。
 启用 Subagent 的应用必须提供 child-context factory，为每个子 Run 派生自己的不透明应用权限上下文和
-持久化 Run profile。
+持久化 Run profile，并提供 Session factory 决定子 Session 的位置与创建方式。
 
 Coordinator 的默认 turn budget 是有限的（\`100\`），应用可以进一步降低它以形成产品级安全边界。
 
@@ -154,7 +154,7 @@ Coordinator 的默认 turn budget 是有限的（\`100\`），应用可以进一
 | Session 与存储 | \`Session\`、\`EventStore\`、\`InMemoryEventStore\`、\`SQLiteEventStore\`、\`Event\` |
 | Context | \`ContextCompiler\`、`CompactionPolicy`、`ContextState`、摘要和 Compaction Generator |
 | Tool | \`Tool\`、\`ToolSpec\`、\`ToolContext\`、`PreparedToolCall`、\`ToolRegistry\` |
-| Policy 与 Approval | \`PermissionMode\`、\`DefaultPolicyEngine\`、\`Approval\`、Approval Resolver |
+| Policy 与 Approval | \`PermissionContext\`、\`DefaultPolicyEngine\`、\`Approval\`、Approval Resolver |
 | Sandbox | \`HostBackend\`、\`LocalIsolatedBackend\`、\`DockerBackend\` |
 | 集成 | Skill、MCP、Plugin、Subagent、Memory、Artifact |
 | 可观测性 | \`Telemetry\`、\`JsonlTelemetrySink\`、\`InMemoryTelemetrySink\` |
@@ -182,7 +182,7 @@ Telemetry 是观察流，不是 Event Log。\`JsonlTelemetrySink\` 输出脱敏�
 `ContextCompiler` 将应用提供的 Base System Prompt 编译为稳定 `TextBlock`，并把 Runtime
 `ContextSection` 放在动态后缀。`RunCoordinator` 使用该稳定前缀和规范化的模型可见 Tool
 Definition 派生唯一 Cache Family Key。Memory、Skill、Compaction State 和当前 Turn 保持在缓存
-断点之后。Cache 是否可用都不会改变 Event Replay、Policy、Approval、Sandbox 或 Tool Result
+断点之后。Cache 是否可用都不会改变 Event Replay、Policy、Approval、命令执行或 Tool Result
 持久化语义。
 
 `ContextPressureController` 使用 `ContextBudget.input_capacity` 衡量完整的规范化请求。默认使用

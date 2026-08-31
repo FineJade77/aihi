@@ -107,7 +107,7 @@ ADR/RFC 仅保存在本地 `docs/adr/` 和 `docs/rfcs/`，不会提交到 Git。
 ## 设计原则
 
 - 事件日志是运行时事实源，摘要、Memory 和 UI 都是派生视图。
-- 所有副作用必须经过 `tool → policy → hooks → sandbox`。
+- 所有副作用必须经过 `校验/Prepare → Policy → Approval → Hook → 受治理的 Tool 执行`；只有执行任意命令的 Tool 接收 Sandbox backend。
 - Host 执行必须显式声明 `unsafe=true`，不能被误认为安全隔离。
 - 基础包不实现 ModelRouter、ModelGateway 或产品 UI。
 

@@ -1,6 +1,7 @@
 """The two supported leaf APIs and what importing them may drag in."""
 
 import importlib.util
+import inspect
 import os
 import subprocess
 import sys
@@ -88,6 +89,34 @@ def test_composition_root_needs_nothing_beyond_the_public_api() -> None:
         "ContextState",
     }
     assert required <= set(agent.__all__)
+
+
+def test_runtime_authority_is_application_owned() -> None:
+    """The Harness carries opaque authority and never selects a product mode or Sandbox."""
+
+    assert "PermissionMode" not in agent.__all__
+    assert "sandbox" not in inspect.signature(agent.RuntimeBuilder).parameters
+    assert "sandbox" not in inspect.signature(agent.RunCoordinator).parameters
+    assert "permission_mode" not in inspect.signature(agent.RunCoordinator.run).parameters
+    assert "permission_mode" not in inspect.signature(agent.RunCoordinator.resume).parameters
+    assert tuple(agent.PermissionContext.__dataclass_fields__) == (
+        "leases",
+        "approvals",
+        "require_capability_lease",
+        "run_id",
+        "app_context",
+    )
+    assert tuple(agent.ToolContext.__dataclass_fields__) == (
+        "session_id",
+        "run_id",
+        "app_context",
+    )
+    assert tuple(agent.ContextRequest.__dataclass_fields__) == (
+        "session_id",
+        "run_id",
+        "user_text",
+        "app_context",
+    )
 
 
 def test_model_contracts_and_adapters_stay_in_the_models_leaf() -> None:
