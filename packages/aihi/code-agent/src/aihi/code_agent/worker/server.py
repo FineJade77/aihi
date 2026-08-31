@@ -340,6 +340,7 @@ class WorkerServer:
             "sessions": [
                 {
                     "session_id": info.session_id,
+                    "cwd": str(info.metadata["cwd"]),
                     "head_seq": info.head_seq,
                     "created_at": info.created_at,
                     "metadata": deepcopy(info.metadata),
@@ -625,6 +626,8 @@ class WorkerServer:
                     "updated_at": event.created_at,
                     "provider": None,
                     "model": None,
+                    "access_mode": None,
+                    "run_mode": None,
                     "error": None,
                     "pending_approval_id": None,
                 },
@@ -634,6 +637,14 @@ class WorkerServer:
                 descriptor["state"] = "running"
                 descriptor["provider"] = event.data.get("provider")
                 descriptor["model"] = event.data.get("model")
+                profile = event.data.get("application_profile")
+                if isinstance(profile, dict):
+                    access_mode = profile.get("access_mode")
+                    run_mode = profile.get("run_mode")
+                    if access_mode in {"read_only", "workspace_write", "full_access"}:
+                        descriptor["access_mode"] = access_mode
+                    if run_mode in {"execute", "plan"}:
+                        descriptor["run_mode"] = run_mode
             elif event.type == "run.resumed":
                 descriptor["state"] = "running"
             elif event.type == "run.suspended":
@@ -980,7 +991,7 @@ class WorkerServer:
                 "Persisted task graph must contain one root", code=INVALID_PARAMS
             )
         snapshot: dict[str, object] = {
-            "schema_version": 1,
+            "schema_version": 2,
             "session_id": session.id,
             "roots": roots,
             "nodes": nodes,
@@ -1013,6 +1024,7 @@ class WorkerServer:
         info = self._ensure_store().get(session.id)
         return {
             "session_id": info.session_id,
+            "cwd": str(session.cwd),
             "head_seq": info.head_seq,
             "created_at": info.created_at,
             "metadata": deepcopy(info.metadata),

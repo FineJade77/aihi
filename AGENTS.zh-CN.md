@@ -187,7 +187,7 @@ Sandbox 和执行 metadata 不得进入本包。DeepSeek 复用 OpenAI-compatibl
 负责 TOML 配置、Coding Prompt、Provider/Model catalog、permission mode、Worker、Coding Tool、
 Skill/MCP/Subagent 接线和本地 audit。用户配置是 `~/.aihi/aihi-code.toml`，项目配置是
 `<workspace>/.aihi/aihi-code.toml`，不增加配置目录 CLI 覆盖。Worker 是唯一 EventStore Writer，使用
-Code Protocol 0.2。ModelRouter、ModelGateway 和跨 Provider fallback 不进入基础包。
+Code Protocol 0.3。ModelRouter、ModelGateway 和跨 Provider fallback 不进入基础包。
 
 ### @aihi/code-protocol 与 @aihi-code-cli
 

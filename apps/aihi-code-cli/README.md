@@ -4,7 +4,7 @@
 
 Local TypeScript/Ink terminal UI for the AIHI coding-agent Worker.
 
-The CLI launches the Python `aihi-code-agent` Worker, performs the protocol `0.2` handshake, renders durable and live events, and provides the interactive controls expected from a small coding-agent CLI. It is a private workspace app rather than a published npm library.
+The CLI launches the Python `aihi-code-agent` Worker, performs the protocol `0.3` handshake, renders durable and live events, and provides the interactive controls expected from a small coding-agent CLI. It is a private workspace app rather than a published npm library.
 
 ## Features
 
@@ -137,7 +137,8 @@ backend = "host"
 unsafe = false
 
 [agent]
-permission_mode = "default" # default | accept_edits | plan | bypass
+access_mode = "workspace_write" # read_only | workspace_write | full_access
+run_mode = "execute"            # execute | plan
 
 [audit]
 enabled = true
@@ -155,9 +156,9 @@ command = ["python3", "-m", "example_mcp_server"]
 allowed_tools = ["search"]
 ```
 
-API keys are referenced by environment variable name and are not stored in TOML. The generated user configuration keeps Host execution disabled. If Host mode is selected, the TUI requests consent for the exact workspace and resolved root; the acknowledgement is stored in `~/.aihi/host-workspaces.json`. Host mode is not process isolation.
+API keys are referenced by environment variable name and are not stored in TOML. The generated user configuration keeps Host execution disabled. If Host mode is selected, the TUI requests consent for the exact Session workspace; the acknowledgement is stored in `~/.aihi/host-workspaces.json`. Host mode is not process or filesystem isolation: commands run as the local user with the workspace as cwd and may access any OS-permitted file or network resource.
 
-Use `/providers` to display the configured provider catalog, `/providers NAME` to select a provider, `/models` to display every provider/model pair, and `/models PROVIDER/MODEL` to switch both values. `/provider` and `/model` remain compatibility aliases. The startup banner, `/config`, `/doctor`, and status bar show the active pair plus the configured catalog.
+Use `/providers` to display the configured provider catalog, `/providers NAME` to select a provider, `/models` to display every provider/model pair, and `/models PROVIDER/MODEL` to switch both values. `/provider` and `/model` remain compatibility aliases. The startup banner, `/config`, `/status`, `/doctor`, `/runs`, and status bar display the effective Access/Run Mode. Configured modes are shown before the first Run; persisted Run modes take precedence after replay or a live `run.started` event.
 
 ## Sessions and recovery
 
@@ -169,12 +170,12 @@ The Worker persists canonical events; the CLI replays `session.events` and feeds
 
 `/doctor` checks resolved configuration, provider metadata, session-scoped tools/MCP/Skills, audit destination writability, and Host consent state. Audit observations are redacted, bounded, and written with owner-only permissions by the Worker. Tool previews use an allowlist and credential-shaped substrings are redacted before display.
 
-Review `permission_mode` before enabling edits or process execution:
+Review both authority dimensions before enabling edits or process execution:
 
-- `default`: read-only tools run; edits and processes ask.
-- `accept_edits`: edits run; processes still ask.
-- `plan`: mutating/process tools are denied.
-- `bypass`: permits tools after hard safety denies; use only in a trusted isolated setup.
+- `read_only`: mutation and process execution are denied.
+- `workspace_write`: local application-owned file edits run; Bash and other external mutations ask.
+- `full_access`: privileged tools run after hard safety checks.
+- `plan`: an independent hard read-only Run intent that approval cannot upgrade; `execute` applies the configured AccessMode.
 
 ## Development
 

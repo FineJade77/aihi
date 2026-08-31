@@ -16,7 +16,7 @@ Content-Length framing 分别位于 `aihi-code-agent` 与 CLI RPC client。
 
 ## 兼容性
 
-当前协议版本为 `0.2`。客户端与 Worker 必须精确匹配版本，不能静默降级。消息是 JSON-RPC 2.0
+当前协议版本为 `0.3`。客户端与 Worker 必须精确匹配版本，不能静默降级。消息是 JSON-RPC 2.0
 对象，通过字节流上的 `Content-Length` 头传输。
 
 ## 方法组
@@ -33,6 +33,13 @@ Content-Length framing 分别位于 `aihi-code-agent` 与 CLI RPC client。
 
 `run.start` 与 `run.resume` 立即返回 acceptance；终态通过 `run.completed`、`run.failed`、
 `run.interrupted`、`run.cancelled`、`run.error` 和 `approval.requested` 通知。
+
+Protocol 0.3 显式描述应用权限，但不把它误归为通用 Harness 状态：
+
+- `SessionDescriptor.cwd` 是 Coding 应用的 canonical Workspace，由创建 Session 时传入，不能从 TOML 配置。
+- `ConfigDescriptor.access_mode`、`run_mode` 是配置默认值；`command_sandbox` 只描述任意命令执行，不包含 Workspace root。
+- Run 创建后，客户端以 `RunDescriptor.access_mode`、`run_mode` 中持久化的实际生效值为准。
+- Task request/response DTO 只携带通用委派范围；Workspace 权限由应用派生，Task caller 不能传入。
 
 ## 开发
 

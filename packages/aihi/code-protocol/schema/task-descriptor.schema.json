@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aihi.dev/schemas/code-protocol/task-descriptor-0.3.json",
+  "title": "AIHI Code task descriptor",
+  "type": "object",
+  "required": ["spec", "state", "child_task_ids", "result", "reason", "updated_at"],
+  "properties": {
+    "spec": {
+      "type": "object",
+      "required": [
+        "parent_run_id",
+        "objective",
+        "budget",
+        "task_id",
+        "child_run_id",
+        "parent_task_id",
+        "constraints",
+        "capabilities",
+        "depth",
+        "max_depth",
+        "max_children",
+        "metadata",
+        "created_at"
+      ],
+      "properties": {
+        "parent_run_id": { "type": "string", "minLength": 1 },
+        "objective": { "type": "string", "minLength": 1 },
+        "budget": {
+          "type": "object",
+          "required": ["max_tokens", "max_cost_usd", "timeout_seconds", "max_tool_calls"],
+          "properties": {
+            "max_tokens": { "type": "integer", "minimum": 1 },
+            "max_cost_usd": { "type": ["number", "null"], "minimum": 0 },
+            "timeout_seconds": { "type": "number", "exclusiveMinimum": 0 },
+            "max_tool_calls": { "type": "integer", "minimum": 1 }
+          },
+          "additionalProperties": false
+        },
+        "task_id": { "type": "string", "minLength": 1 },
+        "child_run_id": { "type": "string", "minLength": 1 },
+        "parent_task_id": { "type": ["string", "null"] },
+        "constraints": { "type": "array", "items": { "type": "string" } },
+        "capabilities": { "type": "array", "items": { "type": "string" } },
+        "depth": { "type": "integer", "minimum": 0 },
+        "max_depth": { "type": "integer", "minimum": 0 },
+        "max_children": { "type": "integer", "minimum": 0 },
+        "metadata": { "type": "object" },
+        "created_at": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "state": {
+      "enum": ["pending", "running", "waiting", "completed", "failed", "cancelled", "interrupted"]
+    },
+    "child_task_ids": { "type": "array", "items": { "type": "string" } },
+    "result": { "type": ["object", "null"] },
+    "reason": { "type": ["string", "null"] },
+    "updated_at": { "type": "string", "minLength": 1 }
+  },
+  "additionalProperties": false
+}

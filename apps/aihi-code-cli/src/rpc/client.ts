@@ -37,11 +37,15 @@ import {
   PROTOCOL_VERSION,
   isApprovalDescriptor,
   isApprovalResolution,
+  isConfigDescriptor,
   isEventNotification,
   isInitializeResult,
   isRunAccepted,
+  isRunDescriptor,
   isRunErrorNotification,
+  isSessionDescriptor,
   isSessionEventsResult,
+  isTaskDescriptor,
 } from "@aihi/code-protocol";
 import { ContentLengthDecoder, encodeFrame } from "./framing.js";
 import { launchWorker, type WorkerLaunchOptions } from "../worker/launcher.js";
@@ -196,7 +200,12 @@ export class RpcClient {
       return Promise.reject(new Error("Worker process is closed"));
     }
     const id: JsonRpcId = this.nextId++;
-    const request: JsonRpcRequest = { jsonrpc: "2.0", id, method, params };
+    const request: JsonRpcRequest<CodeRpcParams<TMethod>> = {
+      jsonrpc: "2.0",
+      id,
+      method,
+      params,
+    };
     return new Promise<CodeRpcResult<TMethod>>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(this.idKey(id));
@@ -226,6 +235,7 @@ export class RpcClient {
 
   public async createSession(params: SessionCreateParams): Promise<SessionDescriptor> {
     const result = await this.request("session.create", params);
+    if (!isSessionDescriptor(result.session)) throw new Error("Malformed session.create result");
     return result.session;
   }
 
@@ -233,6 +243,9 @@ export class RpcClient {
     const result = await this.request("session.list", {
       limit,
     });
+    if (!Array.isArray(result.sessions) || !result.sessions.every(isSessionDescriptor)) {
+      throw new Error("Malformed session.list result");
+    }
     return result.sessions;
   }
 
@@ -240,6 +253,7 @@ export class RpcClient {
     const result = await this.request("session.get", {
       session_id: sessionId,
     });
+    if (!isSessionDescriptor(result.session)) throw new Error("Malformed session.get result");
     return result.session;
   }
 
@@ -264,11 +278,13 @@ export class RpcClient {
 
   public async createTask(params: TaskCreateParams): Promise<TaskDescriptor> {
     const result = await this.request("task.create", params);
+    if (!isTaskDescriptor(result.task)) throw new Error("Malformed task.create result");
     return result.task;
   }
 
   public async spawnTask(params: TaskSpawnParams): Promise<TaskDescriptor> {
     const result = await this.request("task.spawn", params);
+    if (!isTaskDescriptor(result.task)) throw new Error("Malformed task.spawn result");
     return result.task;
   }
 
@@ -277,6 +293,7 @@ export class RpcClient {
       session_id: sessionId,
       task_id: taskId,
     });
+    if (!isTaskDescriptor(result.task)) throw new Error("Malformed task.get result");
     return result.task;
   }
 
@@ -285,11 +302,15 @@ export class RpcClient {
       session_id: sessionId,
       active_only: activeOnly,
     });
+    if (!Array.isArray(result.tasks) || !result.tasks.every(isTaskDescriptor)) {
+      throw new Error("Malformed task.list result");
+    }
     return result.tasks;
   }
 
   public async transitionTask(params: TaskTransitionParams): Promise<TaskDescriptor> {
     const result = await this.request("task.transition", params);
+    if (!isTaskDescriptor(result.task)) throw new Error("Malformed task.transition result");
     return result.task;
   }
 
@@ -313,6 +334,7 @@ export class RpcClient {
     const result = await this.request("config.get", {
       ...(cwd ? { cwd } : {}),
     });
+    if (!isConfigDescriptor(result.config)) throw new Error("Malformed config.get result");
     return result.config;
   }
 
@@ -327,6 +349,9 @@ export class RpcClient {
     const result = await this.request("run.list", {
       session_id: sessionId,
     });
+    if (!Array.isArray(result.runs) || !result.runs.every(isRunDescriptor)) {
+      throw new Error("Malformed run.list result");
+    }
     return result.runs;
   }
 
@@ -339,6 +364,7 @@ export class RpcClient {
       session_id: sessionId,
       ...(atSeq !== undefined ? { at_seq: atSeq } : {}),
     });
+    if (!isSessionDescriptor(result.session)) throw new Error("Malformed session.fork result");
     return result.session;
   }
 

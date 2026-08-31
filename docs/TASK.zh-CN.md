@@ -7,7 +7,7 @@
 | 字段 | 内容 |
 | --- | --- |
 | 状态 | 基础能力完成；应用和平台路线图持续推进 |
-| 当前版本线 | Python 包已以 `0.1.0` 发布到 PyPI；Code Protocol `0.2` |
+| 当前版本线 | Python 包已以 `0.1.0` 发布到 PyPI；Code Protocol `0.3` |
 | 架构 | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | 最近完成 | H-19 Prompt Cache 与 ContextState v2 Compaction |
 
@@ -35,7 +35,7 @@
 | `aihi-models` | Provider-neutral 消息、codec、能力、Token 估算及 Fake/OpenAI/Anthropic/OpenAI-compatible/DeepSeek Adapter | Done |
 | `aihi-agent` | 可恢复 Loop、默认 turn budget、EventStore、Replay、Context/Compaction、Tool、Policy、Approval、Sandbox、Artifact、Skill、MCP、Plugin、Memory、Subagent、Eval | Done |
 | `aihi-code-agent` | Coding 配置、用户/项目 `.aihi` 配置发现、Provider/Model catalog、Worker、Session/Run/Task API、Coding Tool 和 TUI 组合 | Done |
-| `@aihi/code-protocol` | Code Protocol 0.2 DTO、method map、guard 和 Schema | Done |
+| `@aihi/code-protocol` | Code Protocol 0.3 DTO、method map、guard 和 Schema | Done |
 | `@aihi/code-cli` | Ink TUI、Transcript Replay、滚动/输入体验、Session/Model picker、Slash 命令、Approval、Skill/MCP/Tool 管理和 Doctor | Done |
 | 打包 | 独立 wheels、PEP 420 namespace、installed-wheel 兼容性、冻结 fixture Replay 和 PyPI `0.1.0` 发布 | Done |
 | 运维 | 脱敏本地 `audit.jsonl`、Doctor 审计检查、Session 恢复和 Replay 诊断 | Done |

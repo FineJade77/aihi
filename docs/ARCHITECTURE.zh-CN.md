@@ -9,7 +9,7 @@
 | 状态 | 当前基线 |
 | 范围 | `aihi-models`、`aihi-agent`、`aihi-code-agent`、`@aihi/code-protocol`、`@aihi/code-cli` |
 | 运行时 | Python 3.11+；TypeScript/Ink CLI |
-| 协议 | Code Protocol 0.2 |
+| 协议 | Code Protocol 0.3 |
 | 事实源 | Runtime 使用事件日志；本文描述稳定边界 |
 
 本文说明契约、职责、依赖方向和安全不变式。交付进度见 [TASK.md](TASK.md)；`docs/adr/` 和
@@ -209,11 +209,14 @@ Memory 作用域化且写入需要授权；Subagent 以受治理的 `task` Tool 
 ## Coding Worker 与 TUI 协议
 
 `aihi-code-agent` 是应用 Runtime 和 EventStore 唯一写入端；`@aihi/code-cli` 是薄客户端。两者通过
-Code Protocol 0.2 的 stdio 通讯：
+Code Protocol 0.3 的 stdio 通讯：
 
 - JSON-RPC 2.0、`Content-Length` framing 和精确版本 handshake。
 - `run.start`/`run.resume` 立即返回包含 `run_id` 的 acceptance。
 - 进度和终态由版本化 notification 传递，启动前失败使用 `run.error`。
+- Session descriptor 直接暴露 canonical cwd；Config descriptor 暴露应用拥有的 Access/Run Mode 和
+  `command_sandbox`；Run descriptor 暴露持久化后的实际生效模式。
+- Task DTO 只包含通用委派范围，不携带 Workspace 权限。
 - 重连先完整分页 `session.events(after_seq)`，再接收实时通知。
 - TUI 的 replay 和实时事件共用 reducer，按 `seq` 去重，以 canonical `assistant.message` 覆盖临时 `model.chunk`。
 

@@ -244,7 +244,7 @@ HostBackend is a controlled local backend, not a security isolation boundary:
   Coding tools, Skill/MCP/subagent wiring and local audit.
 - User config is ~/.aihi/aihi-code.toml; project config is <workspace>/.aihi/aihi-code.toml.
   Do not introduce a config-directory CLI override.
-- Worker is the sole EventStore writer and communicates using Code Protocol 0.2.
+- Worker is the sole EventStore writer and communicates using Code Protocol 0.3.
 - Built-in Skills are trusted by package integrity; other scopes require explicit trust and hash validation.
 - Keep ModelRouter/ModelGateway and cross-provider fallback out of the base packages.
 

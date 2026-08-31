@@ -11,7 +11,7 @@ TUI 位于独立包中。
 ## 功能
 
 - 支持 OpenAI、Anthropic、DeepSeek、OpenAI-compatible endpoint 和确定性的 Fake Provider profile。
-- 提供 Coding Tool、只读 Git Tool、Sandbox 选择、permission mode、Approval 和可恢复 Run。
+- 提供 Coding Tool、只读 Git Tool、命令 Sandbox 选择、Access/Run Mode、Approval 和可恢复 Run。
 - 支持内置及用户/项目 Skill、信任管理和显式 `load_skill` Tool。
 - 支持 MCP stdio Server、受治理 Subagent、Artifact、Context Compaction 和脱敏 `audit.jsonl` 观测。
 - 为本地 CLI 或其他宿主提供版本化 JSON-RPC Worker transport。
@@ -65,7 +65,7 @@ aihi-code-agent-worker
 ```
 
 Worker 通过 stdin/stdout 读写使用 Content-Length framing 的 JSON-RPC 2.0 消息。Protocol 版本
-`0.2` 通过精确版本 handshake 协商。`run.start` 和 `run.resume` 以异步方式接受；进度和终态
+`0.3` 通过精确版本 handshake 协商。`run.start` 和 `run.resume` 以异步方式接受；进度和终态
 通过 notification 发送，例如 `run.completed`、`run.failed`、`run.interrupted`、
 `run.cancelled` 和 `approval.requested`。
 

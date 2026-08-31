@@ -9,7 +9,7 @@ UI-free coding-agent runtime and stdio Worker for AIHI.
 ## Features
 
 - Provider profiles for OpenAI, Anthropic, DeepSeek, OpenAI-compatible endpoints, and the deterministic fake provider.
-- Coding tools, read-only Git tools, sandbox selection, permission modes, approvals, and resumable runs.
+- Coding tools, read-only Git tools, command-sandbox selection, access/run modes, approvals, and resumable runs.
 - Built-in and user/project Skills with trust management and an explicit `load_skill` tool.
 - MCP stdio servers, governed subagents, artifacts, context compaction, and redacted `audit.jsonl` observations.
 - Versioned JSON-RPC Worker transport for a local CLI or another host application.
@@ -60,7 +60,7 @@ python -m aihi.code_agent.worker
 aihi-code-agent-worker
 ```
 
-The Worker reads and writes Content-Length framed JSON-RPC 2.0 messages on stdin/stdout. Protocol version `0.2` is negotiated by an exact-version handshake. `run.start` and `run.resume` are accepted asynchronously; progress and terminal state arrive as notifications such as `run.completed`, `run.failed`, `run.interrupted`, `run.cancelled`, and `approval.requested`.
+The Worker reads and writes Content-Length framed JSON-RPC 2.0 messages on stdin/stdout. Protocol version `0.3` is negotiated by an exact-version handshake. `run.start` and `run.resume` are accepted asynchronously; progress and terminal state arrive as notifications such as `run.completed`, `run.failed`, `run.interrupted`, `run.cancelled`, and `approval.requested`.
 
 The Worker is normally launched by the CLI. It can also be embedded behind another local host that implements the same protocol.
 

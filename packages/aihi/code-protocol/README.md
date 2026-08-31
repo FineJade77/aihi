@@ -18,7 +18,7 @@ The Worker implementation and Content-Length framing live in `aihi-code-agent` a
 
 ## Compatibility
 
-The current protocol version is `0.2`. Clients and Workers perform an exact-version handshake; a mismatch must be surfaced as a compatibility error rather than silently downgraded.
+The current protocol version is `0.3`. Clients and Workers perform an exact-version handshake; a mismatch must be surfaced as a compatibility error rather than silently downgraded.
 
 Transport messages are JSON-RPC 2.0 objects framed with a `Content-Length` header over a byte stream. The framing is deliberately separate from the DTO package so transports other than stdio can reuse the same payloads.
 
@@ -45,17 +45,28 @@ import {
   type CodeRpcMethod,
 } from "@aihi/code-protocol";
 
-const version = PROTOCOL_VERSION; // "0.2"
+const version = PROTOCOL_VERSION; // "0.3"
 const method: CodeRpcMethod = "run.start";
 
 function showConfig(config: ConfigDescriptor) {
-  console.log(config.workspace, config.provider, config.audit);
+  console.log(
+    config.access_mode,
+    config.run_mode,
+    config.command_sandbox,
+  );
 }
 ```
 
 The package exports its TypeScript entrypoint as `@aihi/code-protocol` and checked-in schemas under `@aihi/code-protocol/schema/*`.
 
 `ConfigDescriptor.providers` is the non-secret provider catalog. Each descriptor has an active/default `model` and an optional `models` array containing every model configured for that provider. Clients should present model choices as provider/model pairs and never assume that a model is valid for another provider.
+
+Protocol 0.3 makes application authority explicit without treating it as generic Harness state:
+
+- `SessionDescriptor.cwd` is the Coding application's canonical workspace. It is supplied at Session creation and is never read from TOML.
+- `ConfigDescriptor.access_mode` and `run_mode` are configured defaults; `command_sandbox` describes only arbitrary-command execution and has no workspace root.
+- `RunDescriptor.access_mode` and `run_mode` report the persisted effective profile and take precedence in clients once a Run exists.
+- Task request and response DTOs carry generic delegation scope only; workspace authority is derived by the application and is never accepted from a task caller.
 
 ## Repository layout
 
@@ -66,6 +77,10 @@ schema/event-notification.schema.json event stream notifications
 schema/run-accepted.schema.json      asynchronous run acceptance
 schema/run-error-notification.schema.json pre-run errors
 schema/approval-descriptor.schema.json approval payloads
+schema/config-descriptor.schema.json application configuration and authority defaults
+schema/session-descriptor.schema.json canonical Coding cwd
+schema/run-descriptor.schema.json persisted effective Run modes
+schema/task-descriptor.schema.json generic delegation scope
 ```
 
 ## Development

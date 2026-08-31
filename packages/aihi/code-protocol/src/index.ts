@@ -1,11 +1,14 @@
 /** Versioned JSON-RPC contract between the TypeScript CLI and Python Worker. */
 
-export const PROTOCOL_VERSION = "0.2" as const;
+export const PROTOCOL_VERSION = "0.3" as const;
+
+export type AccessMode = "read_only" | "workspace_write" | "full_access";
+export type RunMode = "execute" | "plan";
 
 export type JsonObject = Record<string, unknown>;
 export type JsonRpcId = string | number;
 
-export interface JsonRpcRequest<TParams extends Record<string, unknown> = Record<string, unknown>> {
+export interface JsonRpcRequest<TParams extends object = Record<string, unknown>> {
   jsonrpc: "2.0";
   id: JsonRpcId;
   method: string;
@@ -13,7 +16,7 @@ export interface JsonRpcRequest<TParams extends Record<string, unknown> = Record
 }
 
 export interface JsonRpcNotification<
-  TParams extends Record<string, unknown> = Record<string, unknown>,
+  TParams extends object = Record<string, unknown>,
 > {
   jsonrpc: "2.0";
   method: string;
@@ -56,6 +59,7 @@ export interface EventRecord<TData = Record<string, unknown>> {
 
 export interface SessionDescriptor {
   session_id: string;
+  cwd: string;
   head_seq: number;
   created_at: string;
   metadata: JsonObject;
@@ -130,6 +134,8 @@ export interface RunDescriptor {
   updated_at: string;
   provider: string | null;
   model: string | null;
+  access_mode: AccessMode | null;
+  run_mode: RunMode | null;
   error: string | null;
   pending_approval_id: string | null;
 }
@@ -156,22 +162,26 @@ export interface AuditDescriptor {
   path: string | null;
 }
 
-export interface ConfigDescriptor extends JsonObject {
+export interface ConfigDescriptor {
   source_path: string | null;
   source_paths: string[];
   base_dir: string;
   provider: ProviderDescriptor;
   providers: ProviderDescriptor[];
   tools: string[];
-  permission_mode: "default" | "accept_edits" | "plan" | "bypass";
-  sandbox: {
+  access_mode: AccessMode;
+  run_mode: RunMode;
+  command_sandbox: {
     backend: string;
-    root: string;
     unsafe: boolean;
   };
   skills: JsonObject;
   mcp_servers: string[];
+  artifacts?: JsonObject;
   audit: AuditDescriptor;
+  compact_model?: string | null;
+  context_window?: number;
+  subagents?: JsonObject;
 }
 
 export interface ApprovalDescriptor extends JsonObject {
@@ -219,8 +229,31 @@ export interface ToolDescriptor {
   configured: boolean;
 }
 
+export interface AgentBudgetDescriptor {
+  max_tokens: number;
+  max_cost_usd: number | null;
+  timeout_seconds: number;
+  max_tool_calls: number;
+}
+
+export interface TaskSpecDescriptor {
+  parent_run_id: string;
+  objective: string;
+  budget: AgentBudgetDescriptor;
+  task_id: string;
+  child_run_id: string;
+  parent_task_id: string | null;
+  constraints: string[];
+  capabilities: string[];
+  depth: number;
+  max_depth: number;
+  max_children: number;
+  metadata: JsonObject;
+  created_at: string;
+}
+
 export interface TaskDescriptor {
-  spec: JsonObject;
+  spec: TaskSpecDescriptor;
   state: TaskState;
   child_task_ids: string[];
   result: JsonObject | null;
@@ -258,12 +291,11 @@ export interface SessionCreateParams extends JsonObject {
   metadata?: JsonObject;
 }
 
-export interface TaskCreateParams extends JsonObject {
+export interface TaskCreateParams {
   session_id: string;
   parent_run_id: string;
   objective: string;
   budget?: JsonObject;
-  workspace?: JsonObject;
   capabilities?: string[];
   constraints?: string[];
   max_depth?: number;
@@ -271,12 +303,11 @@ export interface TaskCreateParams extends JsonObject {
   metadata?: JsonObject;
 }
 
-export interface TaskSpawnParams extends JsonObject {
+export interface TaskSpawnParams {
   session_id: string;
   parent_task_id: string;
   objective: string;
   budget?: JsonObject;
-  workspace?: JsonObject;
   capabilities?: string[];
   constraints?: string[];
   metadata?: JsonObject;
@@ -334,7 +365,6 @@ export interface ApprovalResolution extends JsonObject {
 export interface HostAcknowledgement extends JsonObject {
   path: string;
   workspace: string;
-  root: string;
   acknowledged: true;
 }
 
@@ -365,12 +395,12 @@ export interface CommandDescriptor {
   requires_approval: boolean;
 }
 
-interface RpcMethod<TParams extends JsonObject, TResult> {
+interface RpcMethod<TParams extends object, TResult> {
   params: TParams;
   result: TResult;
 }
 
-/** Complete request/response map advertised by the 0.2 local Worker. */
+/** Complete request/response map advertised by the 0.3 local Worker. */
 export interface CodeRpcMethodMap {
   initialize: RpcMethod<InitializeParams, InitializeResult>;
   shutdown: RpcMethod<JsonObject, { ok: true }>;
@@ -440,6 +470,206 @@ export function isJsonObject(value: unknown): value is JsonObject {
 
 function isNonEmptyText(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
+}
+
+function hasOnlyKeys(value: JsonObject, keys: readonly string[]): boolean {
+  const allowed = new Set(keys);
+  return Object.keys(value).every((key) => allowed.has(key));
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+export function isAccessMode(value: unknown): value is AccessMode {
+  return value === "read_only" || value === "workspace_write" || value === "full_access";
+}
+
+export function isRunMode(value: unknown): value is RunMode {
+  return value === "execute" || value === "plan";
+}
+
+function isProviderDescriptor(value: unknown): value is ProviderDescriptor {
+  return (
+    isJsonObject(value) &&
+    isNonEmptyText(value.name) &&
+    isNonEmptyText(value.model) &&
+    (value.models === undefined || isStringArray(value.models)) &&
+    (value.api_key_env === undefined || value.api_key_env === null || typeof value.api_key_env === "string") &&
+    (value.base_url === undefined || value.base_url === null || typeof value.base_url === "string")
+  );
+}
+
+export function isConfigDescriptor(value: unknown): value is ConfigDescriptor {
+  if (!isJsonObject(value)) return false;
+  const commandSandbox = value.command_sandbox;
+  const audit = value.audit;
+  return (
+    hasOnlyKeys(value, [
+      "source_path",
+      "source_paths",
+      "base_dir",
+      "provider",
+      "providers",
+      "tools",
+      "access_mode",
+      "run_mode",
+      "command_sandbox",
+      "skills",
+      "mcp_servers",
+      "artifacts",
+      "audit",
+      "compact_model",
+      "context_window",
+      "subagents",
+    ]) &&
+    (value.source_path === null || typeof value.source_path === "string") &&
+    isStringArray(value.source_paths) &&
+    typeof value.base_dir === "string" &&
+    isProviderDescriptor(value.provider) &&
+    Array.isArray(value.providers) &&
+    value.providers.every(isProviderDescriptor) &&
+    isStringArray(value.tools) &&
+    isAccessMode(value.access_mode) &&
+    isRunMode(value.run_mode) &&
+    isJsonObject(commandSandbox) &&
+    hasOnlyKeys(commandSandbox, ["backend", "unsafe"]) &&
+    isNonEmptyText(commandSandbox.backend) &&
+    typeof commandSandbox.unsafe === "boolean" &&
+    isJsonObject(value.skills) &&
+    isStringArray(value.mcp_servers) &&
+    (value.artifacts === undefined || isJsonObject(value.artifacts)) &&
+    isJsonObject(audit) &&
+    hasOnlyKeys(audit, ["enabled", "path"]) &&
+    typeof audit.enabled === "boolean" &&
+    (audit.path === null || typeof audit.path === "string") &&
+    (value.compact_model === undefined || value.compact_model === null || typeof value.compact_model === "string") &&
+    (value.context_window === undefined || typeof value.context_window === "number") &&
+    (value.subagents === undefined || isJsonObject(value.subagents))
+  );
+}
+
+export function isSessionDescriptor(value: unknown): value is SessionDescriptor {
+  return (
+    isJsonObject(value) &&
+    hasOnlyKeys(value, [
+      "session_id",
+      "cwd",
+      "head_seq",
+      "created_at",
+      "metadata",
+      "parent_session_id",
+    ]) &&
+    isNonEmptyText(value.session_id) &&
+    isNonEmptyText(value.cwd) &&
+    typeof value.head_seq === "number" &&
+    Number.isSafeInteger(value.head_seq) &&
+    value.head_seq >= 0 &&
+    isNonEmptyText(value.created_at) &&
+    isJsonObject(value.metadata) &&
+    (value.parent_session_id === null || isNonEmptyText(value.parent_session_id))
+  );
+}
+
+function isRunState(value: unknown): value is RunDescriptor["state"] {
+  return [
+    "created",
+    "running",
+    "waiting_tool",
+    "waiting_approval",
+    "completed",
+    "failed",
+    "interrupted",
+    "cancelled",
+  ].includes(String(value));
+}
+
+export function isRunDescriptor(value: unknown): value is RunDescriptor {
+  return (
+    isJsonObject(value) &&
+    hasOnlyKeys(value, [
+      "run_id",
+      "state",
+      "started_at",
+      "updated_at",
+      "provider",
+      "model",
+      "access_mode",
+      "run_mode",
+      "error",
+      "pending_approval_id",
+    ]) &&
+    isNonEmptyText(value.run_id) &&
+    isRunState(value.state) &&
+    isNonEmptyText(value.started_at) &&
+    isNonEmptyText(value.updated_at) &&
+    (value.provider === null || isNonEmptyText(value.provider)) &&
+    (value.model === null || isNonEmptyText(value.model)) &&
+    (value.access_mode === null || isAccessMode(value.access_mode)) &&
+    (value.run_mode === null || isRunMode(value.run_mode)) &&
+    (value.error === null || typeof value.error === "string") &&
+    (value.pending_approval_id === null || isNonEmptyText(value.pending_approval_id))
+  );
+}
+
+function isAgentBudgetDescriptor(value: unknown): value is AgentBudgetDescriptor {
+  return (
+    isJsonObject(value) &&
+    hasOnlyKeys(value, ["max_tokens", "max_cost_usd", "timeout_seconds", "max_tool_calls"]) &&
+    typeof value.max_tokens === "number" &&
+    typeof value.timeout_seconds === "number" &&
+    typeof value.max_tool_calls === "number" &&
+    (value.max_cost_usd === null || typeof value.max_cost_usd === "number")
+  );
+}
+
+function isTaskSpecDescriptor(value: unknown): value is TaskSpecDescriptor {
+  return (
+    isJsonObject(value) &&
+    hasOnlyKeys(value, [
+      "parent_run_id",
+      "objective",
+      "budget",
+      "task_id",
+      "child_run_id",
+      "parent_task_id",
+      "constraints",
+      "capabilities",
+      "depth",
+      "max_depth",
+      "max_children",
+      "metadata",
+      "created_at",
+    ]) &&
+    isNonEmptyText(value.parent_run_id) &&
+    isNonEmptyText(value.objective) &&
+    isAgentBudgetDescriptor(value.budget) &&
+    isNonEmptyText(value.task_id) &&
+    isNonEmptyText(value.child_run_id) &&
+    (value.parent_task_id === null || isNonEmptyText(value.parent_task_id)) &&
+    isStringArray(value.constraints) &&
+    isStringArray(value.capabilities) &&
+    typeof value.depth === "number" && Number.isSafeInteger(value.depth) && value.depth >= 0 &&
+    typeof value.max_depth === "number" && Number.isSafeInteger(value.max_depth) && value.max_depth >= 0 &&
+    typeof value.max_children === "number" && Number.isSafeInteger(value.max_children) && value.max_children >= 0 &&
+    isJsonObject(value.metadata) &&
+    isNonEmptyText(value.created_at)
+  );
+}
+
+export function isTaskDescriptor(value: unknown): value is TaskDescriptor {
+  return (
+    isJsonObject(value) &&
+    hasOnlyKeys(value, ["spec", "state", "child_task_ids", "result", "reason", "updated_at"]) &&
+    isTaskSpecDescriptor(value.spec) &&
+    ["pending", "running", "waiting", "completed", "failed", "cancelled", "interrupted"].includes(
+      String(value.state),
+    ) &&
+    isStringArray(value.child_task_ids) &&
+    (value.result === null || isJsonObject(value.result)) &&
+    (value.reason === null || typeof value.reason === "string") &&
+    isNonEmptyText(value.updated_at)
+  );
 }
 
 export function isAgentEvent(value: unknown): value is AgentEvent {

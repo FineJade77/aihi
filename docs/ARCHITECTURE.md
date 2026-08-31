@@ -9,7 +9,7 @@
 | Status | Active baseline |
 | Scope | aihi-models, aihi-agent, aihi-code-agent, @aihi/code-protocol, @aihi/code-cli |
 | Runtime | Python 3.11+; TypeScript/Ink CLI |
-| Protocol | Code Protocol 0.2 |
+| Protocol | Code Protocol 0.3 |
 | Source of truth | Event log for runtime state; this document for stable boundaries |
 
 This document describes contracts, ownership, dependency direction and safety invariants. Delivery status
@@ -244,11 +244,14 @@ Optional capabilities enter through RuntimeExtensions, not hard-coded imports in
 ## Coding worker and TUI protocol
 
 aihi-code-agent is the application runtime and sole EventStore writer. @aihi/code-cli is a thin local
-client. They communicate over stdio using Code Protocol 0.2:
+client. They communicate over stdio using Code Protocol 0.3:
 
 - JSON-RPC 2.0 with Content-Length framing and an exact-version initialize handshake.
 - run.start and run.resume immediately return acceptance containing run_id.
 - Progress and terminal states arrive as versioned notifications; startup failures use run.error.
+- Session descriptors expose the canonical cwd directly. Config descriptors expose application-owned
+  access/run modes plus `command_sandbox`; Run descriptors expose their persisted effective modes.
+- Task DTOs contain generic delegation scope only and never carry workspace authority.
 - Reconnects replay session.events(after_seq) before accepting live notifications.
 - The TUI uses one reducer for replay and live events, de-duplicates by seq, and treats canonical
   assistant.message as authoritative over temporary model.chunk buffers.

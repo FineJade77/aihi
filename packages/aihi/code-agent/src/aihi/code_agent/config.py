@@ -409,7 +409,7 @@ class CodeAgentConfig:
             "tools": list(self.tools),
             "access_mode": self.access_mode.value,
             "run_mode": self.run_mode.value,
-            "sandbox": {
+            "command_sandbox": {
                 "backend": self.sandbox.backend,
                 "unsafe": self.sandbox.unsafe,
             },

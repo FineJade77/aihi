@@ -8,7 +8,7 @@
 | Field | Value |
 | --- | --- |
 | Status | Foundation complete; application and platform roadmap remains |
-| Current release line | Python packages 0.1.0 on PyPI; Code Protocol 0.2 |
+| Current release line | Python packages 0.1.0 on PyPI; Code Protocol 0.3 |
 | Architecture | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | Last completed slice | H-19 prompt cache and ContextState v2 compaction |
 
@@ -48,7 +48,7 @@ The repository is a multi-package monorepo with a runnable local Coding Agent ve
 | aihi-models | Provider-neutral messages, codecs, capabilities, token estimation and Fake, OpenAI, Anthropic, OpenAI-compatible and DeepSeek adapters | Done |
 | aihi-agent | Recoverable loop, default turn budget, event store, replay, context/compaction, tools, policy, approvals, sandbox, artifacts, skills, MCP, plugins, memory, subagents, evals and audit hooks | Done |
 | aihi-code-agent | Coding configuration, project/user .aihi config discovery, provider/model catalog, Worker, Session/Run/Task APIs, Coding tools and TUI composition | Done |
-| @aihi/code-protocol | Code Protocol 0.2 DTOs, method map, guards and schemas | Done |
+| @aihi/code-protocol | Code Protocol 0.3 DTOs, method map, guards and schemas | Done |
 | @aihi/code-cli | Ink TUI, transcript replay, scrolling/composer UX, session/model pickers, slash commands, approvals, skills/MCP/tools management and doctor checks | Done |
 | Packaging | Separate wheels, PEP 420 namespace, installed-wheel compatibility, frozen fixture replay and PyPI 0.1.0 publication | Done |
 | Operability | Redacted local audit.jsonl, doctor audit target checks, session recovery and replay diagnostics | Done |
