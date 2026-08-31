@@ -82,7 +82,7 @@ flowchart TB
 所有副作用都必须经过：
 
 ```text
-Tool input → 校验 → Policy/Approval → Hook → Sandbox → 持久化 Tool Result
+Tool input → 校验/Prepare → Policy/Approval → Hook → 受治理的 Tool 执行 → 持久化 Tool Result
 ```
 
 事件日志是事实源，模型响应和 TUI 内存都不是。
@@ -134,7 +134,8 @@ RUNNING → COMPLETED | FAILED | INTERRUPTED | CANCELLED
 1. 执行 Tool 前先持久化 Assistant Tool Call。
 2. 每个已执行 Tool Call 恰好产生一个持久化 Result；等待审批的调用保持 pending。
 3. Policy 和 Tool 结果立即落盘；流式 chunk 仅作为 UI ephemeral event。
-4. Resume 使用首次 `run.started` 固化的 Provider、Model、Workspace、Sandbox、permission mode、Prompt 摘要和 output budget。
+4. Resume 使用首次 `run.started` 固化的 Provider、Model、应用权限 Profile、Prompt 摘要和 output budget；
+   对 Coding Agent，该 Profile 固化 Session Workspace、AccessMode、RunMode 与命令 Sandbox descriptor。
 5. 取消或进程重启修复孤儿调用，但不盲目重放可能已产生副作用的 Tool。
 6. 一个 Session 只有一个 writer，`seq` 单调递增，追加使用 `expected_seq` 检测冲突。
 
@@ -182,20 +183,23 @@ Cache Hit Ratio、Cache Key 变化次数以及 Soft/Hard Compaction 次数。只
 
 | 类别 | 示例 | 默认行为 |
 | --- | --- | --- |
-| 只读 | `read_file`、`glob`、`grep` | 声明并发安全时可并行 |
-| 工作区修改 | `write_file`、`edit_file` | 受 `accept_edits` 或 Approval 控制 |
-| 进程执行 | `bash` | 始终需要显式 Approval，不使用 `shell=True` |
+| 只读 | `read_file`、`glob`、`grep` | 所有 AccessMode/RunMode 均允许，声明并发安全时可并行 |
+| 工作区修改 | `write_file`、`edit_file` | `read_only`/`plan` 拒绝；`workspace_write`/`full_access` 允许 |
+| 进程执行 | `bash` | `read_only`/`plan` 拒绝；`workspace_write` 为 ASK；`full_access` 为 ALLOW |
 
 Policy 输出 `ALLOW`、`DENY` 或 `ASK`。`ASK` 会持久化 `approval.requested` 并挂起 Run，由应用提供
 人工 Resolver。Approval 和 Capability Lease 按 `run_id` 作用域化，Resume 时从事件重建；一次性
-Approval 只能消费一次。`HostBackend` 需要显式 `unsafe=true`，只提供 workspace 约束、超时、输出
-上限和进程组清理，不提供系统隔离。
+Approval 只能消费一次。Coding Workspace 是 Session 中持久化的 canonical cwd；TOML 只能从该目录
+发现配置，不能定义另一套 Workspace。文件 Tool 通过应用 Context 规范化路径并在本地执行，只有 Bash
+持有 Sandbox backend。`HostBackend` 需要显式 `unsafe=true`，只提供命令 cwd、超时、输出上限和进程组
+清理，不提供系统隔离；Docker 命令执行在能力不可用时 fail closed。
 
 ## Skill、MCP 与扩展
 
 可选能力通过 `RuntimeExtensions` 接入：Skill 先发现元数据和 Hash，正文只有被显式请求才加载；
 内置 Skill 由包完整性隐式信任，用户/项目/Workspace Skill 必须精确 trust。MCP 和 Plugin Tool
-注册后经过统一 ToolRegistry、Policy、Hook、Sandbox 链路；Plugin 在独立受限 Host 进程中激活；
+注册后经过统一 ToolRegistry、Policy 和 Hook 链路；需要执行任意命令的 Tool 必须显式持有应用注入的
+命令 Sandbox。Plugin 在独立受限 Host 进程中激活；
 Memory 作用域化且写入需要授权；Subagent 以受治理的 `task` Tool 在独立 Session 中运行。
 
 ## Coding Worker 与 TUI 协议
@@ -222,7 +226,8 @@ Eval 只处理脱敏事件 Bundle，不重新执行 Tool 或 Provider。
 ## 扩展规则与质量门禁
 
 新增能力时先判断是否 Provider-neutral 且可跨产品复用，再定义协议、事件和失败语义；产品默认值
-和 UX 留在应用层；所有副作用保持 `tool → policy → hooks → sandbox` 链路；公共符号必须先有兼容性、
+和 UX 留在应用层；所有副作用保持 `tool → policy → hooks → 受治理执行` 链路，只有执行任意命令的 Tool
+才注入命令 Sandbox；公共符号必须先有兼容性、
 安全性和 installed-package 测试。
 
 ```bash

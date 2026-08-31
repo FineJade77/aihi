@@ -14,6 +14,7 @@ from aihi.agent.policy import (
 )
 from aihi.agent.sandbox import HostBackend
 from aihi.agent.tools import ToolContext, ToolDispatcher, ToolRegistry
+from aihi.code_agent.permissions import AccessMode, CodeAgentPermissionContext, RunMode
 from aihi.code_agent.tools import BashTool, EditFileTool, LocalWorkspace, WriteFileTool
 from aihi.models import ToolCallBlock
 
@@ -23,6 +24,11 @@ def context(tmp_path: Path) -> ToolContext:
         cwd=str(tmp_path),
         session_id="ses-tools",
         run_id="run-tools",
+        app_context=CodeAgentPermissionContext(
+            workspace=tmp_path,
+            access_mode=AccessMode.WORKSPACE_WRITE,
+            run_mode=RunMode.EXECUTE,
+        ),
     )
 
 

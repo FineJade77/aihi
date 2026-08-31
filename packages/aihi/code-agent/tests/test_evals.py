@@ -16,7 +16,6 @@ from aihi.agent import (
     SandboxViolation,
     Session,
 )
-from aihi.agent.policy import PermissionMode
 from aihi.agent.sandbox.base import CommandResult
 from aihi.code_agent.config import (
     CodeAgentConfig,
@@ -39,6 +38,7 @@ from aihi.code_agent.evals import (
     run_command_on_host,
 )
 from aihi.code_agent.evals.dataset import CodeEvalValidationError
+from aihi.code_agent.permissions import AccessMode, RunMode
 
 from scripts.evals.context_baseline import context_reference_executor
 from scripts.evals.reference_baseline import reference_executor
@@ -261,10 +261,10 @@ def test_live_config_validation_fails_closed_without_real_provider_or_docker(
         provider=ProviderSettings(
             name="openai", model="gpt-eval", api_key_env="OPENAI_API_KEY"
         ),
-        permission_mode=PermissionMode.BYPASS,
+        access_mode=AccessMode.FULL_ACCESS,
+        run_mode=RunMode.EXECUTE,
         sandbox=SandboxSettings(
             backend="docker",
-            root=tmp_path,
             image="python:3.11-slim",
             network="none",
             allow_network=False,
@@ -276,8 +276,8 @@ def test_live_config_validation_fails_closed_without_real_provider_or_docker(
     with pytest.raises(ValueError, match="allow_network"):
         validate_live_config(unsafe, environment={"OPENAI_API_KEY": "test-only"})
 
-    interactive = replace(live, permission_mode=PermissionMode.ACCEPT_EDITS)
-    with pytest.raises(ValueError, match="permission_mode"):
+    interactive = replace(live, access_mode=AccessMode.WORKSPACE_WRITE)
+    with pytest.raises(ValueError, match="access_mode"):
         validate_live_config(interactive, environment={"OPENAI_API_KEY": "test-only"})
 
 
@@ -996,10 +996,10 @@ def _live_config(tmp_path: Path, *, image: str | None = "python:3.11-slim") -> C
         provider=ProviderSettings(
             name="openai", model="gpt-eval", api_key_env="OPENAI_API_KEY"
         ),
-        permission_mode=PermissionMode.BYPASS,
+        access_mode=AccessMode.FULL_ACCESS,
+        run_mode=RunMode.EXECUTE,
         sandbox=SandboxSettings(
             backend="docker",
-            root=tmp_path,
             image=image,
             network="none",
             allow_network=False,

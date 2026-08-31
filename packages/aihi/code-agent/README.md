@@ -94,10 +94,10 @@ api_key_env = "LOCAL_API_KEY"
 
 [sandbox]
 backend = "docker"
-root = "."
 
 [agent]
-permission_mode = "default" # default | accept_edits | plan | bypass
+access_mode = "workspace_write" # read_only | workspace_write | full_access
+run_mode = "execute"            # execute | plan
 
 [audit]
 enabled = true
@@ -115,7 +115,9 @@ command = "npx"
 args = ["-y", "some-mcp-server"]
 ```
 
-API keys stay in environment variables; configuration exposes only non-secret metadata through `config.get`. `permission_mode` is persisted with the run startup configuration. Hard safety denies remain active in every mode. Host execution is fail-closed and is not an isolation boundary; interactive acknowledgement is stored for the exact workspace/root in `~/.aihi/host-workspaces.json`.
+API keys stay in environment variables; configuration exposes only non-secret metadata through `config.get`. The workspace is never configured in TOML: it is the canonical `cwd` supplied when the Session is created. `access_mode`, `run_mode`, that workspace and the command-sandbox descriptor are persisted in the Run profile, so Resume cannot drift or upgrade authority. Host execution is fail-closed and is not an isolation boundary; interactive acknowledgement is stored for the exact Session workspace in `~/.aihi/host-workspaces.json`.
+
+`read_only` denies mutation and process execution; `workspace_write` allows application-owned local file edits but asks before Bash or other external mutation; `full_access` allows privileged tools after hard safety checks. `plan` is an independent hard read-only ceiling and cannot be bypassed by approval.
 
 Each provider can expose multiple models through `models = [...]`. The provider's active/default model is `model` or the first catalog entry. A model is valid only for the provider that declares it; `config.get` returns the non-secret provider/model catalog to clients.
 
@@ -170,7 +172,7 @@ Run the complete workspace checks from the [repository README](../../../README.m
 - Treat model output, tool input, MCP responses, Skills, and subagent output as untrusted.
 - Keep credentials in environment variables or an external secret manager, never in TOML or event content.
 - `HostBackend` is an explicitly unsafe command backend; choose an isolated backend for `bash` when process isolation matters.
-- Keep a finite turn limit, review `permission_mode`, and require explicit host acknowledgement before enabling unsafe local execution.
+- Keep a finite turn limit, review `access_mode` and `run_mode`, and require explicit host acknowledgement before enabling unsafe local execution.
 
 ## Related documentation
 

@@ -21,7 +21,9 @@ try:  # pragma: no cover - exercised on platforms with fcntl.
 except ImportError:  # pragma: no cover - Windows does not provide fcntl.
     fcntl = None  # type: ignore[assignment]
 
-from aihi.agent import ToolInputError
+from aihi.agent import ToolContext, ToolInputError
+
+from ..permissions import CodeAgentPermissionContext
 
 DEFAULT_PRUNED_DIRS: frozenset[str] = frozenset(
     {
@@ -179,4 +181,18 @@ class LocalWorkspace:
                 fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
 
 
-__all__ = ["DEFAULT_PRUNED_DIRS", "LocalWorkspace", "MAX_PATTERN_LENGTH"]
+def workspace_from_context(context: ToolContext[object]) -> LocalWorkspace:
+    """Resolve the Coding workspace from the opaque application boundary."""
+
+    app = context.app_context
+    if not isinstance(app, CodeAgentPermissionContext):
+        raise ToolInputError("Coding file tools require an application permission context")
+    return LocalWorkspace(app.workspace)
+
+
+__all__ = [
+    "DEFAULT_PRUNED_DIRS",
+    "LocalWorkspace",
+    "MAX_PATTERN_LENGTH",
+    "workspace_from_context",
+]

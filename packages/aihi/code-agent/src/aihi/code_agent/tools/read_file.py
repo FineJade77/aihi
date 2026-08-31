@@ -7,7 +7,7 @@ from typing import Any
 from aihi.agent import PreparedToolCall, ToolContext, ToolExecutionResult, ToolSpec
 
 from .ledger import ReadLedger
-from .workspace import LocalWorkspace
+from .workspace import workspace_from_context
 
 
 class ReadFileTool:
@@ -40,14 +40,14 @@ class ReadFileTool:
         self, input: dict[str, Any], context: ToolContext[Any]
     ) -> PreparedToolCall:
         prepared = dict(input)
-        prepared["path"] = str(LocalWorkspace(context.cwd).resolve_path(str(input["path"])))
+        prepared["path"] = str(workspace_from_context(context).resolve_path(str(input["path"])))
         return PreparedToolCall(prepared, {"transport": "local"})
 
     async def run(self, input: dict[str, Any], context: ToolContext[Any]) -> ToolExecutionResult:
         path = str(input["path"])
         offset = max(0, int(input.get("offset", 0)))
         limit = max(1, min(int(input.get("limit", 2_000)), 10_000))
-        workspace = LocalWorkspace(context.cwd)
+        workspace = workspace_from_context(context)
         text, truncated_by_chars = await workspace.read_text(path, max_chars=self.max_chars)
         lines = text.splitlines()
         selected = lines[offset : offset + limit]

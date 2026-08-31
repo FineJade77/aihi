@@ -4,7 +4,6 @@ import json
 
 import pytest
 from aihi.agent import InMemoryEventStore, Session, ToolContext, UnsafeHostNotAcknowledged
-from aihi.agent.policy import PermissionMode
 from aihi.code_agent.config import (
     acknowledge_host_execution,
     ensure_user_config,
@@ -12,6 +11,7 @@ from aihi.code_agent.config import (
     load_worker_config,
     resolve_env_mapping,
 )
+from aihi.code_agent.permissions import AccessMode, RunMode
 from aihi.code_agent.protocol import PROTOCOL_VERSION, WorkerServer
 from aihi.code_agent.runtime import CodeAgentRuntime
 
@@ -31,11 +31,11 @@ api_key_env = "OPENAI_API_KEY"
 
 [sandbox]
 backend = "host"
-root = "."
 unsafe = true
 
 [agent]
-permission_mode = "accept_edits"
+access_mode = "full_access"
+run_mode = "plan"
 compact_model = "compact-demo"
 context_window = 4096
 
@@ -68,14 +68,14 @@ allowed_tools = ["search"]
     assert config.provider.name == "deepseek"
     assert config.provider.model == "deepseek-chat"
     assert config.provider.available_models == ("deepseek-chat", "deepseek-reasoner")
-    assert config.permission_mode is PermissionMode.ACCEPT_EDITS
+    assert config.access_mode is AccessMode.FULL_ACCESS
+    assert config.run_mode is RunMode.PLAN
     assert config.provider_profiles["openai"].api_key_env == "OPENAI_API_KEY"
     selected = config.select_provider("openai", model="gpt-4.1")
     assert selected.provider.name == "openai"
     assert selected.provider.model == "gpt-4.1"
     with pytest.raises(ValueError, match="not configured for provider"):
         config.select_provider("openai", model="not-a-model")
-    assert config.sandbox.root == tmp_path.resolve()
     assert config.skill_roots[0].path == (tmp_path / ".aihi/skills").resolve()
     assert config.mcp_servers[0].cwd == tmp_path.resolve()
     assert resolve_env_mapping(config.mcp_servers[0].env) == {"TOKEN": "secret-from-env"}
@@ -87,7 +87,7 @@ allowed_tools = ["search"]
     assert config.subagents.model == "subagent-demo"
 
 
-def test_config_defaults_sandbox_root_to_workspace_when_root_is_omitted(tmp_path) -> None:
+def test_config_does_not_store_a_workspace_or_sandbox_root(tmp_path) -> None:
     config_path = tmp_path / "config" / "aihi-code.toml"
     config_path.parent.mkdir()
     config_path.write_text(
@@ -109,18 +109,63 @@ unsafe = true
     config = load_config(config_path, cwd=workspace)
 
     assert config.base_dir == config_path.parent.resolve()
-    assert config.sandbox.root == workspace.resolve()
+    assert not hasattr(config.sandbox, "root")
+    assert not hasattr(config, "workspace")
     assert config.audit_path == (workspace / ".aihi" / "audit.jsonl").resolve()
 
 
-def test_config_rejects_unknown_permission_mode(tmp_path) -> None:
+@pytest.mark.asyncio
+async def test_runtime_derives_workspace_and_command_root_from_session_cwd(tmp_path) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    config_path = config_dir / "aihi-code.toml"
+    config_path.write_text(
+        '[sandbox]\nbackend = "host"\nunsafe = true\n', encoding="utf-8"
+    )
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    config = load_config(config_path, cwd=workspace)
+    session = Session.create(
+        InMemoryEventStore(), cwd=workspace, provider="fake", model="demo"
+    )
+
+    runtime = await CodeAgentRuntime.create(config, session=session)
+    try:
+        assert runtime.permission_context.workspace == workspace.resolve()
+        assert runtime.runtime.sandbox.root == workspace.resolve()
+        assert runtime.permission_context.workspace != config.base_dir
+    finally:
+        await runtime.close()
+
+
+def test_config_rejects_unknown_access_mode(tmp_path) -> None:
     path = tmp_path / "aihi-code.toml"
     path.write_text(
         '[provider]\nname = "fake"\nmodel = "demo"\n\n'
-        '[agent]\npermission_mode = "unsafe_everything"\n',
+        '[agent]\naccess_mode = "unsafe_everything"\n',
         encoding="utf-8",
     )
-    with pytest.raises(ValueError, match="agent.permission_mode must be one of"):
+    with pytest.raises(ValueError, match="agent.access_mode must be one of"):
+        load_config(path, cwd=tmp_path)
+
+
+@pytest.mark.parametrize("retired", ("root = \".\"", "workspace_read_only = true"))
+def test_config_rejects_retired_sandbox_workspace_settings(tmp_path, retired) -> None:
+    path = tmp_path / "aihi-code.toml"
+    path.write_text(
+        f'[sandbox]\nbackend = "host"\n{retired}\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="workspace comes from the Session cwd"):
+        load_config(path, cwd=tmp_path)
+
+
+def test_config_rejects_retired_permission_mode(tmp_path) -> None:
+    path = tmp_path / "aihi-code.toml"
+    path.write_text('[agent]\npermission_mode = "default"\n', encoding="utf-8")
+
+    with pytest.raises(ValueError, match="agent.permission_mode is no longer supported"):
         load_config(path, cwd=tmp_path)
 
 
@@ -228,10 +273,13 @@ def test_config_discovers_user_aihi_config_when_project_config_is_absent(
 @pytest.mark.asyncio
 async def test_config_defaults_keep_host_execution_disabled(tmp_path) -> None:
     config = load_config(cwd=tmp_path)
+    session = Session.create(
+        InMemoryEventStore(), cwd=tmp_path, provider="fake", model="demo"
+    )
 
     assert config.sandbox.unsafe is False
     with pytest.raises(UnsafeHostNotAcknowledged, match="unsafe=True"):
-        await CodeAgentRuntime.create(config, store=InMemoryEventStore())
+        await CodeAgentRuntime.create(config, session=session)
 
 
 @pytest.mark.asyncio
@@ -248,7 +296,6 @@ context_window = 4096
 
 [sandbox]
 backend = "host"
-root = "."
 unsafe = true
 
 [artifacts]
@@ -284,7 +331,7 @@ capabilities = ["filesystem.read"]
     assert created is not None
     session_id = created["result"]["session"]["session_id"]  # type: ignore[index]
     session = server._load_session({"session_id": session_id})
-    runtime = await CodeAgentRuntime.create(config, store=session.store)
+    runtime = await CodeAgentRuntime.create(config, session=session)
     try:
         assert runtime.runtime.artifact_store is not None
         assert runtime.runtime.coordinator.summary_generator is not None
@@ -304,7 +351,6 @@ model = "demo"
 
 [sandbox]
 backend = "host"
-root = "."
 unsafe = true
 
 [audit]
@@ -316,7 +362,7 @@ path = "audit.jsonl"
     config = load_config(config_path, cwd=tmp_path)
     store = InMemoryEventStore()
     session = Session.create(store, cwd=tmp_path, provider="fake", model="demo")
-    runtime = await CodeAgentRuntime.create(config, store=store)
+    runtime = await CodeAgentRuntime.create(config, session=session)
     try:
         result = await runtime.run(session, user_message="record this turn")
         assert result.response is not None
@@ -345,7 +391,6 @@ tools = ["read_file"]
 
 [sandbox]
 backend = "host"
-root = "."
 unsafe = true
 """.strip()
         + "\n",
@@ -420,7 +465,6 @@ def _write_skill_config(tmp_path):
         "tools = [\"read_file\"]\n\n"
         "[sandbox]\n"
         "backend = \"host\"\n"
-        "root = \".\"\n"
         "unsafe = true\n\n"
         "[[skills.roots]]\n"
         "path = \".aihi/skills\"\n"
@@ -535,7 +579,10 @@ async def test_skill_trust_commands_enable_explicit_skill_loading(tmp_path) -> N
     server.close()
 
     config = load_config(config_path, cwd=tmp_path)
-    runtime = await CodeAgentRuntime.create(config, store=InMemoryEventStore())
+    runtime_session = Session.create(
+        InMemoryEventStore(), cwd=tmp_path, provider="fake", model="demo"
+    )
+    runtime = await CodeAgentRuntime.create(config, session=runtime_session)
     try:
         tool = runtime.runtime.registry.get("load_skill")
         assert tool is not None
@@ -662,20 +709,9 @@ def test_ensure_user_config_seeds_a_loadable_default(tmp_path, monkeypatch) -> N
     other_workspace = tmp_path / "other"
     other_workspace.mkdir()
     assert load_worker_config(other_workspace).sandbox.unsafe is False
-    config_dir = workspace / ".aihi"
-    config_dir.mkdir()
-    expanded_root = tmp_path / "expanded-root"
-    expanded_root.mkdir()
-    (config_dir / "aihi-code.toml").write_text(
-        f'[sandbox]\nbackend = "host"\nroot = "{expanded_root}"\nunsafe = false\n',
-        encoding="utf-8",
-    )
-    assert load_worker_config(workspace).sandbox.unsafe is False
-    acknowledge_host_execution(workspace, root=expanded_root)
-    assert load_worker_config(workspace).sandbox.unsafe is True
-    # sandbox.root is omitted on purpose: relative paths resolve against the
-    # config's own directory, so writing "." would sandbox the agent to ~/.aihi.
-    assert config.sandbox.root == workspace.resolve()
+    payload = json.loads(acknowledgement.read_text(encoding="utf-8"))
+    assert payload["version"] == 2
+    assert "root" not in payload["workspaces"][str(workspace.resolve())]
     # Artifacts are pinned so they never land in a doubled ~/.aihi/.aihi path.
     assert config.artifact_path == home / ".aihi" / "artifacts"
     assert config.audit_path == home / ".aihi" / "audit.jsonl"

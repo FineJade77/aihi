@@ -38,7 +38,6 @@ from aihi.agent.evals import (  # noqa: E402
     HarnessConformanceRunner,
 )
 from aihi.agent.evals.errors import EvalGateFailed  # noqa: E402
-from aihi.agent.policy import PermissionMode  # noqa: E402
 from aihi.code_agent import CodeAgentEvalRunner, CodeTaskDataset, load_config  # noqa: E402
 from aihi.code_agent.evals import (  # noqa: E402
     CodeEvalGateFailed,
@@ -52,6 +51,7 @@ from aihi.code_agent.evals.statistics import (  # noqa: E402
     CaseOutcome,
     assess_regression,
 )
+from aihi.code_agent.permissions import AccessMode, RunMode  # noqa: E402
 
 from scripts.evals.context_baseline import context_reference_executor  # noqa: E402
 from scripts.evals.reference_baseline import reference_executor  # noqa: E402
@@ -190,11 +190,13 @@ def validate_live_config(
     env = os.environ if environment is None else environment
     if not env.get(key_env):
         raise ValueError(f"Provider credential environment variable is missing: {key_env}")
-    if getattr(config, "permission_mode", None) is not PermissionMode.BYPASS:
+    if getattr(config, "access_mode", None) is not AccessMode.FULL_ACCESS:
         raise ValueError(
-            "live evaluation requires agent.permission_mode = \"bypass\" for "
+            "live evaluation requires agent.access_mode = \"full_access\" for "
             "non-interactive process execution"
         )
+    if getattr(config, "run_mode", None) is not RunMode.EXECUTE:
+        raise ValueError("live evaluation requires agent.run_mode = \"execute\"")
     if getattr(sandbox, "backend", None) != "docker":
         raise ValueError("live evaluation requires the Docker sandbox")
     if not getattr(sandbox, "image", None):

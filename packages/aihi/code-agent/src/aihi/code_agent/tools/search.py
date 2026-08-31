@@ -13,7 +13,7 @@ from typing import Any
 
 from aihi.agent import PreparedToolCall, ToolContext, ToolExecutionResult, ToolInputError, ToolSpec
 
-from .workspace import LocalWorkspace
+from .workspace import workspace_from_context
 
 MAX_REGEX_LENGTH = 512
 DEFAULT_FILE_LIMIT = 200
@@ -54,7 +54,7 @@ class GlobTool:
     def prepare(
         self, input: dict[str, Any], context: ToolContext[Any]
     ) -> PreparedToolCall:
-        LocalWorkspace(context.cwd)
+        workspace_from_context(context)
         return PreparedToolCall(dict(input), {"transport": "local"})
 
     async def run(self, input: dict[str, Any], context: ToolContext[Any]) -> ToolExecutionResult:
@@ -62,7 +62,7 @@ class GlobTool:
         if not isinstance(pattern, str) or not pattern.strip():
             raise ToolInputError("pattern must be a non-empty string")
         limit = _positive_int(input.get("limit"), "limit", DEFAULT_FILE_LIMIT, 2_000)
-        paths = await LocalWorkspace(context.cwd).list_paths(pattern, limit=limit)
+        paths = await workspace_from_context(context).list_paths(pattern, limit=limit)
         if not paths:
             return ToolExecutionResult(
                 content=f"No files match {pattern}.",
@@ -110,7 +110,7 @@ class GrepTool:
     def prepare(
         self, input: dict[str, Any], context: ToolContext[Any]
     ) -> PreparedToolCall:
-        LocalWorkspace(context.cwd)
+        workspace_from_context(context)
         return PreparedToolCall(dict(input), {"transport": "local"})
 
     async def run(self, input: dict[str, Any], context: ToolContext[Any]) -> ToolExecutionResult:
@@ -135,7 +135,7 @@ class GrepTool:
             input.get("max_matches"), "max_matches", DEFAULT_MATCH_LIMIT, 1_000
         )
 
-        workspace = LocalWorkspace(context.cwd)
+        workspace = workspace_from_context(context)
         paths = await workspace.list_paths(file_glob, limit=max_files)
         lines: list[str] = []
         scanned = 0

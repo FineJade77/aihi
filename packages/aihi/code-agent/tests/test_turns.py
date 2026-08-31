@@ -21,7 +21,7 @@ async def test_stream_ends_with_turn_finished_after_draining_events(tmp_path) ->
     config = _config(tmp_path)
     store = InMemoryEventStore()
     session = Session.create(store, cwd=str(tmp_path), provider="fake", model="demo")
-    runtime = await CodeAgentRuntime.create(config, store=store)
+    runtime = await CodeAgentRuntime.create(config, session=session)
     try:
         events = [event async for event in runtime.stream(session, user_message="hi")]
     finally:
@@ -39,7 +39,7 @@ async def test_stream_reconstructs_the_assistant_text_from_deltas(tmp_path) -> N
     config = _config(tmp_path)
     store = InMemoryEventStore()
     session = Session.create(store, cwd=str(tmp_path), provider="fake", model="demo")
-    runtime = await CodeAgentRuntime.create(config, store=store)
+    runtime = await CodeAgentRuntime.create(config, session=session)
     try:
         events = [event async for event in runtime.stream(session, user_message="hi")]
     finally:
@@ -55,7 +55,7 @@ async def test_stream_rejects_an_empty_user_message(tmp_path) -> None:
     config = _config(tmp_path)
     store = InMemoryEventStore()
     session = Session.create(store, cwd=str(tmp_path), provider="fake", model="demo")
-    runtime = await CodeAgentRuntime.create(config, store=store)
+    runtime = await CodeAgentRuntime.create(config, session=session)
     try:
         with pytest.raises(ValueError):
             async for _ in runtime.stream(session, user_message="   "):
@@ -68,7 +68,7 @@ async def test_run_returns_the_same_result_the_stream_finishes_with(tmp_path) ->
     config = _config(tmp_path)
     store = InMemoryEventStore()
     session = Session.create(store, cwd=str(tmp_path), provider="fake", model="demo")
-    runtime = await CodeAgentRuntime.create(config, store=store)
+    runtime = await CodeAgentRuntime.create(config, session=session)
     try:
         result = await runtime.run(session, user_message="hi")
     finally:
@@ -81,7 +81,7 @@ async def test_resume_streams_the_same_typed_events(tmp_path) -> None:
     config = _config(tmp_path)
     store = InMemoryEventStore()
     session = Session.create(store, cwd=str(tmp_path), provider="fake", model="demo")
-    runtime = await CodeAgentRuntime.create(config, store=store)
+    runtime = await CodeAgentRuntime.create(config, session=session)
     try:
         await runtime.run(session, user_message="hi", run_id="run_a")
         # A completed run is terminal; resuming it must surface the refusal as a

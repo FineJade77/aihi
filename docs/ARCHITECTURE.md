@@ -88,7 +88,7 @@ flowchart TB
 Every side effect follows:
 
 ~~~text
-Tool input -> validation -> policy/approval -> hooks -> sandbox -> durable Tool Result
+Tool input -> validation/preparation -> policy/approval -> hooks -> governed Tool execution -> durable Tool Result
 ~~~
 
 The event log, not the model response or TUI memory, is the runtime source of truth.
@@ -149,8 +149,9 @@ abandonment and cannot be resumed.
 1. Persist the assistant tool call before executing it.
 2. Every executed tool call receives exactly one durable result; a pending approval remains pending.
 3. Append policy and tool outcomes immediately; streaming chunks are UI-only ephemeral events.
-4. Resume uses the first run.started configuration: provider, model, workspace, sandbox, permission mode,
-   prompt summary and output budget cannot drift.
+4. Resume uses the first run.started configuration: provider, model, application authority profile,
+   prompt summary and output budget cannot drift. For the Coding Agent that profile freezes the Session
+   workspace, AccessMode, RunMode and command-sandbox descriptor.
 5. Cancellation and restart repair orphaned calls without blindly replaying unknown side effects.
 6. A session has one writer and monotonic seq; appends use expected_seq for conflict detection.
 
@@ -208,17 +209,20 @@ governance.
 
 | Class | Examples | Default behavior |
 | --- | --- | --- |
-| Read-only | read_file, glob, grep | Can run concurrently when declared safe |
-| Workspace mutation | write_file, edit_file | Governed by accept_edits or approval |
-| Process execution | bash | Always requires explicit approval; no shell=True |
+| Read-only | read_file, glob, grep | Allowed in every AccessMode and RunMode; may run concurrently when safe |
+| Workspace mutation | write_file, edit_file | Denied by read_only/plan; allowed by workspace_write/full_access |
+| Process execution | bash | Denied by read_only/plan; ASK in workspace_write; ALLOW in full_access |
 
 Policy returns ALLOW, DENY or ASK. ASK persists approval.requested and suspends the run; the application
 supplies the human resolver. Approval and capability leases are append-only, scoped to run_id and
 reconstructed on resume. One-shot approvals are consumed exactly once.
 
-HostBackend requires explicit unsafe=true and provides workspace boundaries, timeouts, output limits and
-process-group cleanup only. Optional local-isolated and Docker backends fail closed when capabilities
-are unavailable. Child runs may only receive stricter permission, budget and workspace subsets.
+The Coding workspace is the canonical cwd stored in its Session; TOML may discover configuration from
+that directory but cannot define another workspace. File tools canonicalize and operate locally through
+the application context. Only Bash owns a Sandbox backend. HostBackend requires explicit unsafe=true and
+provides command cwd, timeouts, output limits and process-group cleanup, not isolation. Docker command
+execution fails closed when required capabilities are unavailable. Child runs may only receive stricter
+permission, budget and workspace subsets.
 
 ## Skills, MCP and extensions
 
@@ -227,7 +231,8 @@ Optional capabilities enter through RuntimeExtensions, not hard-coded imports in
 - Skills are discovered as metadata and hashes; only an explicit request loads the body.
 - Built-in skills are implicitly trusted by package integrity. User/project/workspace skills require
   exact trust for name, version, scope and content hash.
-- MCP and plugin tools register through ToolRegistry and share policy, hooks and sandbox governance.
+- MCP and plugin tools register through ToolRegistry and share policy and hook governance; a tool that
+  executes arbitrary commands must explicitly own an application-supplied command Sandbox.
 - Plugins are discovered without execution and activated in a separate bounded host process.
 - Memory contributes scoped, sanitized context and requires explicit access for writes.
 - Subagents run as ordinary governed task tools in independent sessions.
@@ -262,7 +267,8 @@ replay and eval operate on redacted event bundles and never re-execute tools or 
 1. Decide whether a capability is provider-neutral and reusable across products.
 2. Define protocol, event types and failure semantics first.
 3. Put product defaults and UX in the application layer.
-4. Keep all side effects on the tool -> policy -> hooks -> sandbox path.
+4. Keep all side effects on the tool -> policy -> hooks -> governed execution path; inject a command
+   Sandbox only into tools that execute arbitrary commands.
 5. Add compatibility, security and installed-package tests before exposing a public symbol.
 
 If an implementation must change RunCoordinator semantics, relax a security default or introduce a

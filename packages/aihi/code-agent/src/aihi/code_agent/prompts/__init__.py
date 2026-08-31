@@ -39,7 +39,13 @@ def _environment_section(config: CodeAgentConfig, workspace: Path) -> str:
     sandbox = config.sandbox.backend
     if config.sandbox.unsafe:
         sandbox = f"{sandbox} (unsandboxed host access)"
-    return f"## Environment\n\n- workspace: {workspace}\n- sandbox: {sandbox}"
+    return (
+        "## Environment\n\n"
+        f"- workspace: {workspace}\n"
+        f"- access mode: {config.access_mode.value}\n"
+        f"- run mode: {config.run_mode.value}\n"
+        f"- command sandbox: {sandbox}"
+    )
 
 
 def _conventions_section(workspace: Path) -> str:

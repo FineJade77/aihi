@@ -13,7 +13,6 @@ from aihi.agent import (
     AgentBudget,
     AgentRuntimeError,
     DockerBackend,
-    EventStore,
     FileSkillTrustStore,
     HostBackend,
     McpClient,
@@ -48,6 +47,13 @@ from .config import (
     McpServerSettings,
     resolve_env_mapping,
 )
+from .permissions import (
+    AccessMode,
+    CodeAgentPermissionContext,
+    CodeAgentPolicy,
+    RunMode,
+    build_run_profile,
+)
 from .prompts import build_subagent_prompt, build_system_prompt
 from .skills import builtin_skill_root
 from .subagents import CODING_SUBAGENTS
@@ -67,24 +73,32 @@ class CodeAgentRuntime:
     """A configured runtime plus the lifetime of its MCP child processes."""
 
     config: CodeAgentConfig
+    permission_context: CodeAgentPermissionContext
     runtime: Runtime
     mcp_clients: tuple[McpClient, ...] = ()
     pump: TurnEventPump = field(default_factory=TurnEventPump)
 
     @classmethod
     async def create(
-        cls, config: CodeAgentConfig, *, store: EventStore
+        cls,
+        config: CodeAgentConfig,
+        *,
+        session: Session,
     ) -> CodeAgentRuntime:
         """Assemble a runtime.
 
-        `store` is required rather than optional: subagents put their child
-        sessions in it, and those children must land in the *parent's* store for
-        joint replay (ADR-0027) to work. Defaulting it would either disable
-        subagents silently or split the two logs apart.
+        The Session is required because its canonical cwd is the only Coding
+        workspace and its EventStore must also own every child Session. Taking
+        either value separately would permit a mismatched authority boundary.
         """
 
+        permission_context = CodeAgentPermissionContext(
+            workspace=Path(session.cwd),
+            access_mode=config.access_mode,
+            run_mode=config.run_mode,
+        )
         provider = _build_provider(config)
-        sandbox = _build_sandbox(config)
+        sandbox = _build_sandbox(config, permission_context.workspace)
         configured_roots = [SkillRoot(root.path, root.scope) for root in config.skill_roots]
         # Only configured roots need a lockfile: a BUILTIN Skill's integrity is
         # the package's integrity, so demanding extra trust adds ceremony, not
@@ -113,6 +127,7 @@ class CodeAgentRuntime:
             model=config.provider.model,
             sandbox=sandbox,
             tools=tools,
+            policy=CodeAgentPolicy(),
         )
         # Couple the advertised index to the actual registry input. This also
         # handles an explicit `agent.tools = [..., "load_skill"]` when the
@@ -135,8 +150,11 @@ class CodeAgentRuntime:
                     max_tool_calls=config.subagents.max_tool_calls,
                 ),
                 workspace=WorkspaceScope(
-                    root=str(config.sandbox.root),
-                    read_only=config.sandbox.workspace_read_only,
+                    root=str(permission_context.workspace),
+                    read_only=(
+                        config.run_mode is RunMode.PLAN
+                        or config.access_mode is AccessMode.READ_ONLY
+                    ),
                 ),
                 capabilities=config.subagents.capabilities,
                 max_depth=config.subagents.max_depth,
@@ -144,10 +162,10 @@ class CodeAgentRuntime:
             )
             builder = builder.with_subagents(
                 authority=authority,
-                store=store,
+                store=session.store,
                 provider=provider,
                 model=config.subagents.model or config.provider.model,
-                agent_types=_build_agent_types(config),
+                agent_types=_build_agent_types(config, permission_context.workspace),
             )
         runtime = builder.build()
         clients: list[McpClient] = []
@@ -162,7 +180,12 @@ class CodeAgentRuntime:
                 runtime.telemetry.close()
             await _close_provider(provider)
             raise
-        return cls(config=config, runtime=runtime, mcp_clients=tuple(clients))
+        return cls(
+            config=config,
+            permission_context=permission_context,
+            runtime=runtime,
+            mcp_clients=tuple(clients),
+        )
 
     def stream(
         self,
@@ -172,6 +195,7 @@ class CodeAgentRuntime:
         run_id: str | None = None,
         model: str | None = None,
         max_output_tokens: int | None = None,
+        max_turns: int | None = None,
         cancel_event: asyncio.Event | None = None,
     ) -> AsyncIterator[TurnEvent]:
         """Stream one user turn as typed domain events, ending in `TurnFinished`."""
@@ -179,6 +203,7 @@ class CodeAgentRuntime:
         text = user_message.strip()
         if not text:
             raise CodeAgentConfigError("user_message must not be empty")
+        self._validate_session_workspace(session)
 
         def invoke() -> Coroutine[Any, Any, RunResult]:
             return self.runtime.coordinator.run(
@@ -186,11 +211,16 @@ class CodeAgentRuntime:
                 model=model or self.config.provider.model,
                 user_message=Message.text("user", text),
                 run_id=run_id,
-                permission_mode=self.config.permission_mode,
-                require_capability_lease=self.config.require_capability_lease,
-                system_prompt=build_system_prompt(self.config, workspace=Path(session.cwd)),
+                system_prompt=build_system_prompt(
+                    self.config, workspace=self.permission_context.workspace
+                ),
                 max_output_tokens=max_output_tokens or self.config.max_output_tokens,
+                max_turns=max_turns,
                 cancel_event=cancel_event,
+                app_context=self.permission_context,
+                run_profile=build_run_profile(
+                    self.permission_context, self.runtime.sandbox.descriptor
+                ),
             )
 
         return drive_turn(session=session, pump=self.pump, invoke=invoke)
@@ -203,6 +233,7 @@ class CodeAgentRuntime:
         run_id: str | None = None,
         model: str | None = None,
         max_output_tokens: int | None = None,
+        max_turns: int | None = None,
         cancel_event: asyncio.Event | None = None,
     ) -> RunResult:
         """Run one user turn through the Harness coordinator loop.
@@ -217,6 +248,7 @@ class CodeAgentRuntime:
             run_id=run_id,
             model=model,
             max_output_tokens=max_output_tokens,
+            max_turns=max_turns,
             cancel_event=cancel_event,
         ):
             if isinstance(event, TurnFinished):
@@ -236,18 +268,22 @@ class CodeAgentRuntime:
     ) -> AsyncIterator[TurnEvent]:
         """Stream a resumed run, with the same ordering guarantee as `stream()`."""
 
+        self._validate_session_workspace(session)
+
         def invoke() -> Coroutine[Any, Any, RunResult]:
             return self.runtime.coordinator.resume(
                 session,
                 run_id=run_id,
                 model=model,
-                permission_mode=self.config.permission_mode,
-                require_capability_lease=self.config.require_capability_lease,
                 system_prompt=build_system_prompt(
-                    self.config, workspace=Path(session.cwd)
+                    self.config, workspace=self.permission_context.workspace
                 ),
                 max_output_tokens=max_output_tokens,
                 cancel_event=cancel_event,
+                app_context=self.permission_context,
+                run_profile=build_run_profile(
+                    self.permission_context, self.runtime.sandbox.descriptor
+                ),
             )
 
         return drive_turn(session=session, pump=self.pump, invoke=invoke)
@@ -292,8 +328,18 @@ class CodeAgentRuntime:
                 if self.runtime.telemetry is not None:
                     self.runtime.telemetry.close()
 
+    def _validate_session_workspace(self, session: Session) -> None:
+        session_workspace = Path(session.cwd).expanduser().resolve(strict=True)
+        if session_workspace != self.permission_context.workspace:
+            raise CodeAgentConfigError(
+                "Runtime workspace must match the Session cwd: "
+                f"{self.permission_context.workspace} != {session_workspace}"
+            )
 
-def _build_agent_types(config: CodeAgentConfig) -> dict[str, SubagentTypeSpec]:
+
+def _build_agent_types(
+    config: CodeAgentConfig, workspace: Path
+) -> dict[str, SubagentTypeSpec]:
     """Declare each enabled Subagent type's prompt and model to the builder."""
 
     declared: dict[str, SubagentTypeSpec] = {}
@@ -304,7 +350,7 @@ def _build_agent_types(config: CodeAgentConfig) -> dict[str, SubagentTypeSpec]:
         model = (override.model if override is not None else None) or definition.model
         declared[definition.name] = SubagentTypeSpec(
             system_prompt=build_subagent_prompt(
-                config, workspace=config.sandbox.root, role=definition.prompt()
+                config, workspace=workspace, role=definition.prompt()
             ),
             model=model,
             capabilities=definition.capabilities or None,
@@ -387,19 +433,22 @@ def _build_provider(config: CodeAgentConfig) -> Provider:
     )
 
 
-def _build_sandbox(config: CodeAgentConfig) -> SandboxBackend:
+def _build_sandbox(config: CodeAgentConfig, workspace: Path) -> SandboxBackend:
     settings = config.sandbox
     if settings.backend == "host":
-        return HostBackend(settings.root, unsafe=settings.unsafe)
+        return HostBackend(workspace, unsafe=settings.unsafe)
     if settings.backend == "docker":
         if settings.image is None:
             raise CodeAgentConfigError("Docker sandbox requires sandbox.image")
         return DockerBackend(
-            settings.root,
+            workspace,
             image=settings.image,
             network=settings.network,
             allow_network=settings.allow_network,
-            workspace_read_only=settings.workspace_read_only,
+            workspace_read_only=(
+                config.run_mode is RunMode.PLAN
+                or config.access_mode is AccessMode.READ_ONLY
+            ),
         )
     raise CodeAgentConfigError(f"Unsupported sandbox backend: {settings.backend}")
 

@@ -15,7 +15,7 @@ from aihi.agent import (
 )
 
 from .command import format_command_result, run_local_command
-from .workspace import LocalWorkspace
+from .workspace import workspace_from_context
 
 
 def _git() -> str:
@@ -42,7 +42,7 @@ class GitStatusTool:
     def prepare(
         self, input: dict[str, Any], context: ToolContext[Any]
     ) -> PreparedToolCall:
-        LocalWorkspace(context.cwd)
+        workspace_from_context(context)
         return PreparedToolCall(dict(input), {"transport": "local_process"})
 
     async def run(self, input: dict[str, Any], context: ToolContext[Any]) -> ToolExecutionResult:
@@ -58,7 +58,7 @@ class GitStatusTool:
                 "--short",
                 "--branch",
             ),
-            cwd=LocalWorkspace(context.cwd).root,
+            cwd=workspace_from_context(context).root,
             timeout_seconds=self.spec.timeout_seconds,
             max_output_chars=100_000,
         )
@@ -89,12 +89,12 @@ class GitDiffTool:
         path = prepared.get("path")
         if path is not None:
             prepared["path"] = str(
-                LocalWorkspace(context.cwd).resolve_path(Path(str(path)))
+                workspace_from_context(context).resolve_path(Path(str(path)))
             )
         return PreparedToolCall(prepared, {"transport": "local_process"})
 
     async def run(self, input: dict[str, Any], context: ToolContext[Any]) -> ToolExecutionResult:
-        workspace = LocalWorkspace(context.cwd)
+        workspace = workspace_from_context(context)
         path = input.get("path")
         if path is not None and (not isinstance(path, str) or not path.strip()):
             raise ToolInputError("path must be a non-empty string when provided")

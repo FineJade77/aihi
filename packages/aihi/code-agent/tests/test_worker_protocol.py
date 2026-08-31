@@ -207,11 +207,11 @@ models = ["gpt-4o", "gpt-4.1"]
 api_key_env = "OPENAI_API_KEY"
 
 [agent]
-permission_mode = "plan"
+access_mode = "read_only"
+run_mode = "plan"
 
 [sandbox]
 backend = "host"
-root = "."
 unsafe = true
 
 [mcp.servers.example]
@@ -236,7 +236,9 @@ allowed_tools = ["search"]
     descriptor = response["result"]["config"]  # type: ignore[index]
     assert descriptor["provider"]["name"] == "fake"
     assert descriptor["provider"]["models"] == ["demo", "fast-demo"]
-    assert descriptor["permission_mode"] == "plan"
+    assert descriptor["access_mode"] == "read_only"
+    assert descriptor["run_mode"] == "plan"
+    assert "root" not in descriptor["sandbox"]
     assert {item["name"] for item in descriptor["providers"]} == {"fake", "openai"}
     openai_descriptor = next(
         item for item in descriptor["providers"] if item["name"] == "openai"
@@ -549,7 +551,6 @@ model = "demo"
 
 [sandbox]
 backend = "host"
-root = "."
 unsafe = true
 """,
         encoding="utf-8",
@@ -774,7 +775,7 @@ def test_config_host_acknowledgement_is_explicit_and_workspace_scoped(
     assert accepted is not None
     assert accepted["result"]["acknowledged"] is True  # type: ignore[index]
     assert accepted["result"]["workspace"] == str(workspace)  # type: ignore[index]
-    assert accepted["result"]["root"] == str(workspace)  # type: ignore[index]
+    assert "root" not in accepted["result"]  # type: ignore[operator]
 
     effective = server.handle(
         {

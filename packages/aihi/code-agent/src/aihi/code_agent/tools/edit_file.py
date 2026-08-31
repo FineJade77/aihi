@@ -14,7 +14,7 @@ from aihi.agent import (
 )
 
 from .ledger import ReadLedger
-from .workspace import LocalWorkspace
+from .workspace import workspace_from_context
 
 
 class EditFileTool:
@@ -46,7 +46,7 @@ class EditFileTool:
         self, input: dict[str, Any], context: ToolContext[Any]
     ) -> PreparedToolCall:
         prepared = dict(input)
-        prepared["path"] = str(LocalWorkspace(context.cwd).resolve_path(str(input["path"])))
+        prepared["path"] = str(workspace_from_context(context).resolve_path(str(input["path"])))
         return PreparedToolCall(prepared, {"transport": "local"})
 
     def _unread(self, path: str, context: ToolContext[Any]) -> ToolExecutionResult | None:
@@ -54,7 +54,7 @@ class EditFileTool:
 
         if self.ledger is None:
             return None
-        resolved = LocalWorkspace(context.cwd).resolve_path(path)
+        resolved = workspace_from_context(context).resolve_path(path)
         if self.ledger.has_read(context.run_id, resolved):
             return None
         return ToolExecutionResult(
@@ -68,7 +68,7 @@ class EditFileTool:
 
     async def run(self, input: dict[str, Any], context: ToolContext[Any]) -> ToolExecutionResult:
         path = str(input["path"])
-        workspace = LocalWorkspace(context.cwd)
+        workspace = workspace_from_context(context)
         refusal = self._unread(path, context)
         if refusal is not None:
             return refusal

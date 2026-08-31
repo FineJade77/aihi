@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 from aihi.agent import HostBackend, ToolContext, ToolInputError, ToolRegistry
+from aihi.code_agent.permissions import AccessMode, CodeAgentPermissionContext, RunMode
 from aihi.code_agent.tools import BashTool, GlobTool, GrepTool
 
 
@@ -23,6 +24,11 @@ def ctx(root: Path) -> ToolContext:
         cwd=str(root),
         session_id="ses-search",
         run_id="run-search",
+        app_context=CodeAgentPermissionContext(
+            workspace=root,
+            access_mode=AccessMode.WORKSPACE_WRITE,
+            run_mode=RunMode.EXECUTE,
+        ),
     )
 
 

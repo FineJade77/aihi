@@ -27,7 +27,9 @@ from aihi.agent import (
     restrict_registry,
     subagent_session_factory,
 )
+from aihi.code_agent import AccessMode, RunMode
 from aihi.code_agent.config import CodeAgentConfig
+from aihi.code_agent.permissions import CodeAgentPermissionContext
 from aihi.code_agent.tools import ReadFileTool, WriteFileTool
 from aihi.models import (
     Capabilities,
@@ -43,6 +45,11 @@ async def main(workspace: Path) -> None:
     workspace.mkdir(parents=True, exist_ok=True)
     assert CodeAgentConfig.defaults(workspace).audit_path == workspace / ".aihi" / "audit.jsonl"
     sandbox = HostBackend(workspace, unsafe=True)
+    code_context = CodeAgentPermissionContext(
+        workspace=workspace,
+        access_mode=AccessMode.WORKSPACE_WRITE,
+        run_mode=RunMode.EXECUTE,
+    )
 
     basic_session = Session.create(
         InMemoryEventStore(), cwd=workspace, provider="fake", model="fake-model"
@@ -96,6 +103,7 @@ async def main(workspace: Path) -> None:
         tool_session,
         model="fake-model",
         user_message=Message.text("user", "read note.txt"),
+        app_context=code_context,
     )
     assert tool_run.state == RunState.COMPLETED
     assert any(
@@ -117,6 +125,7 @@ async def main(workspace: Path) -> None:
         approval_session,
         model="fake-model",
         user_message=Message.text("user", "write"),
+        app_context=code_context,
     )
     assert approval.state == RunState.WAITING_APPROVAL
     assert not (workspace / "blocked.txt").exists()

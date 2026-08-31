@@ -567,7 +567,7 @@ class WorkerServer:
                 code=INVALID_PARAMS,
             )
         try:
-            path = acknowledge_host_execution(cwd, root=config.sandbox.root)
+            path = acknowledge_host_execution(cwd)
         except (OSError, ValueError) as error:
             raise RpcValidationError(
                 f"Cannot persist Host acknowledgement: {error}", code=INTERNAL_ERROR
@@ -581,7 +581,6 @@ class WorkerServer:
         return {
             "path": str(path),
             "workspace": str(Path(cwd).expanduser().resolve(strict=True)),
-            "root": str(config.sandbox.root),
             "acknowledged": True,
         }
 
@@ -667,7 +666,7 @@ class WorkerServer:
         run_id: str,
         reason: str | None,
     ) -> JsonObject:
-        runtime = await CodeAgentRuntime.create(config, store=session.store)
+        runtime = await CodeAgentRuntime.create(config, session=session)
         try:
             result = runtime.runtime.coordinator.abandon(
                 session, run_id=run_id, reason=reason or "cancelled by user"
@@ -687,7 +686,7 @@ class WorkerServer:
         max_output_tokens: int | None,
         cancel_signal: threading.Event | None = None,
     ) -> JsonObject:
-        runtime = await CodeAgentRuntime.create(config, store=session.store)
+        runtime = await CodeAgentRuntime.create(config, session=session)
         cancel_event, watcher = await WorkerServer._cancel_bridge(cancel_signal)
         try:
             result = await runtime.run(
@@ -714,7 +713,7 @@ class WorkerServer:
         max_output_tokens: int | None,
         cancel_signal: threading.Event | None = None,
     ) -> JsonObject:
-        runtime = await CodeAgentRuntime.create(config, store=session.store)
+        runtime = await CodeAgentRuntime.create(config, session=session)
         cancel_event, watcher = await WorkerServer._cancel_bridge(cancel_signal)
         try:
             result = await runtime.resume(

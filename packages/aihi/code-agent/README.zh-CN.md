@@ -101,10 +101,10 @@ api_key_env = "LOCAL_API_KEY"
 
 [sandbox]
 backend = "docker"
-root = "."
 
 [agent]
-permission_mode = "default" # default | accept_edits | plan | bypass
+access_mode = "workspace_write" # read_only | workspace_write | full_access
+run_mode = "execute"            # execute | plan
 
 [audit]
 enabled = true
@@ -122,9 +122,13 @@ command = "npx"
 args = ["-y", "some-mcp-server"]
 ```
 
-API Key 只放在环境变量中；`config.get` 只向外暴露非敏感 metadata。`permission_mode` 会和
-Run startup configuration 一起持久化。任何 mode 下硬安全拒绝都保持生效。Host 执行采用 fail-closed
-策略，且不是隔离边界；交互式确认会按精确的 Workspace/root 写入 `~/.aihi/host-workspaces.json`。
+API Key 只放在环境变量中；`config.get` 只向外暴露非敏感 metadata。Workspace 不允许在 TOML 中配置，
+它就是创建 Session 时传入的 canonical `cwd`。`access_mode`、`run_mode`、该 Workspace 和命令 Sandbox
+descriptor 一起持久化到 Run profile，因此 Resume 不能漂移或提升权限。Host 执行采用 fail-closed 策略，
+且不是隔离边界；交互式确认会按精确的 Session Workspace 写入 `~/.aihi/host-workspaces.json`。
+
+`read_only` 拒绝变更和进程执行；`workspace_write` 允许应用拥有的本地文件编辑，但 Bash 和其他外部变更
+仍需审批；`full_access` 在硬安全检查后允许特权 Tool。`plan` 是独立的硬只读上限，审批也不能绕过。
 
 每个 Provider 可以通过 `models = [...]` 暴露多个 Model。Provider 的 active/default Model 是
 `model` 指定的值，或 catalog 第一项。Model 只有在声明它的 Provider 下才有效；`config.get`
@@ -184,7 +188,7 @@ uv run python -m build --wheel --no-isolation packages/aihi/code-agent
 - 将模型输出、Tool 输入、MCP 响应、Skill 和 Subagent 输出视为不可信输入。
 - 凭据放在环境变量或外部 Secret Manager 中，不要写入 TOML 或 Event 内容。
 - `HostBackend` 是需要显式确认不安全性的命令 backend；`bash` 需要进程隔离时应选择隔离 backend。
-- 保持有限的 turn limit，审查 `permission_mode`，启用不安全的本地执行前必须获得显式 Host 确认。
+- 保持有限的 turn limit，审查 `access_mode` 与 `run_mode`，启用不安全的本地执行前必须获得显式 Host 确认。
 
 ## 相关文档
 

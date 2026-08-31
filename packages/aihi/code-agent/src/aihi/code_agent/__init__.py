@@ -18,6 +18,7 @@ from aihi.code_agent.evals import (
     directory_sha256,
 )
 from aihi.code_agent.framing import FrameError, read_frame, write_frame
+from aihi.code_agent.permissions import AccessMode, RunMode
 from aihi.code_agent.protocol import (
     COMMAND_DESCRIPTORS,
     PROTOCOL_VERSION,
@@ -53,6 +54,7 @@ def __getattr__(name: str) -> Any:
 __all__ = [
     "COMMAND_DESCRIPTORS",
     "ApprovalRequested",
+    "AccessMode",
     "AssistantMessage",
     "CodeAgentEvalRunner",
     "CodeAgentConfig",
@@ -69,6 +71,7 @@ __all__ = [
     "PreparedWorkspace",
     "PROTOCOL_VERSION",
     "RunStateChanged",
+    "RunMode",
     "SERVER_NAME",
     "SubagentCompleted",
     "SubagentSpawned",

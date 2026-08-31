@@ -1,9 +1,9 @@
 """Typed, file-backed configuration for the Coding Agent application.
 
-Configuration is application-owned. The Harness still owns runtime safety
-defaults: a Host sandbox is never enabled unless configuration explicitly sets
-``unsafe = true`` or the user acknowledges that exact workspace. Provider
-credentials are referenced by environment name, never copied into TOML.
+Configuration is application-owned. A Host command backend is never enabled
+unless configuration explicitly sets ``unsafe = true`` or the user
+acknowledges that exact Session workspace. Provider credentials are referenced
+by environment name, never copied into TOML.
 """
 
 from __future__ import annotations
@@ -18,8 +18,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from aihi.agent.policy import PermissionMode
 from aihi.agent.skills import SkillScope
+
+from .permissions import AccessMode, RunMode
 
 _ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _CONFIG_FILENAME = "aihi-code.toml"
@@ -36,13 +37,10 @@ model = "demo"
 [sandbox]
 backend = "host"
 # The Host backend is not an isolation boundary.  With unsafe = true the
-# bash, write_file, and edit_file tools act directly on this machine under
-# your own account. The interactive CLI asks before trusting this workspace;
-# setting this to true is the non-interactive, configuration-owned opt-in.
+# bash tool executes directly on this machine under your own account. The
+# interactive CLI asks before trusting the Session workspace; setting this to
+# true is the non-interactive, configuration-owned opt-in.
 unsafe = false
-# sandbox.root is deliberately unset.  Relative paths resolve against the
-# directory holding this file, so root = "." would confine the agent to
-# ~/.aihi; leaving it unset roots the sandbox at the workspace you launch in.
 
 [artifacts]
 # Also relative to this file, so this is ~/.aihi/artifacts.  Override it in a
@@ -55,8 +53,10 @@ enabled = true
 path = "audit.jsonl"
 
 [agent]
-# Permission modes: default, accept_edits, plan, or bypass.
-permission_mode = "default"
+# Access ceiling: read_only, workspace_write, or full_access.
+access_mode = "workspace_write"
+# Run intent: execute or plan. Plan is always read-only.
+run_mode = "execute"
 '''
 _DEFAULT_TOOLS = (
     "read_file",
@@ -99,12 +99,10 @@ class ProviderSettings:
 @dataclass(frozen=True, slots=True)
 class SandboxSettings:
     backend: str = "host"
-    root: Path = Path(".")
     unsafe: bool = False
     image: str | None = None
     network: str = "none"
     allow_network: bool = False
-    workspace_read_only: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,8 +158,8 @@ class CodeAgentConfig:
     provider: ProviderSettings = ProviderSettings()
     provider_profiles: Mapping[str, ProviderSettings] = field(default_factory=dict)
     max_output_tokens: int = 4_096
-    permission_mode: PermissionMode = PermissionMode.DEFAULT
-    require_capability_lease: bool = False
+    access_mode: AccessMode = AccessMode.WORKSPACE_WRITE
+    run_mode: RunMode = RunMode.EXECUTE
     tools: tuple[str, ...] = _DEFAULT_TOOLS
     sandbox: SandboxSettings = SandboxSettings()
     skill_roots: tuple[SkillRootSettings, ...] = ()
@@ -186,7 +184,6 @@ class CodeAgentConfig:
             base_dir=base_dir,
             provider=provider,
             provider_profiles={provider.name: provider},
-            sandbox=SandboxSettings(root=base_dir),
             artifact_path=base_dir / ".aihi" / "artifacts",
             audit_path=base_dir / ".aihi" / "audit.jsonl",
         )
@@ -197,12 +194,12 @@ class CodeAgentConfig:
         value: Mapping[str, Any],
         *,
         base_dir: str | Path,
-        workspace_root: str | Path | None = None,
+        workspace: str | Path | None = None,
         source_path: str | Path | None = None,
         source_paths: tuple[str | Path, ...] = (),
     ) -> CodeAgentConfig:
         root = Path(base_dir).expanduser().resolve(strict=True)
-        workspace = Path(workspace_root or root).expanduser().resolve(strict=True)
+        session_workspace = Path(workspace or root).expanduser().resolve(strict=True)
         provider_map = _section(value, "provider")
         agent_map = _section(value, "agent")
         sandbox_map = _section(value, "sandbox")
@@ -211,6 +208,10 @@ class CodeAgentConfig:
         artifacts_map = _section(value, "artifacts")
         audit_map = _section(value, "audit")
         subagents_map = _section(value, "subagents")
+        if "workspace" in value:
+            raise CodeAgentConfigError(
+                "workspace is not configurable; it comes from the Session cwd"
+            )
         if "api_key" in provider_map:
             raise CodeAgentConfigError(
                 "provider.api_key is not supported; reference credentials with api_key_env"
@@ -224,10 +225,24 @@ class CodeAgentConfig:
         )
         provider_profiles = _parse_provider_profiles(value.get("providers", {}), provider)
 
-        permission_mode = _enum(
-            agent_map.get("permission_mode", PermissionMode.DEFAULT.value),
-            PermissionMode,
-            "agent.permission_mode",
+        if "permission_mode" in agent_map:
+            raise CodeAgentConfigError(
+                "agent.permission_mode is no longer supported; use agent.access_mode "
+                "and agent.run_mode"
+            )
+        if "require_capability_lease" in agent_map:
+            raise CodeAgentConfigError(
+                "agent.require_capability_lease is no longer a Coding Agent setting"
+            )
+        access_mode = _enum(
+            agent_map.get("access_mode", AccessMode.WORKSPACE_WRITE.value),
+            AccessMode,
+            "agent.access_mode",
+        )
+        run_mode = _enum(
+            agent_map.get("run_mode", RunMode.EXECUTE.value),
+            RunMode,
+            "agent.run_mode",
         )
         max_output_tokens = _positive_int(
             agent_map.get("max_output_tokens", 4_096), "agent.max_output_tokens"
@@ -239,22 +254,18 @@ class CodeAgentConfig:
                     "prompt. Edit aihi/code_agent/prompts/coding.md, or put project rules "
                     "in the workspace's AGENTS.md."
                 )
-        require_capability_lease = _boolean(
-            agent_map.get("require_capability_lease", False), "agent.require_capability_lease"
-        )
         tools = _string_tuple(agent_map.get("tools", _DEFAULT_TOOLS), "agent.tools")
         if not tools:
             raise CodeAgentConfigError("agent.tools must contain at least one tool")
 
         sandbox_backend = _text(sandbox_map.get("backend", "host"), "sandbox.backend").lower()
-        sandbox_root = (
-            _resolve_path(sandbox_map["root"], root, "sandbox.root")
-            if "root" in sandbox_map
-            else workspace
-        )
+        if "root" in sandbox_map or "workspace_read_only" in sandbox_map:
+            raise CodeAgentConfigError(
+                "sandbox.root and sandbox.workspace_read_only are no longer supported; "
+                "the workspace comes from the Session cwd"
+            )
         sandbox = SandboxSettings(
             backend=sandbox_backend,
-            root=sandbox_root,
             unsafe=_boolean(sandbox_map.get("unsafe", False), "sandbox.unsafe"),
             image=(
                 _text(sandbox_map["image"], "sandbox.image")
@@ -264,9 +275,6 @@ class CodeAgentConfig:
             network=_text(sandbox_map.get("network", "none"), "sandbox.network"),
             allow_network=_boolean(
                 sandbox_map.get("allow_network", False), "sandbox.allow_network"
-            ),
-            workspace_read_only=_boolean(
-                sandbox_map.get("workspace_read_only", False), "sandbox.workspace_read_only"
             ),
         )
         if sandbox_backend not in {"host", "docker"}:
@@ -322,7 +330,7 @@ class CodeAgentConfig:
                 audit_base = (
                     root
                     if root.name == _PROJECT_CONFIG_DIRNAME
-                    else workspace / _PROJECT_CONFIG_DIRNAME
+                    else session_workspace / _PROJECT_CONFIG_DIRNAME
                 )
                 audit_path = (audit_base / "audit.jsonl").resolve()
         subagents = _parse_subagents(subagents_map)
@@ -331,8 +339,8 @@ class CodeAgentConfig:
             provider=provider,
             provider_profiles=provider_profiles,
             max_output_tokens=max_output_tokens,
-            permission_mode=permission_mode,
-            require_capability_lease=require_capability_lease,
+            access_mode=access_mode,
+            run_mode=run_mode,
             tools=tools,
             sandbox=sandbox,
             skill_roots=skill_roots,
@@ -399,10 +407,10 @@ class CodeAgentConfig:
             },
             "providers": providers,
             "tools": list(self.tools),
-            "permission_mode": self.permission_mode.value,
+            "access_mode": self.access_mode.value,
+            "run_mode": self.run_mode.value,
             "sandbox": {
                 "backend": self.sandbox.backend,
-                "root": str(self.sandbox.root),
                 "unsafe": self.sandbox.unsafe,
             },
             "skills": {
@@ -463,7 +471,7 @@ def load_config(
         return CodeAgentConfig.from_mapping(
             merged,
             base_dir=workspace,
-            workspace_root=workspace,
+            workspace=workspace,
             source_path=sources[-1],
             source_paths=tuple(sources),
         )
@@ -482,7 +490,7 @@ def load_config(
     return CodeAgentConfig.from_mapping(
         raw,
         base_dir=requested.parent,
-        workspace_root=workspace,
+        workspace=workspace,
         source_path=requested,
         source_paths=(requested,),
     )
@@ -500,11 +508,10 @@ def host_acknowledgement_path() -> Path:
     return Path.home() / _PROJECT_CONFIG_DIRNAME / _HOST_ACK_FILENAME
 
 
-def host_execution_acknowledged(cwd: str | Path, *, root: str | Path | None = None) -> bool:
-    """Fail closed unless the exact workspace and Host root were acknowledged."""
+def host_execution_acknowledged(cwd: str | Path) -> bool:
+    """Fail closed unless the exact Session workspace was acknowledged."""
 
     workspace = str(Path(cwd).expanduser().resolve(strict=True))
-    execution_root = str(Path(root or cwd).expanduser().resolve(strict=True))
     path = host_acknowledgement_path()
     if not path.is_file():
         return False
@@ -514,29 +521,23 @@ def host_execution_acknowledged(cwd: str | Path, *, root: str | Path | None = No
         raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, ValueError):
         return False
-    if not isinstance(raw, dict) or raw.get("version") != 1:
+    if not isinstance(raw, dict) or raw.get("version") != 2:
         return False
     workspaces = raw.get("workspaces")
     if not isinstance(workspaces, dict):
         return False
     acknowledgement = workspaces.get(workspace)
-    return (
-        isinstance(acknowledgement, dict)
-        and acknowledgement.get("root") == execution_root
-    )
+    return isinstance(acknowledgement, dict)
 
 
 def acknowledge_host_execution(
     cwd: str | Path,
-    *,
-    root: str | Path | None = None,
 ) -> Path:
-    """Persist an explicit acknowledgement scoped to a workspace and Host root."""
+    """Persist an explicit acknowledgement scoped to one Session workspace."""
 
     import json
 
     workspace = str(Path(cwd).expanduser().resolve(strict=True))
-    execution_root = str(Path(root or cwd).expanduser().resolve(strict=True))
     path = host_acknowledgement_path()
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     workspaces: dict[str, object] = {}
@@ -545,7 +546,7 @@ def acknowledge_host_execution(
             raw = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, ValueError) as error:
             raise CodeAgentConfigError(f"Cannot load Host acknowledgement: {path}") from error
-        if not isinstance(raw, dict) or raw.get("version") != 1:
+        if not isinstance(raw, dict) or raw.get("version") != 2:
             raise CodeAgentConfigError(f"Host acknowledgement has an unsupported format: {path}")
         existing = raw.get("workspaces")
         if not isinstance(existing, dict):
@@ -553,11 +554,10 @@ def acknowledge_host_execution(
         workspaces.update(existing)
     workspaces[workspace] = {
         "acknowledged_at": datetime.now(UTC).isoformat(),
-        "root": execution_root,
     }
     temporary = path.with_suffix(f"{path.suffix}.tmp")
     temporary.write_text(
-        json.dumps({"version": 1, "workspaces": workspaces}, indent=2, sort_keys=True) + "\n",
+        json.dumps({"version": 2, "workspaces": workspaces}, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
     temporary.chmod(0o600)
@@ -572,7 +572,7 @@ def load_worker_config(cwd: str | Path) -> CodeAgentConfig:
     if (
         config.sandbox.backend == "host"
         and not config.sandbox.unsafe
-        and host_execution_acknowledged(cwd, root=config.sandbox.root)
+        and host_execution_acknowledged(cwd)
     ):
         config = replace(config, sandbox=replace(config.sandbox, unsafe=True))
     return config
@@ -655,7 +655,6 @@ def _anchor_layer_paths(value: Mapping[str, Any], base_dir: Path) -> dict[str, A
         path = Path(candidate).expanduser()
         table[key] = str((path if path.is_absolute() else base_dir / path).resolve())
 
-    anchor(anchored.get("sandbox"), "root")
     anchor(anchored.get("artifacts"), "path")
     anchor(anchored.get("audit"), "path")
     skills = anchored.get("skills")

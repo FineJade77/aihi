@@ -1,7 +1,13 @@
 from __future__ import annotations
 
 import pytest
-from aihi.agent import InMemoryEventStore, SkillDiscovery, SkillIndexContributor, SkillScope
+from aihi.agent import (
+    InMemoryEventStore,
+    Session,
+    SkillDiscovery,
+    SkillIndexContributor,
+    SkillScope,
+)
 from aihi.agent.tools import ToolContext
 from aihi.code_agent.config import CodeAgentConfigError, load_config
 from aihi.code_agent.runtime import CodeAgentRuntime
@@ -10,6 +16,12 @@ from aihi.code_agent.skills import BUILTIN_SKILL_NAMES, builtin_skill_root
 _MINIMAL_CONFIG = (
     '[provider]\nname = "fake"\nmodel = "demo"\n\n[sandbox]\nbackend = "host"\nunsafe = true\n'
 )
+
+
+def _session(tmp_path) -> Session:
+    return Session.create(
+        InMemoryEventStore(), cwd=tmp_path, provider="fake", model="demo"
+    )
 
 
 def test_builtin_root_is_discoverable_and_contains_code_review() -> None:
@@ -30,7 +42,7 @@ async def test_builtin_skills_need_no_trust_lockfile(tmp_path) -> None:
     )
     config = load_config(path, cwd=tmp_path)
     assert config.skill_trust_path is None
-    runtime = await CodeAgentRuntime.create(config, store=InMemoryEventStore())
+    runtime = await CodeAgentRuntime.create(config, session=_session(tmp_path))
     try:
         assert runtime.runtime.registry.get("load_skill") is not None
     finally:
@@ -52,7 +64,7 @@ async def test_a_configured_skill_root_still_requires_a_lockfile(tmp_path) -> No
     config = load_config(path, cwd=tmp_path)
     object.__setattr__(config, "skill_trust_path", None)
     with pytest.raises(CodeAgentConfigError, match="trust lockfile"):
-        await CodeAgentRuntime.create(config, store=InMemoryEventStore())
+        await CodeAgentRuntime.create(config, session=_session(tmp_path))
 
 
 async def test_load_skill_is_available_without_any_skills_configuration(tmp_path) -> None:
@@ -68,7 +80,7 @@ async def test_load_skill_is_available_without_any_skills_configuration(tmp_path
     config = load_config(path, cwd=tmp_path)
     assert config.skill_roots == ()
     assert config.skill_load_tool is True
-    runtime = await CodeAgentRuntime.create(config, store=InMemoryEventStore())
+    runtime = await CodeAgentRuntime.create(config, session=_session(tmp_path))
     try:
         tool = runtime.runtime.registry.get("load_skill")
         assert tool is not None
@@ -103,7 +115,7 @@ async def test_disabling_load_tool_also_hides_the_skill_index(tmp_path) -> None:
     path.write_text(_MINIMAL_CONFIG + "\n[skills]\nload_tool = false\n", encoding="utf-8")
     config = load_config(path, cwd=tmp_path)
 
-    runtime = await CodeAgentRuntime.create(config, store=InMemoryEventStore())
+    runtime = await CodeAgentRuntime.create(config, session=_session(tmp_path))
     try:
         assert runtime.runtime.registry.get("load_skill") is None
         assert not any(

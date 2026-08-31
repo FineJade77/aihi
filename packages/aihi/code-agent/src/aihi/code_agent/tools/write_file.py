@@ -8,7 +8,7 @@ from typing import Any
 from aihi.agent import PreparedToolCall, ToolContext, ToolExecutionResult, ToolSpec
 
 from .ledger import ReadLedger
-from .workspace import LocalWorkspace
+from .workspace import workspace_from_context
 
 
 class WriteFileTool:
@@ -38,7 +38,7 @@ class WriteFileTool:
         self, input: dict[str, Any], context: ToolContext[Any]
     ) -> PreparedToolCall:
         prepared = dict(input)
-        prepared["path"] = str(LocalWorkspace(context.cwd).resolve_path(str(input["path"])))
+        prepared["path"] = str(workspace_from_context(context).resolve_path(str(input["path"])))
         return PreparedToolCall(prepared, {"transport": "local"})
 
     def _unread(self, path: str, context: ToolContext[Any]) -> ToolExecutionResult | None:
@@ -46,7 +46,7 @@ class WriteFileTool:
 
         if self.ledger is None:
             return None
-        resolved = LocalWorkspace(context.cwd).resolve_path(path)
+        resolved = workspace_from_context(context).resolve_path(path)
         if self.ledger.has_read(context.run_id, resolved):
             return None
         return ToolExecutionResult(
@@ -60,7 +60,7 @@ class WriteFileTool:
 
     async def run(self, input: dict[str, Any], context: ToolContext[Any]) -> ToolExecutionResult:
         path = str(input["path"])
-        workspace = LocalWorkspace(context.cwd)
+        workspace = workspace_from_context(context)
         # Creating a file needs no prior read; there is nothing to overwrite.
         if workspace.resolve_path(path).exists():
             refusal = self._unread(path, context)
