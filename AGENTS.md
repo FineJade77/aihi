@@ -45,11 +45,13 @@ aihi.models must not import aihi.agent; base packages must not import applicatio
 not copy runtime or safety implementations. aihi.agent.agents is subagent coordination infrastructure,
 not the directory for a user-facing Agent product.
 
-The three Python distributions are published at version 0.1.0:
+The two public Python distributions are published at version 0.1.0:
 
 - [aihi-models on PyPI](https://pypi.org/project/aihi-models/0.1.0/)
 - [aihi-agent on PyPI](https://pypi.org/project/aihi-agent/0.1.0/)
-- [aihi-code-agent on PyPI](https://pypi.org/project/aihi-code-agent/0.1.0/)
+
+aihi-code-agent is a private workspace application package. Keep it installable for local Worker/CLI
+development, but do not build or publish it as a PyPI release artifact.
 
 ## Choose the right layer
 
@@ -83,13 +85,14 @@ uv sync
 pnpm install
 ```
 
-For normal use, install the published Coding Agent:
+Install the public foundation packages from PyPI:
 
 ```bash
-python -m pip install aihi-code-agent==0.1.0
+python -m pip install aihi-models==0.1.0 aihi-agent==0.1.0
 ```
 
-For repository development, use editable installs only when you need to test source changes:
+The Coding Agent runs from this workspace. Use editable installs only when you need to test source
+changes in an existing Python environment:
 
 ```bash
 uv pip install -e packages/aihi/models
@@ -133,19 +136,19 @@ pnpm --dir packages/aihi/code-protocol typecheck
 
 ### Packaging
 
-Build all Python distributions:
+Build the two public Python distributions listed in root `pyproject.toml` under
+`tool.aihi.release.python-distributions`:
 
 ```bash
 mkdir -p dist/pypi
 python3 -m build --sdist --wheel --no-isolation --outdir dist/pypi packages/aihi/models
 python3 -m build --sdist --wheel --no-isolation --outdir dist/pypi packages/aihi/agent
-python3 -m build --sdist --wheel --no-isolation --outdir dist/pypi packages/aihi/code-agent
-python3 -m twine check dist/pypi/*
+python3 -m twine check dist/pypi/aihi_models-* dist/pypi/aihi_agent-*
 ```
 
 Packaging tests must verify wheel layout, PEP 420 namespace coexistence, py.typed, dependency metadata,
-installed-wheel smoke behavior and frozen compatibility fixtures. Never regenerate a frozen fixture merely
-to make a changed implementation pass.
+installed-wheel smoke behavior, the exclusion of aihi-code-agent and frozen compatibility fixtures.
+Never regenerate a frozen fixture merely to make a changed implementation pass.
 
 ## Change workflow
 

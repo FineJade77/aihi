@@ -41,14 +41,14 @@ pnpm --dir apps/aihi-code-cli build
 pnpm --dir apps/aihi-code-cli start -- --workspace /path/to/project
 ```
 
-安装已发布的 Python Worker：
+Python Worker 仅在 workspace 内使用。上面的 `uv sync` 会安装它；要在另一个本地 Python 环境中
+暴露 Worker，执行：
 
 ```bash
-python -m pip install aihi-code-agent==0.1.0
+uv pip install -e packages/aihi/code-agent
 ```
 
-仓库开发时改用 `uv pip install -e packages/aihi/code-agent`。参见
-[aihi-code-agent PyPI 项目](https://pypi.org/project/aihi-code-agent/0.1.0/)。
+它不发布到 PyPI；公开 Python distribution 只有 `aihi-models` 与 `aihi-agent`。
 
 常用参数包括 `--workspace`/`--cwd`、`--session`、`--model` 和 `--provider`。配置文件路径固定为用户
 `~/.aihi/aihi-code.toml` 与项目

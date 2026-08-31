@@ -4,7 +4,10 @@
 
 UI-free coding-agent runtime and stdio Worker for AIHI.
 
-`aihi-code-agent` is the application layer that composes `aihi-models` and `aihi-agent` into a coding workflow. It owns configuration, coding prompts, workspace tools, Skills/MCP integration, subagents, audit wiring, and the Worker entrypoint. The TypeScript TUI is a separate package.
+`aihi-code-agent` is the private workspace application layer that composes `aihi-models` and
+`aihi-agent` into a coding workflow. It owns configuration, coding prompts, workspace tools, Skills/MCP
+integration, subagents, audit wiring, and the Worker entrypoint. It is not published to PyPI; the
+TypeScript TUI is a separate private workspace package.
 
 ## Features
 
@@ -29,28 +32,20 @@ This package is UI-free. The shared DTO and schema boundary lives in [`@aihi/cod
 
 ## Installation
 
-Published release:
-
-```bash
-python -m pip install aihi-code-agent==0.1.0
-```
-
-See the [PyPI project page](https://pypi.org/project/aihi-code-agent/0.1.0/). This installs the
-compatible `aihi-agent` and `aihi-models` dependencies automatically. For repository development:
-
-From the repository root:
+This application is installed from the repository workspace, not from PyPI. From the repository root:
 
 ```bash
 uv sync
 ```
 
-To install the Worker into an existing Python environment:
+To expose the Worker in an existing Python environment, install the workspace source in editable mode:
 
 ```bash
 uv pip install -e packages/aihi/code-agent
 ```
 
-The package requires Python 3.11+ and publishes the `aihi-code-agent-worker` console script.
+The workspace package requires Python 3.11+ and exposes the `aihi-code-agent-worker` console script
+after a workspace or editable install. Only `aihi-models` and `aihi-agent` are public PyPI distributions.
 
 ## Start the Worker
 
@@ -176,7 +171,6 @@ regression; they never compare model capability with the scripted reference.
 uv run pytest packages/aihi/code-agent/tests
 uv run ruff check packages/aihi/code-agent
 uv run mypy
-uv run python -m build --wheel --no-isolation packages/aihi/code-agent
 ```
 
 Run the complete workspace checks from the [repository README](../../../README.md). The Worker protocol contract is tested with [`@aihi/code-protocol`](../code-protocol/README.md).

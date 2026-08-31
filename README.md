@@ -77,13 +77,14 @@ uv sync
 pnpm install
 ```
 
-For the published Python packages, install the Coding Agent runtime from PyPI:
+The public PyPI surface contains only the two foundation distributions:
 
 ```bash
-python -m pip install aihi-code-agent==0.1.0
+python -m pip install aihi-models==0.1.0 aihi-agent==0.1.0
 ```
 
-This installs `aihi-code-agent` and its `aihi-agent` / `aihi-models` dependencies. For repository development, use editable mode:
+`aihi-code-agent` is a private workspace application and is not published to PyPI. `uv sync` installs
+it for repository use; to expose the Worker in another local environment, use editable mode:
 
 ```bash
 uv pip install -e packages/aihi/code-agent
@@ -126,7 +127,7 @@ The CLI launches `aihi-code-agent` as a local stdio Worker. See the [CLI README]
 | --- | --- | --- |
 | `aihi-models` | Provider-neutral messages, streaming chunks, errors, serialization, and provider adapters | [README](packages/aihi/models/README.md) · [PyPI](https://pypi.org/project/aihi-models/0.1.0/) |
 | `aihi-agent` | Event-sourced runtime, tools, policy, sandbox, sessions, context, Skills/MCP, and observability | [README](packages/aihi/agent/README.md) · [PyPI](https://pypi.org/project/aihi-agent/0.1.0/) |
-| `aihi-code-agent` | Coding-agent prompts, configuration, Worker RPC, coding tools, Skills, MCP, and subagents | [README](packages/aihi/code-agent/README.md) · [PyPI](https://pypi.org/project/aihi-code-agent/0.1.0/) |
+| `aihi-code-agent` | Private workspace application: Coding prompts, configuration, Worker RPC, tools, Skills, MCP, and subagents | [README](packages/aihi/code-agent/README.md) |
 | `@aihi/code-protocol` | Shared TypeScript DTOs and JSON Schemas for the Worker boundary | [README](packages/aihi/code-protocol/README.md) |
 | `@aihi/code-cli` | Local Ink TUI for the coding Worker | [README](apps/aihi-code-cli/README.md) |
 
@@ -156,7 +157,9 @@ The host sandbox is not an isolation boundary and requires an explicit unsafe ac
 
 ## Status
 
-AIHI is an actively developed workspace. The three Python packages are available on PyPI at `0.1.0`; public API stability and packaging guarantees continue to evolve toward a 1.0 release.
+AIHI is an actively developed workspace. The public `aihi-models` and `aihi-agent` distributions are
+available on PyPI at `0.1.0`; `aihi-code-agent` remains workspace-only. Public API stability and
+packaging guarantees continue to evolve toward a 1.0 release.
 
 ## License
 

@@ -92,7 +92,7 @@ Tool input → 校验/Prepare → Policy/Approval → Hook → 受治理的 Tool
 ```text
 packages/aihi/models         aihi-models；模型契约与 Provider
 packages/aihi/agent          aihi-agent；Runtime、Session、Tool、安全链路
-packages/aihi/code-agent     aihi-code-agent；Coding Worker 与应用组合
+packages/aihi/code-agent     aihi-code-agent；私有 workspace Coding Worker 与应用组合
 packages/aihi/code-protocol  @aihi/code-protocol；DTO 与 JSON Schema
 apps/aihi-code-cli           @aihi/code-cli；Ink TUI
 tests/                       契约、集成、打包和冻结 fixture
@@ -250,12 +250,17 @@ mypy
 pnpm --dir apps/aihi-code-cli test
 ```
 
-打包测试还必须独立构建和安装 wheels，验证 PEP 420、`py.typed` 及冻结 Event/SQLite/Trace fixture
-可回放且不被重新生成。契约测试直接读取三个 distribution 的源码：包导入上层、跨 distribution 深入
-对方私有或内部模块而非包公共面、`__all__` 导出无任何绑定的名字，都会让构建失败。这些是 wheel
-元数据查不出的——开发态下三个 `src` 都在 `pythonpath` 上，反向导入既能通过类型检查也能运行。三个 Python distribution 已以 `0.1.0` 发布到 PyPI：
-[`aihi-models`](https://pypi.org/project/aihi-models/0.1.0/)、
-[`aihi-agent`](https://pypi.org/project/aihi-agent/0.1.0/) 和
-[`aihi-code-agent`](https://pypi.org/project/aihi-code-agent/0.1.0/)。
+打包测试必须独立和组合构建、安装两个公开 wheel，验证 PEP 420、`py.typed`、依赖 metadata、
+`aihi-code-agent` 的发布清单排除契约，并保证冻结 Event/SQLite/Trace fixture 可回放且不被重新生成。
+契约测试直接读取三个 Python 包的源码：包导入上层、跨包深入对方私有或内部模块而非受支持公共面、
+`__all__` 导出无任何绑定的名字，都会让构建失败。这些是 wheel 元数据查不出的——开发态下三个 `src`
+都在 `pythonpath` 上，反向导入既能通过类型检查也能运行。
+
+公开 PyPI distribution 只有当前版本为 `0.1.0` 的
+[`aihi-models`](https://pypi.org/project/aihi-models/0.1.0/) 与
+[`aihi-agent`](https://pypi.org/project/aihi-agent/0.1.0/)。`aihi-code-agent` 仍是可安装的私有 workspace
+应用，供本地 Worker 和 CLI 使用，但不属于 PyPI release artifact。根 `pyproject.toml` 中的
+`tool.aihi.release.python-distributions` 是公开发布清单的唯一事实源；code-agent 还声明
+`Private :: Do Not Upload`，阻止误操作直接上传到 PyPI。
 
 参见 [任务路线图](TASK.zh-CN.md) 和各包中文 README。

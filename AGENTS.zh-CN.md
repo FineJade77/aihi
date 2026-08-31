@@ -42,11 +42,13 @@ aihi-models -> aihi-agent -> application runtime -> UI
 `aihi.models` 不得 import `aihi.agent`；基础包不得 import 应用；应用不得复制 Runtime 或安全实现。
 `aihi.agent.agents` 是 Subagent 协调基础设施，不是用户 Agent 产品目录。
 
-三个 Python distribution 已发布 `0.1.0`：
+两个公开 Python distribution 已发布 `0.1.0`：
 
 - [aihi-models PyPI](https://pypi.org/project/aihi-models/0.1.0/)
 - [aihi-agent PyPI](https://pypi.org/project/aihi-agent/0.1.0/)
-- [aihi-code-agent PyPI](https://pypi.org/project/aihi-code-agent/0.1.0/)
+
+`aihi-code-agent` 是私有 workspace 应用包。它继续支持本地 Worker/CLI 开发安装，但不得作为
+PyPI release artifact 构建或发布。
 
 ## 选择正确的层
 
@@ -71,13 +73,13 @@ uv sync
 pnpm install
 ```
 
-正常使用时：
+从 PyPI 安装公开基础包：
 
 ```bash
-python -m pip install aihi-code-agent==0.1.0
+python -m pip install aihi-models==0.1.0 aihi-agent==0.1.0
 ```
 
-仓库开发、需要验证源码改动时：
+Coding Agent 从本 workspace 运行；需要在已有 Python 环境验证源码改动时使用 editable 安装：
 
 ```bash
 uv pip install -e packages/aihi/models
@@ -110,18 +112,17 @@ python3 -m pytest packages/aihi/code-agent/tests
 python3 -m pytest packages/aihi/agent/tests/security
 ```
 
-打包验证：
+打包验证只构建根 `pyproject.toml` 中 `tool.aihi.release.python-distributions` 列出的两个公开包：
 
 ```bash
 mkdir -p dist/pypi
 python3 -m build --sdist --wheel --no-isolation --outdir dist/pypi packages/aihi/models
 python3 -m build --sdist --wheel --no-isolation --outdir dist/pypi packages/aihi/agent
-python3 -m build --sdist --wheel --no-isolation --outdir dist/pypi packages/aihi/code-agent
-python3 -m twine check dist/pypi/*
+python3 -m twine check dist/pypi/aihi_models-* dist/pypi/aihi_agent-*
 ```
 
-打包测试必须覆盖 wheel 布局、PEP 420 namespace 共存、`py.typed`、依赖 metadata、installed-wheel smoke
-和冻结 fixture。不能为了让新实现通过而重新生成冻结 fixture。
+打包测试必须覆盖 wheel 布局、PEP 420 namespace 共存、`py.typed`、依赖 metadata、
+installed-wheel smoke、`aihi-code-agent` 排除契约和冻结 fixture。不能为了让新实现通过而重新生成冻结 fixture。
 
 ## 变更流程
 

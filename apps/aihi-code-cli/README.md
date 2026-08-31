@@ -48,14 +48,14 @@ pnpm install
 pnpm --filter @aihi/code-cli build
 ```
 
-The Python Worker can be installed into the active environment with:
+The Python Worker is workspace-only. `uv sync` above installs it; to expose it in another local Python
+environment, use:
 
 ```bash
-python -m pip install aihi-code-agent==0.1.0
+uv pip install -e packages/aihi/code-agent
 ```
 
-For repository development, use `uv pip install -e packages/aihi/code-agent` instead. See the
-[aihi-code-agent PyPI project](https://pypi.org/project/aihi-code-agent/0.1.0/).
+It is not published to PyPI. The public Python distributions are `aihi-models` and `aihi-agent`.
 
 ## Run
 

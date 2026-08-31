@@ -99,7 +99,7 @@ The event log, not the model response or TUI memory, is the runtime source of tr
 packages/aihi/
 ├── models/                 # distribution: aihi-models; import: aihi.models
 ├── agent/                  # distribution: aihi-agent; import: aihi.agent
-├── code-agent/             # distribution: aihi-code-agent; Coding Worker/runtime
+├── code-agent/             # private workspace app: aihi-code-agent; Coding Worker/runtime
 └── code-protocol/          # npm package: @aihi/code-protocol; DTOs and JSON Schemas
 apps/
 └── aihi-code-cli/          # private npm app: @aihi/code-cli; Ink TUI
@@ -296,14 +296,19 @@ mypy
 pnpm --dir apps/aihi-code-cli test
 ~~~
 
-Packaging tests build and install wheels independently and together, verify PEP 420 namespace layout and
-py.typed, and replay the frozen event/SQLite/trace fixtures without regenerating them. Contract tests read
-the source of all three distributions and fail the build when a package imports a layer above it, reaches
-into another distribution's private or internal module instead of its package surface, or exports an
+Packaging tests build and install the two public wheels independently and together, verify PEP 420
+namespace layout, py.typed, dependency metadata and the release-manifest exclusion of aihi-code-agent,
+and replay the frozen event/SQLite/trace fixtures without regenerating them. Contract tests read the
+source of all three Python packages and fail the build when a package imports a layer above it, reaches
+into another package's private or internal module instead of its supported surface, or exports an
 `__all__` name nothing binds. Wheel metadata cannot catch those: in a development checkout every `src`
-tree is importable, so a reversed import type checks and runs. The three Python
-distributions are published as `0.1.0` on PyPI: [aihi-models](https://pypi.org/project/aihi-models/0.1.0/),
-[aihi-agent](https://pypi.org/project/aihi-agent/0.1.0/) and
-[aihi-code-agent](https://pypi.org/project/aihi-code-agent/0.1.0/).
+tree is importable, so a reversed import type checks and runs.
+
+The public PyPI distributions are [aihi-models](https://pypi.org/project/aihi-models/0.1.0/) and
+[aihi-agent](https://pypi.org/project/aihi-agent/0.1.0/), currently at `0.1.0`. aihi-code-agent remains
+an installable private workspace application for the local Worker and CLI, but it is not a PyPI release
+artifact. The canonical public release list lives in root `pyproject.toml` under
+`tool.aihi.release.python-distributions`; code-agent also declares `Private :: Do Not Upload` as a
+defense against an accidental direct PyPI upload.
 
 See [TASK.md](TASK.md) for the delivery matrix and each package README for API usage.

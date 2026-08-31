@@ -8,9 +8,9 @@
 | Field | Value |
 | --- | --- |
 | Status | Foundation complete; application and platform roadmap remains |
-| Current release line | Python packages 0.1.0 on PyPI; Code Protocol 0.3 |
+| Current release line | Public aihi-models and aihi-agent 0.1.0 on PyPI; Code Protocol 0.3 |
 | Architecture | [ARCHITECTURE.md](ARCHITECTURE.md) |
-| Last completed slice | H-19 prompt cache and ContextState v2 compaction |
+| Last completed slice | P-08 public Python distribution boundary |
 
 Architecture decision records and RFC drafts in docs/adr/ and docs/rfcs/ are local-only working files.
 They are deliberately ignored by Git; stable decisions must be reflected in architecture, package
@@ -50,7 +50,7 @@ The repository is a multi-package monorepo with a runnable local Coding Agent ve
 | aihi-code-agent | Coding configuration, project/user .aihi config discovery, provider/model catalog, Worker, Session/Run/Task APIs, Coding tools and TUI composition | Done |
 | @aihi/code-protocol | Code Protocol 0.3 DTOs, method map, guards and schemas | Done |
 | @aihi/code-cli | Ink TUI, transcript replay, scrolling/composer UX, session/model pickers, slash commands, approvals, skills/MCP/tools management and doctor checks | Done |
-| Packaging | Separate wheels, PEP 420 namespace, installed-wheel compatibility, frozen fixture replay and PyPI 0.1.0 publication | Done |
+| Packaging | Public aihi-models/aihi-agent wheels, PEP 420 namespace, installed-wheel compatibility, frozen fixture replay, and workspace-only aihi-code-agent | Done |
 | Operability | Redacted local audit.jsonl, doctor audit target checks, session recovery and replay diagnostics | Done |
 
 ### Foundation history
@@ -133,6 +133,17 @@ filesystem abstraction.
 | P-07.1 | Application-owned workspace and Coding tools | File tools use guarded local I/O; only Bash owns a Sandbox; `sandbox.root` and `workspace_read_only` are removed |
 | P-07.2 | `AccessMode` and `RunMode` policy | `read_only`, `workspace_write`, `full_access` and `execute`/`plan` have tested ALLOW/ASK/DENY matrices; Plan cannot be upgraded within a Run |
 | P-07.3 | Worker, Protocol and CLI | Code Protocol 0.3 exposes access/run modes without a configured workspace root; Resume prevents authority drift; CLI reflects the effective modes |
+
+### P-08 — Public Python distribution boundary
+
+**Status: Done.** Only `aihi-models` and `aihi-agent` are public PyPI release artifacts.
+`aihi-code-agent` remains an installable private workspace application so the local Worker, CLI and
+tests can compose it without turning product code into a third public distribution.
+
+| Slice | Scope | Acceptance |
+| --- | --- | --- |
+| P-08.1 | Canonical release manifest | Root `tool.aihi.release.python-distributions` lists exactly models and agent; packaging tests build and install only those wheels |
+| P-08.2 | Private Coding application | code-agent declares `publish = false` and `Private :: Do Not Upload`; install docs use workspace/editable source and contain no PyPI install or release-build path |
 
 ### P-06 — Coding Agent benchmark
 

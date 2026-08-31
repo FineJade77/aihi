@@ -15,7 +15,6 @@ from aihi.agent import (
     ChildRunSubagentRunner,
     ContextCompiler,
     ContextState,
-    HostBackend,
     InMemoryEventStore,
     RunCoordinator,
     RunState,
@@ -26,10 +25,6 @@ from aihi.agent import (
     ToolRegistry,
     restrict_registry,
 )
-from aihi.code_agent import AccessMode, RunMode, create_coding_session
-from aihi.code_agent.config import CodeAgentConfig
-from aihi.code_agent.permissions import CodeAgentPermissionContext
-from aihi.code_agent.tools import ReadFileTool, WriteFileTool
 from aihi.models import (
     Capabilities,
     FakeProvider,
@@ -42,14 +37,6 @@ from aihi.models import (
 
 async def main(workspace: Path) -> None:
     workspace.mkdir(parents=True, exist_ok=True)
-    assert CodeAgentConfig.defaults(workspace).audit_path == workspace / ".aihi" / "audit.jsonl"
-    sandbox = HostBackend(workspace, unsafe=True)
-    code_context = CodeAgentPermissionContext(
-        workspace=workspace,
-        access_mode=AccessMode.WORKSPACE_WRITE,
-        run_mode=RunMode.EXECUTE,
-        command_sandbox=sandbox.descriptor,
-    )
 
     basic_session = Session.create(InMemoryEventStore())
     cache_provider = FakeProvider(
@@ -82,47 +69,6 @@ async def main(workspace: Path) -> None:
     assert cache_usage.data["cached_input_tokens"] == 60
     assert cache_usage.data["cache_write_input_tokens"] == 20
     assert isinstance(cache_usage.data["cache_key_hash"], str)
-
-    (workspace / "note.txt").write_text("wheel smoke", encoding="utf-8")
-    tool_session = create_coding_session(
-        InMemoryEventStore(), cwd=workspace, provider="fake", model="fake-model"
-    )
-    assert tool_session.metadata["cwd"] == str(workspace.resolve())
-    tool_run = await RunCoordinator(
-        FakeProvider(
-            [
-                FakeStep.call_tool("read_file", {"path": "note.txt"}),
-                FakeStep(text="read"),
-            ]
-        ),
-        registry=ToolRegistry([ReadFileTool()]),
-    ).run(
-        tool_session,
-        model="fake-model",
-        user_message=Message.text("user", "read note.txt"),
-        app_context=code_context,
-    )
-    assert tool_run.state == RunState.COMPLETED
-    assert any(
-        "wheel smoke" in result.content
-        for message in tool_session.messages
-        for result in message.tool_results
-    )
-
-    approval_session = Session.create(InMemoryEventStore())
-    approval = await RunCoordinator(
-        FakeProvider(
-            [FakeStep.call_tool("write_file", {"path": "blocked.txt", "content": "x"})]
-        ),
-        registry=ToolRegistry([WriteFileTool()]),
-    ).run(
-        approval_session,
-        model="fake-model",
-        user_message=Message.text("user", "write"),
-        app_context=code_context,
-    )
-    assert approval.state == RunState.WAITING_APPROVAL
-    assert not (workspace / "blocked.txt").exists()
 
     interrupted_store = InMemoryEventStore()
     interrupted_session = Session.create(interrupted_store)
@@ -166,7 +112,7 @@ async def main(workspace: Path) -> None:
     assert ContextState.from_dict(compaction.data["context_state"]).schema_version == 2
 
     store = InMemoryEventStore()
-    full_registry = ToolRegistry([ReadFileTool()])
+    full_registry = ToolRegistry()
 
     def child_session(spec, context):
         return Session.create(
@@ -182,7 +128,7 @@ async def main(workspace: Path) -> None:
         child_session,
         model="fake-model",
         child_context_factory=lambda spec, context: ChildRunContext(
-            app_context=code_context,
+            app_context=None,
             run_profile={"scope": "read_only_child"},
         ),
     )
@@ -190,7 +136,7 @@ async def main(workspace: Path) -> None:
         child_runner,
         authority=SubagentAuthority(
             budget=AgentBudget(max_tokens=512, timeout_seconds=10, max_tool_calls=2),
-            capabilities=frozenset({SPAWN_CAPABILITY, "filesystem.read"}),
+            capabilities=frozenset({SPAWN_CAPABILITY}),
         ),
     )
     parent_session = Session.create(store)
