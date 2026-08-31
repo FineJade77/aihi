@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from aihi.agent import HostBackend
 from aihi.code_agent.config import CodeAgentConfigError, load_config
 from aihi.code_agent.tools import CODING_TOOLSET, ToolBuildContext, build_tools
 
@@ -50,8 +51,26 @@ def test_an_unknown_tool_name_is_rejected_rather_than_silently_dropped(tmp_path)
 
 def test_every_definition_builds_a_tool_whose_spec_name_matches(tmp_path) -> None:
     config = load_config(cwd=tmp_path)
-    context = ToolBuildContext(config=config, skill_loader=None)
+    context = ToolBuildContext(
+        config=config,
+        skill_loader=None,
+        command_sandbox=HostBackend(tmp_path, unsafe=True),
+    )
     for definition in CODING_TOOLSET:
         if not definition.available(context):
             continue
         assert definition.factory(context).spec.name == definition.name
+
+
+def test_only_bash_receives_the_command_sandbox(tmp_path) -> None:
+    config = load_config(cwd=tmp_path)
+    sandbox = HostBackend(tmp_path, unsafe=True)
+    tools = build_tools(
+        ToolBuildContext(config=config, skill_loader=None, command_sandbox=sandbox)
+    )
+
+    by_name = {tool.spec.name: tool for tool in tools}
+    assert by_name["bash"].sandbox is sandbox  # type: ignore[attr-defined]
+    assert all(
+        not hasattr(tool, "sandbox") for name, tool in by_name.items() if name != "bash"
+    )

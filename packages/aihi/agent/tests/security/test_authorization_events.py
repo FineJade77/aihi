@@ -9,8 +9,9 @@ from aihi.agent.runtime import RunCoordinator, RunState
 from aihi.agent.sandbox import HostBackend
 from aihi.agent.sessions import InMemoryEventStore, Session, SQLiteEventStore
 from aihi.agent.tools import ToolRegistry
-from aihi.agent.tools.builtin import WriteFileTool
 from aihi.models import FakeProvider, FakeStep, Message
+
+from packages.aihi.agent.tests.support_tools import WriteTestTool
 
 
 def make_session(store, cwd: Path, session_id: str) -> Session:
@@ -141,7 +142,7 @@ async def test_runtime_uses_persisted_run_bound_lease(tmp_path: Path) -> None:
     )
     coordinator = RunCoordinator(
         provider,
-        registry=ToolRegistry([WriteFileTool()]),
+        registry=ToolRegistry([WriteTestTool()]),
         sandbox=HostBackend(tmp_path, unsafe=True),
     )
 
@@ -176,7 +177,7 @@ async def test_runtime_rejects_lease_from_another_run(tmp_path: Path) -> None:
     )
     coordinator = RunCoordinator(
         provider,
-        registry=ToolRegistry([WriteFileTool()]),
+        registry=ToolRegistry([WriteTestTool()]),
         sandbox=HostBackend(tmp_path, unsafe=True),
     )
 

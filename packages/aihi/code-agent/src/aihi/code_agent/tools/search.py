@@ -11,9 +11,9 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from aihi.agent._core.errors import ToolInputError
-from aihi.agent.tools.base import ToolContext, ToolExecutionResult
-from aihi.agent.tools.spec import ToolSpec
+from aihi.agent import PreparedToolCall, ToolContext, ToolExecutionResult, ToolInputError, ToolSpec
+
+from .workspace import LocalWorkspace
 
 MAX_REGEX_LENGTH = 512
 DEFAULT_FILE_LIMIT = 200
@@ -51,12 +51,18 @@ class GlobTool:
         timeout_seconds=30.0,
     )
 
+    def prepare(
+        self, input: dict[str, Any], context: ToolContext[Any]
+    ) -> PreparedToolCall:
+        LocalWorkspace(context.cwd)
+        return PreparedToolCall(dict(input), {"transport": "local"})
+
     async def run(self, input: dict[str, Any], context: ToolContext[Any]) -> ToolExecutionResult:
         pattern = input.get("pattern")
         if not isinstance(pattern, str) or not pattern.strip():
             raise ToolInputError("pattern must be a non-empty string")
         limit = _positive_int(input.get("limit"), "limit", DEFAULT_FILE_LIMIT, 2_000)
-        paths = await context.sandbox.list_paths(pattern, limit=limit)
+        paths = await LocalWorkspace(context.cwd).list_paths(pattern, limit=limit)
         if not paths:
             return ToolExecutionResult(
                 content=f"No files match {pattern}.",
@@ -101,6 +107,12 @@ class GrepTool:
         timeout_seconds=60.0,
     )
 
+    def prepare(
+        self, input: dict[str, Any], context: ToolContext[Any]
+    ) -> PreparedToolCall:
+        LocalWorkspace(context.cwd)
+        return PreparedToolCall(dict(input), {"transport": "local"})
+
     async def run(self, input: dict[str, Any], context: ToolContext[Any]) -> ToolExecutionResult:
         raw_pattern = input.get("pattern")
         if not isinstance(raw_pattern, str) or not raw_pattern.strip():
@@ -123,14 +135,15 @@ class GrepTool:
             input.get("max_matches"), "max_matches", DEFAULT_MATCH_LIMIT, 1_000
         )
 
-        paths = await context.sandbox.list_paths(file_glob, limit=max_files)
+        workspace = LocalWorkspace(context.cwd)
+        paths = await workspace.list_paths(file_glob, limit=max_files)
         lines: list[str] = []
         scanned = 0
         for path in paths:
             if len(lines) >= max_matches:
                 break
             try:
-                text, _ = await context.sandbox.read_text(path, max_chars=MAX_FILE_CHARS)
+                text, _ = await workspace.read_text(path, max_chars=MAX_FILE_CHARS)
             except Exception:  # noqa: BLE001 - an unreadable file is not a search failure.
                 continue
             scanned += 1

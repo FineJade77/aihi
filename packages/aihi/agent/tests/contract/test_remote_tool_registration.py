@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 
 import pytest
-from aihi.agent import HostBackend, ToolContext, ToolRegistry
+from aihi.agent import ToolContext, ToolRegistry
 from aihi.agent.mcp import (
     InMemoryMcpTransport,
     McpClient,
@@ -134,7 +134,6 @@ async def test_a_stdio_server_round_trips_through_the_registry(tmp_path: Path) -
                 cwd=str(tmp_path),
                 session_id="ses-mcp",
                 run_id="run-mcp",
-                sandbox=HostBackend(tmp_path, unsafe=True),
             ),
         )
         assert result.content == "echo: hello"

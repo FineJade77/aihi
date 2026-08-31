@@ -5,10 +5,16 @@ from __future__ import annotations
 import hashlib
 from typing import Any
 
-from aihi.agent._core.errors import ToolInputError
-from aihi.agent.tools.base import ToolContext, ToolExecutionResult
-from aihi.agent.tools.builtin.ledger import ReadLedger
-from aihi.agent.tools.spec import ToolSpec
+from aihi.agent import (
+    PreparedToolCall,
+    ToolContext,
+    ToolExecutionResult,
+    ToolInputError,
+    ToolSpec,
+)
+
+from .ledger import ReadLedger
+from .workspace import LocalWorkspace
 
 
 class EditFileTool:
@@ -36,12 +42,19 @@ class EditFileTool:
     def __init__(self, *, ledger: ReadLedger | None = None) -> None:
         self.ledger = ledger
 
+    def prepare(
+        self, input: dict[str, Any], context: ToolContext[Any]
+    ) -> PreparedToolCall:
+        prepared = dict(input)
+        prepared["path"] = str(LocalWorkspace(context.cwd).resolve_path(str(input["path"])))
+        return PreparedToolCall(prepared, {"transport": "local"})
+
     def _unread(self, path: str, context: ToolContext[Any]) -> ToolExecutionResult | None:
         """Refuse to modify a file this run has not read."""
 
         if self.ledger is None:
             return None
-        resolved = context.sandbox.resolve_path(path)
+        resolved = LocalWorkspace(context.cwd).resolve_path(path)
         if self.ledger.has_read(context.run_id, resolved):
             return None
         return ToolExecutionResult(
@@ -55,6 +68,7 @@ class EditFileTool:
 
     async def run(self, input: dict[str, Any], context: ToolContext[Any]) -> ToolExecutionResult:
         path = str(input["path"])
+        workspace = LocalWorkspace(context.cwd)
         refusal = self._unread(path, context)
         if refusal is not None:
             return refusal
@@ -66,7 +80,7 @@ class EditFileTool:
             raise ToolInputError("expected_sha256 must be a string")
         if not old_text:
             raise ToolInputError("old_text must not be empty")
-        current, truncated = await context.sandbox.read_text(path, max_chars=10_000_000)
+        current, truncated = await workspace.read_text(path, max_chars=10_000_000)
         if truncated:
             raise ToolInputError("File is too large for safe edit")
         current_sha256 = hashlib.sha256(current.encode("utf-8")).hexdigest()
@@ -78,12 +92,12 @@ class EditFileTool:
         if occurrences > 1 and not replace_all:
             raise ToolInputError("old_text matched multiple locations; set replace_all=true")
         updated = current.replace(old_text, new_text, -1 if replace_all else 1)
-        await context.sandbox.write_text(
+        await workspace.write_text(
             path,
             updated,
             expected_sha256=current_sha256,
         )
-        resolved = context.sandbox.resolve_path(path)
+        resolved = workspace.resolve_path(path)
         return ToolExecutionResult(
             content=f"Edited {resolved}; replaced {occurrences} occurrence(s).",
             metadata={

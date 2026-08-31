@@ -18,7 +18,6 @@ from aihi.agent.sandbox import HostBackend
 from aihi.agent.sessions import InMemoryEventStore, Session
 from aihi.agent.tools import ToolExecutionResult, ToolRegistry, ToolSpec
 from aihi.agent.tools.base import ToolContext
-from aihi.agent.tools.builtin import ReadFileTool, WriteFileTool
 from aihi.models import (
     Capabilities,
     FakeProvider,
@@ -34,6 +33,8 @@ from aihi.models import (
     ToolResultBlock,
     Usage,
 )
+
+from packages.aihi.agent.tests.support_tools import ReadTestTool, WriteTestTool
 
 
 class FailingAfterFirstChunkProvider:
@@ -136,7 +137,7 @@ async def test_runtime_stops_an_unbounded_tool_loop_at_max_turns(tmp_path: Path)
     )
     coordinator = RunCoordinator(
         provider,
-        registry=ToolRegistry([ReadFileTool()]),
+        registry=ToolRegistry([ReadTestTool()]),
         sandbox=HostBackend(tmp_path, unsafe=True),
     )
 
@@ -171,7 +172,7 @@ async def test_runtime_projects_only_model_visible_tool_fields(
     session = make_session(session_tmp_path, "ses-tool-projection")
     coordinator = RunCoordinator(
         provider,
-        registry=ToolRegistry([ReadFileTool()]),
+        registry=ToolRegistry([ReadTestTool()]),
         sandbox=HostBackend(session_tmp_path, unsafe=True),
     )
 
@@ -198,7 +199,7 @@ async def test_runtime_builds_one_stable_cache_family_for_the_base_prompt(
     session = make_session(session_tmp_path, "ses-cache-prefix")
     coordinator = RunCoordinator(
         provider,
-        registry=ToolRegistry([ReadFileTool()]),
+        registry=ToolRegistry([ReadTestTool()]),
         sandbox=HostBackend(session_tmp_path, unsafe=True),
     )
 
@@ -240,7 +241,7 @@ async def test_runtime_persists_redacted_cache_observability(
 
     result = await RunCoordinator(
         provider,
-        registry=ToolRegistry([ReadFileTool()]),
+        registry=ToolRegistry([ReadTestTool()]),
         sandbox=HostBackend(session_tmp_path, unsafe=True),
     ).run(
         session,
@@ -449,7 +450,7 @@ async def test_resume_after_context_state_compaction_executes_tool_once(
     )
     coordinator = RunCoordinator(
         provider,
-        registry=ToolRegistry([WriteFileTool()]),
+        registry=ToolRegistry([WriteTestTool()]),
         sandbox=HostBackend(session_tmp_path, unsafe=True),
         context_window=2_000,
         context_safety_margin=0,
@@ -570,7 +571,7 @@ async def test_runtime_soft_prunes_old_results_without_rewriting_raw_events(
     artifact_store = FileArtifactStore(session_tmp_path / "soft-prune-artifacts")
     coordinator = RunCoordinator(
         provider,
-        registry=ToolRegistry([ReadFileTool()]),
+        registry=ToolRegistry([ReadTestTool()]),
         sandbox=HostBackend(session_tmp_path, unsafe=True),
         artifact_store=artifact_store,
         context_window=15_000,
@@ -728,7 +729,7 @@ async def test_tool_call_is_persisted_before_host_execution_and_then_summarized(
     hooks.register("tool.after", record_hook)
     coordinator = RunCoordinator(
         provider,
-        registry=ToolRegistry([ReadFileTool()]),
+        registry=ToolRegistry([ReadTestTool()]),
         sandbox=HostBackend(session_tmp_path, unsafe=True),
         hooks=hooks,
     )
@@ -867,7 +868,7 @@ async def test_duplicate_tool_call_id_fails_before_second_execution() -> None:
     )
     coordinator = RunCoordinator(
         provider,
-        registry=ToolRegistry([ReadFileTool()]),
+        registry=ToolRegistry([ReadTestTool()]),
         sandbox=HostBackend(session.cwd, unsafe=True),
     )
 

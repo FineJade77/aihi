@@ -162,6 +162,7 @@ from aihi.agent.runtime import (
     RuntimeExtensions,
 )
 from aihi.agent.sandbox import (
+    CommandResult,
     DockerBackend,
     HostBackend,
     LocalIsolatedBackend,
@@ -186,16 +187,6 @@ from aihi.agent.tools import (
     ToolRegistry,
     ToolSpec,
 )
-from aihi.agent.tools.builtin import (
-    BashTool,
-    EditFileTool,
-    GlobTool,
-    GrepTool,
-    ReadFileTool,
-    ReadLedger,
-    WriteFileTool,
-)
-from aihi.agent.tools.builtin.bash import resolve_bash
 
 __all__ = [
     "AgentBudget",
@@ -210,9 +201,9 @@ __all__ = [
     "ArtifactPolicy",
     "ArtifactState",
     "ArtifactStore",
-    "BashTool",
     "CapabilityLease",
     "ChildRunSubagentRunner",
+    "CommandResult",
     "CompactionPolicy",
     "CompositeGrader",
     "ContextCompiler",
@@ -230,7 +221,6 @@ __all__ = [
     "Delegation",
     "DeterministicSummaryGenerator",
     "DockerBackend",
-    "EditFileTool",
     "EvalError",
     "EvalValidationError",
     "Event",
@@ -240,13 +230,11 @@ __all__ = [
     "FileArtifactStore",
     "FileSkillTrustStore",
     "FileTrustStore",
-    "GlobTool",
     "GoldenTask",
     "GoldenTaskGrader",
     "Grade",
     "Grader",
     "GraphReplayResult",
-    "GrepTool",
     "HarnessConformanceCase",
     "HarnessConformanceCaseResult",
     "HarnessConformanceReport",
@@ -290,8 +278,6 @@ __all__ = [
     "PluginTrustManager",
     "PolicyEngine",
     "PreparedToolCall",
-    "ReadFileTool",
-    "ReadLedger",
     "ReplayEngine",
     "ReplayInvariantViolation",
     "ReplayResult",
@@ -345,13 +331,11 @@ __all__ = [
     "TurnLimitExceeded",
     "UnsafeHostNotAcknowledged",
     "WorkspaceScope",
-    "WriteFileTool",
     "approval_input_preview",
     "new_id",
     "register_mcp_tools",
     "register_plugin_tools",
     "replay_graph",
-    "resolve_bash",
     "restrict_registry",
     "subagent_session_factory",
 ]

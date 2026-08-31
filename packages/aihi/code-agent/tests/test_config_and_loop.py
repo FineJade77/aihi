@@ -545,7 +545,6 @@ async def test_skill_trust_commands_enable_explicit_skill_loading(tmp_path) -> N
                 cwd=str(tmp_path),
                 session_id=session_id,
                 run_id="run_skill_test",
-                sandbox=runtime.runtime.sandbox,
             ),
         )
         assert result.is_error is False

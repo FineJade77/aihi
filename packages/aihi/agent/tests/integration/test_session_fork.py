@@ -12,12 +12,13 @@ from aihi.agent import (
     SQLiteEventStore,
     StaticApprovalResolver,
     ToolRegistry,
-    WriteFileTool,
 )
 from aihi.agent._core.errors import EventInvariantViolation
 from aihi.agent.evals import ReplayEngine, TraceBundle
 from aihi.agent.policy import ApprovalOutcome
 from aihi.models import FakeProvider, FakeStep, Message
+
+from packages.aihi.agent.tests.support_tools import WriteTestTool
 
 
 async def two_turn_session(tmp_path: Path, store: object | None = None) -> Session:
@@ -131,7 +132,7 @@ async def test_forking_mid_tool_call_leaves_an_orphan_the_next_run_repairs(
                 FakeStep(text="ok"),
             ]
         ),
-        registry=ToolRegistry([WriteFileTool()]),
+        registry=ToolRegistry([WriteTestTool()]),
         sandbox=HostBackend(tmp_path, unsafe=True),
         approval_resolver=StaticApprovalResolver(ApprovalOutcome.GRANTED),
     )

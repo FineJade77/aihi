@@ -6,7 +6,6 @@ from dataclasses import dataclass, field
 from typing import Any, Generic, Protocol, TypeVar
 
 from aihi.agent._core.errors import ToolInputError
-from aihi.agent.sandbox.base import SandboxBackend
 from aihi.agent.tools.spec import ToolSpec
 
 TAppContext = TypeVar("TAppContext")
@@ -24,14 +23,13 @@ class ToolContext(Generic[TAppContext]):
     cwd: str
     session_id: str
     run_id: str
-    sandbox: SandboxBackend
     # The permission mode of the enclosing run. Tools that delegate work must
     # not hand a child more authority than the parent currently holds.
     permission_mode: str = "default"
     # Application-owned execution state. The Harness passes this through
     # without interpreting workspace, product mode, credentials or UI policy.
-    # The legacy cwd/sandbox/mode fields are removed once Coding tools migrate
-    # to this explicit boundary.
+    # The legacy cwd/mode fields are removed once Coding tools migrate to this
+    # explicit boundary.
     app_context: TAppContext | None = None
 
 

@@ -7,8 +7,9 @@ from aihi.agent.sandbox import HostBackend
 from aihi.agent.sessions import InMemoryEventStore, Session
 from aihi.agent.tools import ToolExecutionResult, ToolRegistry, ToolSpec
 from aihi.agent.tools.base import ToolContext
-from aihi.agent.tools.builtin import ReadFileTool
 from aihi.models import FakeProvider, FakeStep, Message
+
+from packages.aihi.agent.tests.support_tools import ReadTestTool
 
 
 def session_for(tmp_path: Path, name: str) -> Session:
@@ -38,7 +39,7 @@ async def test_invalid_arguments_and_path_escape_become_stable_tool_errors(
     )
     coordinator = RunCoordinator(
         provider,
-        registry=ToolRegistry([ReadFileTool()]),
+        registry=ToolRegistry([ReadTestTool()]),
         sandbox=HostBackend(tmp_path, unsafe=True),
     )
 
@@ -59,7 +60,7 @@ async def test_sensitive_path_is_denied_before_host_access(tmp_path: Path) -> No
     )
     coordinator = RunCoordinator(
         provider,
-        registry=ToolRegistry([ReadFileTool()]),
+        registry=ToolRegistry([ReadTestTool()]),
         sandbox=HostBackend(tmp_path, unsafe=True),
     )
 

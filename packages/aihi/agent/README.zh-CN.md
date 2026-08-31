@@ -12,7 +12,8 @@ Approval、Sandbox 边界、Context 管理、集成能力和可观测性，供�
 - 通过显式 Runtime 组合运行有界的 model/tool turns。
 - 持久化只追加的 Event Log，并在中断后恢复 Session。
 - 编译支持 Stable Prefix 的 Context，并生成不改写历史的派生状态和 Compaction。
-- 通过 Policy、Approval、Hook 和 Sandbox backend 注册、治理和执行 Tool。
+- 通过校验、Policy、Approval 和 Hook 注册、治理和执行 Tool。
+- 通过显式选择的命令 Sandbox backend 执行模型生成的命令。
 - 集成 Skill、MCP Server、Subagent、Memory、Artifact、Telemetry、Replay 和 Eval。
 
 本包**不**选择 Provider、不实现 UI、不提供 Model Router/Gateway，也不隐藏 Tool 默认值；这些选择
@@ -27,10 +28,12 @@ Model Provider (aihi-models)
 RuntimeBuilder ──► Runtime / RunCoordinator ──► EventStore
               │                  │
               │                  ├── ContextCompiler / Compaction
-              │                  ├── ToolRegistry ──► Policy ──► Approval
-              │                  │                         │
-              │                  │                         ▼
-              │                  └── Hooks ──► SandboxBackend ──► Tool
+              │                  ├── ToolRegistry ──► Policy ──► Approval ──► Hooks ──► Tool
+              │                  │                                               │
+              │                  │                                command Tool ──┘
+              │                  │                                      │
+              │                  │                                      ▼
+              │                  │                         SandboxBackend.run_command
               │
               └── Skills / MCP / Subagents / Memory / Artifacts / Telemetry
 ~~~
@@ -66,8 +69,30 @@ uv pip install -e packages/aihi/agent
 ~~~python
 from pathlib import Path
 
-from aihi.agent import HostBackend, InMemoryEventStore, ReadFileTool, RuntimeBuilder, Session
+from aihi.agent import (
+    HostBackend,
+    InMemoryEventStore,
+    RuntimeBuilder,
+    Session,
+    ToolContext,
+    ToolExecutionResult,
+    ToolSpec,
+)
 from aihi.models import FakeProvider, FakeStep, Message
+
+
+class InspectTool:
+    spec = ToolSpec.define(
+        name="inspect",
+        description="Return application-owned inspection data.",
+        input_schema={"type": "object", "properties": {}},
+        concurrency_safe=True,
+        mutates=False,
+    )
+
+    async def run(self, input, context: ToolContext) -> ToolExecutionResult:
+        return ToolExecutionResult("Application inspection completed.")
+
 
 provider = FakeProvider([FakeStep(text="I inspected the workspace.")])
 runtime = (
@@ -75,7 +100,7 @@ runtime = (
         provider=provider,
         model="fake-model",
         sandbox=HostBackend(Path.cwd(), unsafe=True),
-        tools=[ReadFileTool()],
+        tools=[InspectTool()],
     )
     .with_max_turns(20)
     .build()
@@ -96,8 +121,9 @@ result = await runtime.coordinator.run(
 print(result.state)
 ~~~
 
-实际应用中，若环境支持，优先使用隔离 backend。\`HostBackend\` 是受控的本地执行 backend，不是
-安全隔离边界，并且要求显式确认 \`unsafe=True\`。
+Sandbox backend 只暴露命令执行，不提供文件读取、Glob 或写入 API。实际命令 Tool 若环境支持应优先
+使用隔离 backend。\`HostBackend\` 是受控的本地执行 backend，不是安全隔离边界，并且要求显式确认
+\`unsafe=True\`。
 
 ## Runtime 组合
 
@@ -123,7 +149,7 @@ Coordinator 的默认 turn budget 是有限的（\`100\`），应用可以进一
 | Runtime 与 Run | \`Runtime\`、\`RuntimeBuilder\`、\`RunCoordinator\`、\`RunResult\`、\`RunState\` |
 | Session 与存储 | \`Session\`、\`EventStore\`、\`InMemoryEventStore\`、\`SQLiteEventStore\`、\`Event\` |
 | Context | \`ContextCompiler\`、`CompactionPolicy`、`ContextState`、摘要和 Compaction Generator |
-| Tool | \`Tool\`、\`ToolSpec\`、\`ToolContext\`、`PreparedToolCall`、\`ToolRegistry\`、内置文件/Shell Tool |
+| Tool | \`Tool\`、\`ToolSpec\`、\`ToolContext\`、`PreparedToolCall`、\`ToolRegistry\` |
 | Policy 与 Approval | \`PermissionMode\`、\`DefaultPolicyEngine\`、\`Approval\`、Approval Resolver |
 | Sandbox | \`HostBackend\`、\`LocalIsolatedBackend\`、\`DockerBackend\` |
 | 集成 | Skill、MCP、Plugin、Subagent、Memory、Artifact |
@@ -139,8 +165,8 @@ Approval。Approval Lease 可以根据应用 Policy，将决定限定到一次�
 Tool 可以实现确定性且无副作用的 `prepare()`，返回 `PreparedToolCall`；Policy 和实际执行随后共享同一份
 规范化输入。`RunCoordinator.run_profile` 会持久化 JSON 应用权限快照，并在同一 Run Resume 时拒绝不同快照。
 
-内置 Tool 必须配合适合当前 Workspace 的 Sandbox 和 Policy 使用。文件读取、Glob/Grep、编辑、
-写入和 Shell 执行不是可以互换的能力。
+Harness 不提供产品级文件或 Shell Tool。应用拥有自己的 Tool 集合和本地资源语义。模型生成的命令 Tool
+应在构造时显式接收命令 Sandbox；普通 Tool 不会通过 `ToolContext` 获得 Sandbox。
 
 ## 可观测性
 

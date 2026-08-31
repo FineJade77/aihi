@@ -17,14 +17,22 @@ forms, but it is a heuristic, not a boundary: quoting defeats it.
 
 from __future__ import annotations
 
+import math
 import shutil
 from pathlib import Path
 from typing import Any
 
-from aihi.agent._core.errors import SandboxViolation, ToolInputError
-from aihi.agent.tools.base import ToolContext, ToolExecutionResult
-from aihi.agent.tools.builtin.command import format_command_result
-from aihi.agent.tools.spec import ToolSpec
+from aihi.agent import (
+    PreparedToolCall,
+    SandboxBackend,
+    SandboxViolation,
+    ToolContext,
+    ToolExecutionResult,
+    ToolInputError,
+    ToolSpec,
+)
+
+from .command import format_command_result
 
 MAX_COMMAND_LENGTH = 16_384
 
@@ -68,10 +76,39 @@ class BashTool:
         timeout_seconds=120.0,
     )
 
-    def __init__(self, *, shell_path: str | Path | None = None) -> None:
+    def __init__(
+        self, sandbox: SandboxBackend, *, shell_path: str | Path | None = None
+    ) -> None:
+        self.sandbox = sandbox
         self.shell_path = resolve_bash(shell_path)
 
+    def prepare(
+        self, input: dict[str, Any], context: ToolContext[Any]
+    ) -> PreparedToolCall:
+        del context
+        return PreparedToolCall(
+            self._normalized_input(input),
+            {
+                "transport": "sandbox",
+                "sandbox": self.sandbox.descriptor.to_dict(),
+                "cwd": str(self.sandbox.root),
+            },
+        )
+
     async def run(self, input: dict[str, Any], context: ToolContext[Any]) -> ToolExecutionResult:
+        del context
+        normalized = self._normalized_input(input)
+        command = normalized["command"]
+        timeout_seconds = normalized["timeout_seconds"]
+        max_output_chars = normalized["max_output_chars"]
+        result = await self.sandbox.run_command(
+            (self.shell_path, "-c", command),
+            timeout_seconds=timeout_seconds,
+            max_output_chars=max_output_chars,
+        )
+        return format_command_result(result, label="bash", metadata={"command": command})
+
+    def _normalized_input(self, input: dict[str, Any]) -> dict[str, Any]:
         command = input.get("command")
         if not isinstance(command, str) or not command.strip():
             raise ToolInputError("command must be a non-empty string")
@@ -79,14 +116,13 @@ class BashTool:
             raise ToolInputError(f"command exceeds {MAX_COMMAND_LENGTH} characters")
         timeout_seconds = float(input.get("timeout_seconds", self.spec.timeout_seconds))
         max_output_chars = int(input.get("max_output_chars", 100_000))
-        if timeout_seconds <= 0 or max_output_chars <= 0:
+        if not math.isfinite(timeout_seconds) or timeout_seconds <= 0 or max_output_chars <= 0:
             raise ToolInputError("timeout_seconds and max_output_chars must be positive")
-        result = await context.sandbox.run_command(
-            (self.shell_path, "-c", command),
-            timeout_seconds=timeout_seconds,
-            max_output_chars=max_output_chars,
-        )
-        return format_command_result(result, label="bash", metadata={"command": command})
+        return {
+            "command": command,
+            "timeout_seconds": timeout_seconds,
+            "max_output_chars": max_output_chars,
+        }
 
 
 __all__ = ["MAX_COMMAND_LENGTH", "BashTool", "resolve_bash"]

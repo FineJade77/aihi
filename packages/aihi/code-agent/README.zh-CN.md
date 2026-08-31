@@ -130,6 +130,13 @@ Run startup configuration 一起持久化。任何 mode 下硬安全拒绝都保
 `model` 指定的值，或 catalog 第一项。Model 只有在声明它的 Provider 下才有效；`config.get`
 向客户端返回不含 Secret 的 Provider/Model catalog。
 
+## Tool 执行边界
+
+Coding 文件 Tool（`read_file`、`glob`、`grep`、`edit_file`、`write_file`）属于应用层本地 Tool。
+它们在 Policy 前按 Session cwd 规范化路径，然后直接操作 Host Workspace，不经过 Sandbox 文件 API。
+`bash` 是唯一在构造时接收 Sandbox backend 的 Coding Tool；模型生成的任意命令只通过
+`SandboxBackend.run_command` 执行。只读 Git Tool 使用应用写死的 argv，不接受模型生成的命令。
+
 ## Skill 与 Subagent
 
 内置 Skill（`code_review`、`debug`、`refactor`、`test_writing`）属于包内容，默认隐式信任。
@@ -176,7 +183,7 @@ uv run python -m build --wheel --no-isolation packages/aihi/code-agent
 
 - 将模型输出、Tool 输入、MCP 响应、Skill 和 Subagent 输出视为不可信输入。
 - 凭据放在环境变量或外部 Secret Manager 中，不要写入 TOML 或 Event 内容。
-- 不要把 `HostBackend` 当作 Sandbox；需要进程隔离时选择隔离 backend。
+- `HostBackend` 是需要显式确认不安全性的命令 backend；`bash` 需要进程隔离时应选择隔离 backend。
 - 保持有限的 turn limit，审查 `permission_mode`，启用不安全的本地执行前必须获得显式 Host 确认。
 
 ## 相关文档

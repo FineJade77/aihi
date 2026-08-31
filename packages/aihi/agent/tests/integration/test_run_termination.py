@@ -11,10 +11,11 @@ from aihi.agent import (
     RunState,
     Session,
     ToolRegistry,
-    WriteFileTool,
 )
 from aihi.agent.evals import ReplayEngine, TraceBundle
 from aihi.models import FakeProvider, FakeStep, Message
+
+from packages.aihi.agent.tests.support_tools import WriteTestTool
 
 
 def session_for(tmp_path: Path, name: str) -> Session:
@@ -26,7 +27,7 @@ def session_for(tmp_path: Path, name: str) -> Session:
 def coordinator_for(tmp_path: Path, steps: list[FakeStep]) -> RunCoordinator:
     return RunCoordinator(
         FakeProvider(steps),
-        registry=ToolRegistry([WriteFileTool()]),
+        registry=ToolRegistry([WriteTestTool()]),
         sandbox=HostBackend(tmp_path, unsafe=True),
     )
 

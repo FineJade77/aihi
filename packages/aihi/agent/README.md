@@ -11,7 +11,8 @@ Provider-neutral, recoverable agent runtime for AIHI.
 - Run bounded model/tool turns with explicit runtime composition.
 - Persist an append-only event log and recover sessions after interruption.
 - Compile stable-prefix-aware context and compact it into derived state without rewriting history.
-- Register and execute tools through policy, approvals, hooks, and a sandbox backend.
+- Register and execute tools through validation, policy, approvals, and hooks.
+- Execute model-authored commands through an explicitly selected command Sandbox backend.
 - Integrate Skills, MCP servers, subagents, memory, artifacts, telemetry, replay, and evaluations.
 
 The package does **not** select a provider, implement a UI, provide a model router/gateway, or hide tool defaults. Applications pass those choices to `RuntimeBuilder`.
@@ -25,10 +26,12 @@ Model Provider (aihi-models)
 RuntimeBuilder ──► Runtime / RunCoordinator ──► EventStore
               │                  │
               │                  ├── ContextCompiler / Compaction
-              │                  ├── ToolRegistry ──► Policy ──► Approval
-              │                  │                         │
-              │                  │                         ▼
-              │                  └── Hooks ──► SandboxBackend ──► Tool
+              │                  ├── ToolRegistry ──► Policy ──► Approval ──► Hooks ──► Tool
+              │                  │                                               │
+              │                  │                                command Tool ──┘
+              │                  │                                      │
+              │                  │                                      ▼
+              │                  │                         SandboxBackend.run_command
               │
               └── Skills / MCP / Subagents / Memory / Artifacts / Telemetry
 ```
@@ -65,8 +68,30 @@ uv pip install -e packages/aihi/agent
 ```python
 from pathlib import Path
 
-from aihi.agent import HostBackend, InMemoryEventStore, ReadFileTool, RuntimeBuilder, Session
+from aihi.agent import (
+    HostBackend,
+    InMemoryEventStore,
+    RuntimeBuilder,
+    Session,
+    ToolContext,
+    ToolExecutionResult,
+    ToolSpec,
+)
 from aihi.models import FakeProvider, FakeStep, Message
+
+
+class InspectTool:
+    spec = ToolSpec.define(
+        name="inspect",
+        description="Return application-owned inspection data.",
+        input_schema={"type": "object", "properties": {}},
+        concurrency_safe=True,
+        mutates=False,
+    )
+
+    async def run(self, input, context: ToolContext) -> ToolExecutionResult:
+        return ToolExecutionResult("Application inspection completed.")
+
 
 provider = FakeProvider([FakeStep(text="I inspected the workspace.")])
 runtime = (
@@ -74,7 +99,7 @@ runtime = (
         provider=provider,
         model="fake-model",
         sandbox=HostBackend(Path.cwd(), unsafe=True),
-        tools=[ReadFileTool()],
+        tools=[InspectTool()],
     )
     .with_max_turns(20)
     .build()
@@ -95,7 +120,10 @@ result = await runtime.coordinator.run(
 print(result.state)
 ```
 
-For real applications, prefer an isolated backend when available. `HostBackend` is a controlled local execution backend, not a security isolation boundary, and requires an explicit `unsafe=True` acknowledgement.
+Sandbox backends expose command execution only. They do not provide file read, glob, or write APIs.
+For real command tools, prefer an isolated backend when available. `HostBackend` is a controlled
+local execution backend, not a security isolation boundary, and requires an explicit `unsafe=True`
+acknowledgement.
 
 ## Runtime composition
 
@@ -121,7 +149,7 @@ The default coordinator turn budget is finite (`100`) and can be lowered for a p
 | Runtime and runs | `Runtime`, `RuntimeBuilder`, `RunCoordinator`, `RunResult`, `RunState` |
 | Sessions and storage | `Session`, `EventStore`, `InMemoryEventStore`, `SQLiteEventStore`, `Event` |
 | Context | `ContextCompiler`, `CompactionPolicy`, `ContextState`, summaries and compaction generators |
-| Tools | `Tool`, `ToolSpec`, `ToolContext`, `PreparedToolCall`, `ToolRegistry`, built-in file/shell tools |
+| Tools | `Tool`, `ToolSpec`, `ToolContext`, `PreparedToolCall`, `ToolRegistry` |
 | Policy and approval | `PermissionMode`, `DefaultPolicyEngine`, `Approval`, approval resolvers |
 | Sandbox | `HostBackend`, `LocalIsolatedBackend`, `DockerBackend` |
 | Integrations | Skills, MCP, plugins, subagents, memory, artifacts |
@@ -138,7 +166,9 @@ method that returns `PreparedToolCall`; the normalized input is then shared by P
 `RunCoordinator.run_profile` persists a JSON application authority snapshot and rejects a different
 snapshot when the same Run is resumed.
 
-Use the built-in tools only with a sandbox and policy appropriate for the workspace. File reads, glob/grep, edits, writes, and shell execution should not be treated as interchangeable capabilities.
+The Harness ships no product file or shell tools. Applications own their tool set and local resource
+semantics. A model-authored command tool should receive a command Sandbox explicitly at construction;
+ordinary tools do not receive Sandbox access through `ToolContext`.
 
 ## Observability
 

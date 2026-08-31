@@ -131,7 +131,7 @@ async def test_plugin_remote_tool_runs_through_dispatcher(tmp_path: Path) -> Non
         sandbox = HostBackend(tmp_path, unsafe=True)
         result = await dispatcher.dispatch(
             ToolCallBlock("plugin-call", tool.spec.name, {"value": "through-dispatcher"}),
-            context=ToolContext(str(tmp_path), "ses-plugin", "run-plugin", sandbox),
+            context=ToolContext(str(tmp_path), "ses-plugin", "run-plugin"),
             permission=PermissionContext(
                 cwd=tmp_path,
                 mode="default",
@@ -155,7 +155,7 @@ async def test_plugin_host_rejects_mutating_remote_tool_before_call(tmp_path: Pa
         sandbox = HostBackend(tmp_path, unsafe=True)
         result = await dispatcher.dispatch(
             ToolCallBlock("plugin-call", tool.spec.name, {"value": "blocked"}),
-            context=ToolContext(str(tmp_path), "ses-plugin", "run-plugin", sandbox),
+            context=ToolContext(str(tmp_path), "ses-plugin", "run-plugin"),
             permission=PermissionContext(
                 cwd=tmp_path,
                 mode="default",

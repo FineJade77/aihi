@@ -7,7 +7,6 @@ from aihi.agent import (
     HostBackend,
     InMemoryEventStore,
     PermissionMode,
-    ReadFileTool,
     RunCoordinator,
     RunState,
     Session,
@@ -26,6 +25,8 @@ from aihi.agent.agents import (
 )
 from aihi.agent.policy import ApprovalOutcome
 from aihi.models import FakeProvider, FakeStep, Message
+
+from packages.aihi.agent.tests.support_tools import ReadTestTool, WriteTestTool
 
 CHILD_ANSWER = "child summarized the workspace"
 
@@ -52,7 +53,7 @@ def build(
 ) -> tuple[RunCoordinator, Session, InMemoryEventStore, ToolRegistry]:
     store = InMemoryEventStore()
     sandbox = HostBackend(tmp_path, unsafe=True)
-    full_registry = ToolRegistry([ReadFileTool()])
+    full_registry = ToolRegistry([ReadTestTool()])
 
     def coordinator_factory(spec: object, child_sandbox: object) -> RunCoordinator:
         capabilities = frozenset(getattr(spec, "capabilities", frozenset()))
@@ -211,7 +212,7 @@ async def test_sibling_limit_binds_across_calls_in_one_parent_run(tmp_path: Path
 
 @pytest.mark.asyncio
 async def test_child_restricted_registry_hides_tools_it_cannot_hold(tmp_path: Path) -> None:
-    registry = ToolRegistry([ReadFileTool()])
+    registry = ToolRegistry([ReadTestTool()])
 
     kept = restrict_registry(registry, frozenset({"filesystem.read"}))
     dropped = restrict_registry(registry, frozenset())
@@ -229,11 +230,9 @@ async def test_a_suspended_child_is_reported_without_failing_the_parent(tmp_path
 
     def coordinator_factory(spec: object, child_sandbox: object) -> RunCoordinator:
         # The child has no resolver, so its mutating call suspends the child run.
-        from aihi.agent.tools.builtin import WriteFileTool
-
         return RunCoordinator(
             FakeProvider([FakeStep.call_tool("write_file", {"path": "x.txt", "content": "x"})]),
-            registry=ToolRegistry([WriteFileTool()]),
+            registry=ToolRegistry([WriteTestTool()]),
             sandbox=child_sandbox,  # type: ignore[arg-type]
         )
 

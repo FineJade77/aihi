@@ -1,4 +1,4 @@
-"""Delegated workspace authority is enforced by the child sandbox."""
+"""Delegated command authority fails closed when a backend cannot narrow it."""
 
 from pathlib import Path
 
@@ -8,24 +8,16 @@ from aihi.agent.sandbox.scoped import ScopedSandboxBackend
 
 
 @pytest.mark.asyncio
-async def test_scoped_sandbox_rejects_parent_workspace_escape(tmp_path: Path) -> None:
+async def test_scoped_sandbox_rejects_a_narrower_or_read_only_command_scope(
+    tmp_path: Path,
+) -> None:
     delegated = tmp_path / "delegated"
     delegated.mkdir()
-    inside = delegated / "inside.txt"
-    inside.write_text("inside", encoding="utf-8")
-    outside = tmp_path / "outside.txt"
-    outside.write_text("outside", encoding="utf-8")
     sandbox = ScopedSandboxBackend(
         HostBackend(tmp_path, unsafe=True),
         WorkspaceScope(str(delegated), read_only=True),
     )
 
-    assert await sandbox.read_text("inside.txt", max_chars=100) == ("inside", False)
-    assert await sandbox.list_paths("**/*.txt", limit=10) == ("inside.txt",)
-    with pytest.raises(SandboxViolation, match="delegated workspace"):
-        await sandbox.read_text(outside, max_chars=100)
-    with pytest.raises(SandboxViolation, match="read-only"):
-        await sandbox.write_text("new.txt", "no")
     with pytest.raises(SandboxViolation, match="process execution"):
         await sandbox.run_command(
             ("true",),
@@ -34,21 +26,26 @@ async def test_scoped_sandbox_rejects_parent_workspace_escape(tmp_path: Path) ->
         )
 
 
-def test_scoped_sandbox_honors_allowed_paths(tmp_path: Path) -> None:
-    delegated = tmp_path / "delegated"
-    allowed = delegated / "allowed"
-    denied = delegated / "denied"
-    allowed.mkdir(parents=True)
-    denied.mkdir()
+def test_scoped_sandbox_rejects_a_root_outside_the_command_backend(
+    tmp_path: Path,
+) -> None:
+    outside = tmp_path.parent
+
+    with pytest.raises(SandboxViolation, match="escapes the command sandbox"):
+        ScopedSandboxBackend(
+            HostBackend(tmp_path, unsafe=True),
+            WorkspaceScope(str(outside), read_only=False),
+        )
+
+
+@pytest.mark.asyncio
+async def test_scoped_sandbox_delegates_an_unchanged_full_scope(tmp_path: Path) -> None:
     sandbox = ScopedSandboxBackend(
         HostBackend(tmp_path, unsafe=True),
-        WorkspaceScope(
-            str(delegated),
-            read_only=False,
-            allowed_paths=(str(allowed),),
-        ),
+        WorkspaceScope(str(tmp_path), read_only=False),
     )
 
-    assert sandbox.resolve_path(allowed / "file.txt") == allowed / "file.txt"
-    with pytest.raises(SandboxViolation, match="allowed paths"):
-        sandbox.resolve_path(denied / "file.txt")
+    result = await sandbox.run_command(
+        ("true",), timeout_seconds=1, max_output_chars=100
+    )
+    assert result.exit_code == 0

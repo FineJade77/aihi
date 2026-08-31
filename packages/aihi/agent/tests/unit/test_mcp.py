@@ -104,7 +104,7 @@ async def test_remote_tool_adapter_uses_dispatcher_policy_and_hooks(tmp_path) ->
     remote_tool = (await client.remote_tools("demo"))[0]
     dispatcher = ToolDispatcher(ToolRegistry([remote_tool]), DefaultPolicyEngine())
     sandbox = HostBackend(tmp_path, unsafe=True)
-    context = ToolContext("." if False else str(tmp_path), "ses-mcp", "run-mcp", sandbox)
+    context = ToolContext("." if False else str(tmp_path), "ses-mcp", "run-mcp")
     permission = PermissionContext(
         cwd=tmp_path,
         mode="default",
@@ -146,7 +146,7 @@ async def test_mutating_mcp_tool_is_stopped_by_policy_before_remote_call(tmp_pat
 
     result = await dispatcher.dispatch(
         ToolCallBlock("call-1", remote_tool.spec.name, {}),
-        context=ToolContext(str(tmp_path), "ses-mcp", "run-mcp", sandbox),
+        context=ToolContext(str(tmp_path), "ses-mcp", "run-mcp"),
         permission=permission,
     )
 

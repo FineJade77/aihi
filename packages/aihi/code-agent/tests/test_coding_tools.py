@@ -34,7 +34,6 @@ async def test_git_status_and_diff_are_read_only_workspace_tools(tmp_path: Path)
         cwd=str(tmp_path),
         session_id="session",
         run_id="run",
-        sandbox=sandbox,
     )
 
     status = await GitStatusTool().run({}, context)

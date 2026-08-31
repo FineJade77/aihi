@@ -15,8 +15,9 @@ from aihi.agent.runtime import RunCoordinator, RunState
 from aihi.agent.sandbox import HostBackend
 from aihi.agent.sessions import InMemoryEventStore, Session, SQLiteEventStore
 from aihi.agent.tools import ToolRegistry
-from aihi.agent.tools.builtin import WriteFileTool
 from aihi.models import FakeProvider, FakeStep, Message, ToolCallBlock
+
+from packages.aihi.agent.tests.support_tools import WriteTestTool
 
 
 def session_for(tmp_path: Path, name: str, store: object | None = None) -> Session:
@@ -32,7 +33,7 @@ def session_for(tmp_path: Path, name: str, store: object | None = None) -> Sessi
 def coordinator_for(tmp_path: Path, provider: FakeProvider, **kwargs: object) -> RunCoordinator:
     return RunCoordinator(
         provider,
-        registry=ToolRegistry([WriteFileTool()]),
+        registry=ToolRegistry([WriteTestTool()]),
         sandbox=HostBackend(tmp_path, unsafe=True),
         **kwargs,  # type: ignore[arg-type]
     )

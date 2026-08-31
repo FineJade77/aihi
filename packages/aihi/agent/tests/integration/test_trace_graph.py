@@ -6,7 +6,6 @@ import pytest
 from aihi.agent import (
     HostBackend,
     InMemoryEventStore,
-    ReadFileTool,
     RunCoordinator,
     RunState,
     Session,
@@ -28,13 +27,15 @@ from aihi.agent.evals.errors import EvalValidationError
 from aihi.agent.policy import ApprovalOutcome
 from aihi.models import FakeProvider, FakeStep, Message
 
+from packages.aihi.agent.tests.support_tools import ReadTestTool
+
 
 async def delegated_run(tmp_path: Path) -> tuple[Session, InMemoryEventStore, str]:
     """Run a parent that delegates one task, and return both logs."""
 
     store = InMemoryEventStore()
     sandbox = HostBackend(tmp_path, unsafe=True)
-    tools = ToolRegistry([ReadFileTool()])
+    tools = ToolRegistry([ReadTestTool()])
 
     def coordinator_factory(spec: object, child_sandbox: object) -> RunCoordinator:
         capabilities = frozenset(getattr(spec, "capabilities", frozenset()))

@@ -16,7 +16,6 @@ from aihi.agent import (
     MemoryScope,
     MemoryService,
     ModelSummaryGenerator,
-    ReadFileTool,
     RunState,
     RuntimeBuilder,
     Session,
@@ -29,13 +28,15 @@ from aihi.agent import (
 )
 from aihi.models import FakeProvider, FakeStep, Message
 
+from packages.aihi.agent.tests.support_tools import ReadTestTool
+
 
 def builder_for(tmp_path: Path, steps: list[FakeStep] | None = None) -> RuntimeBuilder:
     return RuntimeBuilder(
         provider=FakeProvider(steps or [FakeStep(text="ok")]),
         model="fake-model",
         sandbox=HostBackend(tmp_path, unsafe=True),
-        tools=[ReadFileTool()],
+        tools=[ReadTestTool()],
     )
 
 
@@ -72,7 +73,7 @@ def test_the_provider_is_injected_without_hidden_wrapping(tmp_path: Path) -> Non
         provider=provider,
         model="fake-model",
         sandbox=HostBackend(tmp_path, unsafe=True),
-        tools=[ReadFileTool()],
+        tools=[ReadTestTool()],
     ).build()
 
     assert runtime.provider is provider
@@ -210,7 +211,7 @@ async def test_subagent_runtime_enforces_the_delegated_workspace(tmp_path: Path)
             ),
             model="fake-model",
             sandbox=HostBackend(tmp_path, unsafe=True),
-            tools=[ReadFileTool()],
+            tools=[ReadTestTool()],
         )
         .with_approvals(StaticApprovalResolver(ApprovalOutcome.GRANTED))
         .with_subagents(

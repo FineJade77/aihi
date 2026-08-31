@@ -110,7 +110,6 @@ async def test_dispatch_prepares_valid_input_before_policy_and_execution(tmp_pat
             cwd=str(tmp_path),
             session_id="ses-prepared",
             run_id="run-prepared",
-            sandbox=sandbox,
             app_context=app_context,
         ),
         permission=PermissionContext(

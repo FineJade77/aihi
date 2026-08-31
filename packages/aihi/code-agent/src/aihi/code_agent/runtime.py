@@ -101,7 +101,13 @@ class CodeAgentRuntime:
             SkillTrustManager(trust_store, discovery=skill_discovery),
             discovery=skill_discovery,
         )
-        tools = build_tools(ToolBuildContext(config=config, skill_loader=skill_loader))
+        tools = build_tools(
+            ToolBuildContext(
+                config=config,
+                skill_loader=skill_loader,
+                command_sandbox=sandbox,
+            )
+        )
         builder = RuntimeBuilder(
             provider=provider,
             model=config.provider.model,

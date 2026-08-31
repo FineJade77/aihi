@@ -13,7 +13,7 @@ from aihi.agent.runtime import RunCoordinator, RunState
 from aihi.agent.sandbox import HostBackend
 from aihi.agent.sessions import InMemoryEventStore, Session
 from aihi.agent.tools import ToolRegistry
-from aihi.agent.tools.builtin import BashTool, ReadFileTool, WriteFileTool
+from aihi.code_agent.tools import BashTool, ReadFileTool, WriteFileTool
 from aihi.models import FakeProvider, FakeStep, Message
 
 
@@ -102,7 +102,9 @@ async def test_accept_edits_run_suspends_before_executing_a_command(tmp_path: Pa
     )
     coordinator = RunCoordinator(
         provider,
-        registry=ToolRegistry([BashTool(), WriteFileTool()]),
+        registry=ToolRegistry(
+            [BashTool(HostBackend(tmp_path, unsafe=True)), WriteFileTool()]
+        ),
         sandbox=HostBackend(tmp_path, unsafe=True),
     )
 

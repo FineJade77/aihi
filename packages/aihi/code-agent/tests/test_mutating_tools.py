@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from aihi.agent._core.errors import SandboxViolation, ToolInputError
+from aihi.agent import SandboxViolation, ToolInputError
 from aihi.agent.policy import (
     Approval,
     CapabilityLease,
@@ -14,7 +14,7 @@ from aihi.agent.policy import (
 )
 from aihi.agent.sandbox import HostBackend
 from aihi.agent.tools import ToolContext, ToolDispatcher, ToolRegistry
-from aihi.agent.tools.builtin import BashTool, EditFileTool, WriteFileTool
+from aihi.code_agent.tools import BashTool, EditFileTool, LocalWorkspace, WriteFileTool
 from aihi.models import ToolCallBlock
 
 
@@ -23,7 +23,6 @@ def context(tmp_path: Path) -> ToolContext:
         cwd=str(tmp_path),
         session_id="ses-tools",
         run_id="run-tools",
-        sandbox=HostBackend(tmp_path, unsafe=True),
     )
 
 
@@ -48,7 +47,7 @@ async def test_write_file_is_atomic_and_rejects_path_escape(tmp_path: Path) -> N
         {"path": "note.txt", "content": "second", "expected_sha256": digest}, tool_context
     )
     assert (tmp_path / "note.txt").read_text(encoding="utf-8") == "second"
-    with pytest.raises(SandboxViolation):
+    with pytest.raises(ToolInputError):
         await tool.run({"path": "../escape.txt", "content": "no"}, tool_context)
 
 
@@ -57,14 +56,14 @@ async def test_expected_digest_allows_only_one_concurrent_writer(tmp_path: Path)
     path = tmp_path / "concurrent.txt"
     path.write_text("base", encoding="utf-8")
     digest = hashlib.sha256(b"base").hexdigest()
-    backend = HostBackend(tmp_path, unsafe=True)
+    workspace = LocalWorkspace(tmp_path)
     results = await asyncio.gather(
-        backend.write_text("concurrent.txt", "first", expected_sha256=digest),
-        backend.write_text("concurrent.txt", "second", expected_sha256=digest),
+        workspace.write_text("concurrent.txt", "first", expected_sha256=digest),
+        workspace.write_text("concurrent.txt", "second", expected_sha256=digest),
         return_exceptions=True,
     )
     assert sum(result is None for result in results) == 1
-    assert sum(isinstance(result, SandboxViolation) for result in results) == 1
+    assert sum(isinstance(result, ToolInputError) for result in results) == 1
     assert path.read_text(encoding="utf-8") in {"first", "second"}
 
 
@@ -105,7 +104,7 @@ async def test_edit_file_requires_exact_match_and_rejects_stale_digest(tmp_path:
 @pytest.mark.asyncio
 async def test_shell_and_test_tools_enforce_timeout_and_output_limits(tmp_path: Path) -> None:
     tool_context = context(tmp_path)
-    shell = BashTool()
+    shell = BashTool(HostBackend(tmp_path, unsafe=True))
     success = await shell.run(
         {"command": f"{sys.executable} -c \"print('ok')\"", "max_output_chars": 2}, tool_context
     )
@@ -142,6 +141,8 @@ async def test_policy_requires_approval_or_lease_before_mutating_tool(tmp_path: 
         permission=permission(tmp_path),
     )
     assert asked.result.metadata["error_code"] == "permission_approval_required"
+    assert asked.prepared_input["path"] == str((tmp_path / "x.txt").resolve())
+    assert asked.execution == {"transport": "local"}
     assert not (tmp_path / "x.txt").exists()
 
     approved = await dispatcher.dispatch(
@@ -219,13 +220,15 @@ async def test_host_backend_timeout_cleans_descendant_holding_pipe(tmp_path: Pat
 
 
 @pytest.mark.asyncio
-async def test_host_backend_read_does_not_require_directory_write_access(tmp_path: Path) -> None:
+async def test_local_workspace_read_does_not_require_directory_write_access(
+    tmp_path: Path,
+) -> None:
     path = tmp_path / "readonly.txt"
     path.write_text("readable", encoding="utf-8")
     tmp_path.chmod(0o555)
     try:
-        backend = HostBackend(tmp_path, unsafe=True)
-        content, truncated = await backend.read_text("readonly.txt", max_chars=100)
+        workspace = LocalWorkspace(tmp_path)
+        content, truncated = await workspace.read_text("readonly.txt", max_chars=100)
     finally:
         tmp_path.chmod(0o755)
     assert content == "readable"

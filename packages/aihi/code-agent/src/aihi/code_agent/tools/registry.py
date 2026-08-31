@@ -6,9 +6,10 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from aihi.agent import ReadLedger, SkillLoader, Tool
+from aihi.agent import SandboxBackend, SkillLoader, Tool
 
 from ..config import CodeAgentConfig
+from .ledger import ReadLedger
 
 
 @dataclass(frozen=True, slots=True)
@@ -17,6 +18,7 @@ class ToolBuildContext:
 
     config: CodeAgentConfig
     skill_loader: SkillLoader | None = None
+    command_sandbox: SandboxBackend | None = None
     # Shared by read_file and the mutating tools so an edit cannot precede a read.
     ledger: ReadLedger = field(default_factory=ReadLedger)
 

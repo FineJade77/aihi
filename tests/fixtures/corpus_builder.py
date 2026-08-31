@@ -29,17 +29,17 @@ from aihi.agent import (
     MemoryScope,
     MemoryService,
     PermissionMode,
-    ReadFileTool,
     RunCoordinator,
     Session,
     StaticApprovalResolver,
     ToolRegistry,
     WorkspaceScope,
-    WriteFileTool,
 )
 from aihi.agent._core.events import Event
 from aihi.agent.agents.graph import TaskGraph
 from aihi.models import FakeProvider, FakeStep, Message
+
+from packages.aihi.agent.tests.support_tools import ReadTestTool, WriteTestTool
 
 FIXED_TIME = "2026-01-01T00:00:00+00:00"
 _GENERATED_ID = re.compile(r"^[a-z][a-z0-9_]*_[0-9a-f]{24}$")
@@ -56,7 +56,9 @@ def _coordinator(
 ) -> RunCoordinator:
     return RunCoordinator(
         FakeProvider(steps),
-        registry=ToolRegistry(tools if tools is not None else [WriteFileTool(), ReadFileTool()]),
+        registry=ToolRegistry(
+            tools if tools is not None else [WriteTestTool(), ReadTestTool()]
+        ),
         sandbox=HostBackend(tmp_path, unsafe=True),
         approval_resolver=None if outcome is None else StaticApprovalResolver(outcome),
         **kwargs,
@@ -172,7 +174,7 @@ async def _delegating_session(root: Path, store: InMemoryEventStore) -> Session:
         subagent_session_factory,
     )
 
-    tools = ToolRegistry([ReadFileTool()])
+    tools = ToolRegistry([ReadTestTool()])
     sandbox = HostBackend(root, unsafe=True)
     runner = ChildRunSubagentRunner(
         lambda spec, child_sandbox: RunCoordinator(

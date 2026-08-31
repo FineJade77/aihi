@@ -110,13 +110,14 @@ def test_child_runs_inherit_context_contributors() -> None:
         AgentBudget,
         HostBackend,
         InMemoryEventStore,
-        ReadFileTool,
         RuntimeBuilder,
         SubagentAuthority,
         WorkspaceScope,
     )
     from aihi.agent.runtime.extensions import ContextSection
     from aihi.models import FakeProvider
+
+    from packages.aihi.agent.tests.support_tools import ReadTestTool
 
     class Marker:
         def sections(self, request: object) -> tuple[ContextSection, ...]:
@@ -131,7 +132,7 @@ def test_child_runs_inherit_context_contributors() -> None:
             provider=FakeProvider(),
             model="demo",
             sandbox=HostBackend(workspace, unsafe=True),
-            tools=[ReadFileTool()],
+            tools=[ReadTestTool()],
         )
         .with_context_contributors(Marker())
         .with_subagents(

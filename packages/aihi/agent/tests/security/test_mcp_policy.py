@@ -37,7 +37,7 @@ async def test_mcp_mutating_tool_is_denied_before_remote_execution(tmp_path) -> 
 
     result = await dispatcher.dispatch(
         ToolCallBlock("mcp-call", tool.spec.name, {}),
-        context=ToolContext(str(tmp_path), "ses-mcp", "run-mcp", sandbox),
+        context=ToolContext(str(tmp_path), "ses-mcp", "run-mcp"),
         permission=PermissionContext(
             cwd=tmp_path,
             mode="default",

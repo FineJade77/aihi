@@ -3,18 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-import fcntl
-import hashlib
+import math
 import os
 import signal
-import tempfile
-from collections.abc import Iterator
-from contextlib import contextmanager
 from pathlib import Path
 
 from aihi.agent._core.errors import SandboxViolation, UnsafeHostNotAcknowledged
 from aihi.agent.sandbox.base import CommandResult, SandboxDescriptor
-from aihi.agent.sandbox.walk import glob_paths
 
 
 class HostBackend:
@@ -48,111 +43,6 @@ class HostBackend:
     def root(self) -> Path:
         return self._root
 
-    def resolve_path(self, path: str | Path) -> Path:
-        requested = Path(path).expanduser()
-        candidate = requested if requested.is_absolute() else self._root / requested
-        resolved = candidate.resolve(strict=False)
-        try:
-            inside = os.path.commonpath((str(self._root), str(resolved))) == str(self._root)
-        except ValueError:
-            inside = False
-        if not inside:
-            raise SandboxViolation(f"Path escapes workspace root: {path}")
-        return resolved
-
-    async def read_text(self, path: str | Path, *, max_chars: int) -> tuple[str, bool]:
-        resolved = self.resolve_path(path)
-        if max_chars <= 0:
-            raise SandboxViolation("max_chars must be positive")
-        return await asyncio.to_thread(self._read_text_sync, resolved, max_chars)
-
-    async def list_paths(self, pattern: str, *, limit: int) -> tuple[str, ...]:
-        """Workspace-relative files matching a glob, bounded and symlink-safe."""
-
-        try:
-            matches = await asyncio.to_thread(glob_paths, self._root, pattern, limit=limit)
-        except ValueError as error:
-            raise SandboxViolation(str(error)) from error
-        return tuple(str(match.relative_to(self._root)) for match in matches)
-
-    async def write_text(
-        self,
-        path: str | Path,
-        content: str,
-        *,
-        expected_sha256: str | None = None,
-    ) -> None:
-        resolved = self.resolve_path(path)
-        await asyncio.to_thread(self._write_text_sync, resolved, content, expected_sha256)
-
-    @staticmethod
-    def _write_text_sync(path: Path, content: str, expected_sha256: str | None) -> None:
-        if not path.parent.is_dir():
-            raise SandboxViolation(f"Parent directory does not exist: {path.parent}")
-        if path.exists() and not path.is_file():
-            raise SandboxViolation(f"Not a writable file: {path}")
-        with HostBackend._path_lock(path):
-            if expected_sha256 is not None:
-                if not path.is_file():
-                    raise SandboxViolation(
-                        "Expected file digest was supplied but file does not exist"
-                    )
-                actual = hashlib.sha256(path.read_bytes()).hexdigest()
-                if actual != expected_sha256:
-                    raise SandboxViolation(
-                        "File changed since it was read",
-                        details={"expected_sha256": expected_sha256, "actual_sha256": actual},
-                    )
-            encoded = content.encode("utf-8")
-            temporary_path: str | None = None
-            try:
-                with tempfile.NamedTemporaryFile(
-                    mode="wb", dir=path.parent, prefix=f".{path.name}.", delete=False
-                ) as temporary:
-                    temporary.write(encoded)
-                    temporary.flush()
-                    os.fsync(temporary.fileno())
-                    temporary_path = temporary.name
-                os.replace(temporary_path, path)
-            finally:
-                if temporary_path is not None and os.path.exists(temporary_path):
-                    os.unlink(temporary_path)
-
-    @staticmethod
-    def _read_text_sync(path: Path, max_chars: int) -> tuple[str, bool]:
-        if not path.is_file():
-            raise SandboxViolation(f"Not a readable file: {path}")
-        with HostBackend._path_lock(path, shared=True):
-            if not path.is_file():
-                raise SandboxViolation(f"Not a readable file: {path}")
-            raw = path.read_bytes()
-            if b"\x00" in raw[:8_192]:
-                raise SandboxViolation(f"Binary file refused: {path}")
-            text = raw.decode("utf-8", errors="replace")
-            if len(text) <= max_chars:
-                return text, False
-            return text[:max_chars], True
-
-    @staticmethod
-    @contextmanager
-    def _path_lock(path: Path, *, shared: bool = False) -> Iterator[None]:
-        """Coordinate operations by locking the current file inode when present.
-
-        This avoids creating sidecar files, including in read-only workspaces. The
-        lock is cooperative: arbitrary external processes can still ignore it.
-        """
-        try:
-            lock = path.open("rb")
-        except FileNotFoundError:
-            yield
-            return
-        with lock:
-            fcntl.flock(lock.fileno(), fcntl.LOCK_SH if shared else fcntl.LOCK_EX)
-            try:
-                yield
-            finally:
-                fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
-
     async def run_command(
         self,
         argv: tuple[str, ...],
@@ -162,10 +52,19 @@ class HostBackend:
     ) -> CommandResult:
         if not argv or not all(isinstance(part, str) and part for part in argv):
             raise SandboxViolation("Command argv must contain non-empty strings")
-        if timeout_seconds <= 0:
-            raise SandboxViolation("timeout_seconds must be positive")
-        if max_output_chars <= 0:
-            raise SandboxViolation("max_output_chars must be positive")
+        if (
+            not isinstance(timeout_seconds, (int, float))
+            or isinstance(timeout_seconds, bool)
+            or not math.isfinite(timeout_seconds)
+            or timeout_seconds <= 0
+        ):
+            raise SandboxViolation("timeout_seconds must be finite and positive")
+        if (
+            not isinstance(max_output_chars, int)
+            or isinstance(max_output_chars, bool)
+            or max_output_chars <= 0
+        ):
+            raise SandboxViolation("max_output_chars must be a positive integer")
         process = await asyncio.create_subprocess_exec(
             *argv,
             cwd=self._root,

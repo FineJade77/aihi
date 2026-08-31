@@ -16,7 +16,7 @@ library ends up shipping product decisions.
             provider=provider,
             model="model-id",
             sandbox=sandbox,
-            tools=[ReadFileTool()],
+            tools=[application_tool],
         )
         .with_artifacts()
         .with_telemetry(Path("telemetry.jsonl"))

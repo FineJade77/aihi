@@ -4,10 +4,9 @@ import sys
 from pathlib import Path
 
 import pytest
-from aihi.agent import HostBackend, ToolContext
-from aihi.agent._core.errors import SandboxViolation, ToolInputError
-from aihi.agent.tools.builtin import BashTool
-from aihi.agent.tools.builtin.bash import MAX_COMMAND_LENGTH, resolve_bash
+from aihi.agent import HostBackend, SandboxViolation, ToolContext, ToolInputError
+from aihi.code_agent.tools import BashTool, resolve_bash
+from aihi.code_agent.tools.bash import MAX_COMMAND_LENGTH
 
 
 def ctx(tmp_path: Path) -> ToolContext:
@@ -15,16 +14,25 @@ def ctx(tmp_path: Path) -> ToolContext:
         cwd=str(tmp_path),
         session_id="ses-bash",
         run_id="run-bash",
-        sandbox=HostBackend(tmp_path, unsafe=True),
     )
+
+
+def test_bash_preparation_records_the_injected_command_sandbox(tmp_path: Path) -> None:
+    sandbox = HostBackend(tmp_path, unsafe=True)
+    prepared = BashTool(sandbox).prepare({"command": "pwd"}, ctx(tmp_path))
+
+    assert prepared.execution["transport"] == "sandbox"
+    assert prepared.execution["sandbox"] == sandbox.descriptor.to_dict()
+    assert prepared.execution["cwd"] == str(tmp_path.resolve())
 
 
 @pytest.mark.asyncio
 async def test_shell_syntax_actually_works(tmp_path: Path) -> None:
     (tmp_path / "a.txt").write_text("one\ntwo\nthree\n", encoding="utf-8")
 
-    piped = await BashTool().run({"command": "cat a.txt | head -2"}, ctx(tmp_path))
-    chained = await BashTool().run({"command": "mkdir -p sub && echo ok > sub/out"}, ctx(tmp_path))
+    tool = BashTool(HostBackend(tmp_path, unsafe=True))
+    piped = await tool.run({"command": "cat a.txt | head -2"}, ctx(tmp_path))
+    chained = await tool.run({"command": "mkdir -p sub && echo ok > sub/out"}, ctx(tmp_path))
 
     assert piped.content.splitlines() == ["one", "two"]
     assert chained.is_error is False
@@ -35,7 +43,9 @@ async def test_shell_syntax_actually_works(tmp_path: Path) -> None:
 async def test_the_command_is_an_argument_not_a_second_shell(tmp_path: Path) -> None:
     """bash is exec'd explicitly, so the sandbox never re-parses the string."""
 
-    result = await BashTool().run({"command": "printf '%s' \"$0\""}, ctx(tmp_path))
+    result = await BashTool(HostBackend(tmp_path, unsafe=True)).run(
+        {"command": "printf '%s' \"$0\""}, ctx(tmp_path)
+    )
 
     assert result.is_error is False
     assert result.content.endswith("bash")
@@ -44,7 +54,7 @@ async def test_the_command_is_an_argument_not_a_second_shell(tmp_path: Path) -> 
 @pytest.mark.asyncio
 async def test_cwd_is_the_workspace_and_cd_does_not_carry_over(tmp_path: Path) -> None:
     (tmp_path / "sub").mkdir()
-    tool = BashTool()
+    tool = BashTool(HostBackend(tmp_path, unsafe=True))
 
     await tool.run({"command": "cd sub"}, ctx(tmp_path))
     after = await tool.run({"command": "pwd"}, ctx(tmp_path))
@@ -54,7 +64,9 @@ async def test_cwd_is_the_workspace_and_cd_does_not_carry_over(tmp_path: Path) -
 
 @pytest.mark.asyncio
 async def test_a_failing_command_is_a_result_not_an_exception(tmp_path: Path) -> None:
-    result = await BashTool().run({"command": "exit 7"}, ctx(tmp_path))
+    result = await BashTool(HostBackend(tmp_path, unsafe=True)).run(
+        {"command": "exit 7"}, ctx(tmp_path)
+    )
 
     assert result.is_error is True
     assert result.metadata["exit_code"] == 7
@@ -63,7 +75,7 @@ async def test_a_failing_command_is_a_result_not_an_exception(tmp_path: Path) ->
 
 @pytest.mark.asyncio
 async def test_timeouts_and_output_caps_still_apply(tmp_path: Path) -> None:
-    tool = BashTool()
+    tool = BashTool(HostBackend(tmp_path, unsafe=True))
 
     slow = await tool.run(
         {"command": f"{sys.executable} -c 'import time; time.sleep(1)'", "timeout_seconds": 0.05},
@@ -79,7 +91,7 @@ async def test_timeouts_and_output_caps_still_apply(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_empty_and_oversized_commands_are_rejected(tmp_path: Path) -> None:
-    tool = BashTool()
+    tool = BashTool(HostBackend(tmp_path, unsafe=True))
 
     with pytest.raises(ToolInputError):
         await tool.run({"command": "   "}, ctx(tmp_path))

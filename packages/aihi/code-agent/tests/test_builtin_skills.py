@@ -88,7 +88,6 @@ async def test_load_skill_is_available_without_any_skills_configuration(tmp_path
                 cwd=str(tmp_path),
                 session_id="session_builtin",
                 run_id="run_builtin",
-                sandbox=runtime.runtime.sandbox,
             ),
         )
         assert result.is_error is False

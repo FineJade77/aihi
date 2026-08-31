@@ -119,6 +119,15 @@ API keys stay in environment variables; configuration exposes only non-secret me
 
 Each provider can expose multiple models through `models = [...]`. The provider's active/default model is `model` or the first catalog entry. A model is valid only for the provider that declares it; `config.get` returns the non-secret provider/model catalog to clients.
 
+## Tool execution boundary
+
+Coding file tools (`read_file`, `glob`, `grep`, `edit_file`, and `write_file`) are
+application-owned local tools. They canonicalize paths against the session cwd before Policy and
+operate directly on the host workspace; they are not routed through a Sandbox filesystem API.
+`bash` is the only Coding tool constructed with a Sandbox backend, and arbitrary model-authored
+commands execute exclusively through `SandboxBackend.run_command`. The read-only Git tools use
+closed, application-authored argv and do not accept a model-authored command.
+
 ## Skills and subagents
 
 Built-in Skills (`code_review`, `debug`, `refactor`, and `test_writing`) are package content and are trusted implicitly. User, project, and workspace Skills require explicit trust before loading. The model-facing Skill index is emitted only when the load tool is available; use the `load_skill` tool with the plain Skill name (for example `code_review`), not a display name with a version suffix.
@@ -160,7 +169,7 @@ Run the complete workspace checks from the [repository README](../../../README.m
 
 - Treat model output, tool input, MCP responses, Skills, and subagent output as untrusted.
 - Keep credentials in environment variables or an external secret manager, never in TOML or event content.
-- Do not use `HostBackend` as a sandbox; choose an isolated backend when process isolation matters.
+- `HostBackend` is an explicitly unsafe command backend; choose an isolated backend for `bash` when process isolation matters.
 - Keep a finite turn limit, review `permission_mode`, and require explicit host acknowledgement before enabling unsafe local execution.
 
 ## Related documentation

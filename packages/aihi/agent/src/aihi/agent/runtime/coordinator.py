@@ -1103,7 +1103,6 @@ class RunCoordinator:
             cwd=str(session.cwd),
             session_id=session.id,
             run_id=run_id,
-            sandbox=self.sandbox,
             permission_mode=permission_mode.value,
             app_context=app_context,
         )
