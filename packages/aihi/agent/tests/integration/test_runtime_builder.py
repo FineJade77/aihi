@@ -7,16 +7,15 @@ from aihi.agent import (
     SPAWN_CAPABILITY,
     AgentBudget,
     ApprovalOutcome,
+    ChildRunContext,
     DefaultPolicyEngine,
     HookBus,
-    HostBackend,
     InMemoryEventStore,
     InMemoryMemoryStore,
     MemoryAccess,
     MemoryScope,
     MemoryService,
     ModelSummaryGenerator,
-    ReadFileTool,
     RunState,
     RuntimeBuilder,
     Session,
@@ -25,17 +24,17 @@ from aihi.agent import (
     SkillScope,
     StaticApprovalResolver,
     SubagentAuthority,
-    WorkspaceScope,
 )
 from aihi.models import FakeProvider, FakeStep, Message
+
+from packages.aihi.agent.tests.support_tools import ReadTestTool, app_session_factory
 
 
 def builder_for(tmp_path: Path, steps: list[FakeStep] | None = None) -> RuntimeBuilder:
     return RuntimeBuilder(
         provider=FakeProvider(steps or [FakeStep(text="ok")]),
         model="fake-model",
-        sandbox=HostBackend(tmp_path, unsafe=True),
-        tools=[ReadFileTool()],
+        tools=[ReadTestTool(tmp_path)],
     )
 
 
@@ -46,7 +45,6 @@ def test_policy_decisions_have_no_defaults(tmp_path: Path) -> None:
         RuntimeBuilder(
             provider=FakeProvider(),
             model="fake-model",
-            sandbox=HostBackend(tmp_path, unsafe=True),
             tools=[],
         )
     with pytest.raises(TypeError):
@@ -71,8 +69,7 @@ def test_the_provider_is_injected_without_hidden_wrapping(tmp_path: Path) -> Non
     runtime = RuntimeBuilder(
         provider=provider,
         model="fake-model",
-        sandbox=HostBackend(tmp_path, unsafe=True),
-        tools=[ReadFileTool()],
+        tools=[ReadTestTool(tmp_path)],
     ).build()
 
     assert runtime.provider is provider
@@ -83,7 +80,7 @@ def test_the_provider_is_injected_without_hidden_wrapping(tmp_path: Path) -> Non
 def test_each_with_call_returns_a_new_builder(tmp_path: Path) -> None:
     base = builder_for(tmp_path)
 
-    extended = base.with_artifacts()
+    extended = base.with_artifacts(tmp_path / "artifacts")
 
     assert base.artifact_store is None
     assert extended.artifact_store is not None
@@ -94,14 +91,12 @@ def test_each_with_call_returns_a_new_builder(tmp_path: Path) -> None:
 async def test_an_assembled_runtime_actually_runs(tmp_path: Path) -> None:
     runtime = (
         builder_for(tmp_path, [FakeStep(text="assembled")])
-        .with_artifacts()
+        .with_artifacts(tmp_path / "artifacts")
         .with_telemetry(tmp_path / "telemetry.jsonl")
         .with_approvals(StaticApprovalResolver(ApprovalOutcome.GRANTED))
         .build()
     )
-    session = Session.create(
-        InMemoryEventStore(), cwd=tmp_path, provider="fake", model="fake-model"
-    )
+    session = Session.create(InMemoryEventStore())
 
     result = await runtime.coordinator.run(
         session, model=runtime.model, user_message=Message.text("user", "hi")
@@ -164,7 +159,6 @@ def test_compaction_uses_the_named_model(tmp_path: Path) -> None:
 def test_subagents_require_an_explicit_authority_and_model(tmp_path: Path) -> None:
     authority = SubagentAuthority(
         budget=AgentBudget(max_tokens=512, timeout_seconds=10.0, max_tool_calls=2),
-        workspace=WorkspaceScope(root=str(tmp_path), read_only=True),
         capabilities=frozenset({SPAWN_CAPABILITY, "filesystem.read"}),
     )
     store = InMemoryEventStore()
@@ -172,16 +166,17 @@ def test_subagents_require_an_explicit_authority_and_model(tmp_path: Path) -> No
     # Provider/model are required by the API; the builder never invents either.
     with pytest.raises(TypeError):
         builder_for(tmp_path).with_subagents(  # type: ignore[call-arg]
-            authority=authority, store=store
+            authority=authority
         )
 
     runtime = (
         builder_for(tmp_path)
         .with_subagents(
             authority=authority,
-            store=store,
             provider=FakeProvider(),
             model="small",
+            child_context_factory=lambda spec, context: ChildRunContext(),
+            session_factory=app_session_factory(store, workspace=tmp_path, model="small"),
         )
         .build()
     )
@@ -192,15 +187,10 @@ def test_subagents_require_an_explicit_authority_and_model(tmp_path: Path) -> No
 
 
 @pytest.mark.asyncio
-async def test_subagent_runtime_enforces_the_delegated_workspace(tmp_path: Path) -> None:
-    delegated = tmp_path / "delegated"
-    delegated.mkdir()
-    outside = tmp_path / "outside.txt"
-    outside.write_text("parent-only", encoding="utf-8")
+async def test_subagent_runtime_persists_injected_application_authority(tmp_path: Path) -> None:
     store = InMemoryEventStore()
     authority = SubagentAuthority(
         budget=AgentBudget(max_tokens=512, timeout_seconds=10.0, max_tool_calls=2),
-        workspace=WorkspaceScope(root=str(delegated), read_only=True),
         capabilities=frozenset({SPAWN_CAPABILITY, "filesystem.read"}),
     )
     runtime = (
@@ -209,28 +199,23 @@ async def test_subagent_runtime_enforces_the_delegated_workspace(tmp_path: Path)
                 [FakeStep.call_tool("task", {"objective": "read outside"}), FakeStep(text="done")]
             ),
             model="fake-model",
-            sandbox=HostBackend(tmp_path, unsafe=True),
-            tools=[ReadFileTool()],
+            tools=[ReadTestTool(tmp_path)],
         )
         .with_approvals(StaticApprovalResolver(ApprovalOutcome.GRANTED))
         .with_subagents(
             authority=authority,
-            store=store,
-            provider=FakeProvider(
-                [
-                    FakeStep.call_tool("read_file", {"path": str(outside)}),
-                    FakeStep(text="access denied"),
-                ]
-            ),
+            provider=FakeProvider([FakeStep(text="child done")]),
             model="fake-model",
+            child_context_factory=lambda spec, context: ChildRunContext(
+                app_context={"scope": "child"},
+                run_profile={"scope": "child"},
+            ),
+            session_factory=app_session_factory(store, workspace=tmp_path),
         )
         .build()
     )
     parent = Session.create(
         store,
-        cwd=tmp_path,
-        provider="fake",
-        model="fake-model",
         session_id="ses-scoped-parent",
     )
 
@@ -243,13 +228,8 @@ async def test_subagent_runtime_enforces_the_delegated_workspace(tmp_path: Path)
     assert result.state == RunState.COMPLETED
     child_id = str(parent.messages[-2].tool_results[0].metadata["session_id"])
     child = Session.load(store, child_id)
-    denied = next(message.tool_results[0] for message in child.messages if message.tool_results)
-    assert denied.metadata["error_code"] == "sandbox_violation"
     child_started = next(event for event in child.events if event.type == "run.started")
-    assert child_started.data["workspace_root"] == str(delegated.resolve())
-    assert child_started.data["sandbox_descriptor"]["mount_scope"] == str(
-        delegated.resolve()
-    )
+    assert child_started.data["application_profile"] == {"scope": "child"}
 
 
 def test_hooks_are_passed_through_untouched(tmp_path: Path) -> None:

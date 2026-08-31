@@ -4,14 +4,14 @@
 
 面向 AIHI 的无 UI Coding Agent Runtime 和 stdio Worker。
 
-`aihi-code-agent` 是应用层包，负责将 `aihi-models` 与 `aihi-agent` 组合为 Coding 工作流。它拥有配置、
-Coding Prompt、Workspace Tool、Skill/MCP 集成、Subagent、审计接线和 Worker 入口。TypeScript
-TUI 位于独立包中。
+`aihi-code-agent` 是位于 uv workspace 之外的私有本地应用层包，负责将 `aihi-models` 与 `aihi-agent` 组合为 Coding
+工作流。它拥有配置、Coding Prompt、Workspace Tool、Skill/MCP 集成、Subagent、审计接线和 Worker
+入口，不发布到 PyPI；TypeScript TUI 位于另一个私有 workspace 包中。
 
 ## 功能
 
 - 支持 OpenAI、Anthropic、DeepSeek、OpenAI-compatible endpoint 和确定性的 Fake Provider profile。
-- 提供 Coding Tool、只读 Git Tool、Sandbox 选择、permission mode、Approval 和可恢复 Run。
+- 提供 Coding Tool、只读 Git Tool、命令 Sandbox 选择、Access/Run Mode、Approval 和可恢复 Run。
 - 支持内置及用户/项目 Skill、信任管理和显式 `load_skill` Tool。
 - 支持 MCP stdio Server、受治理 Subagent、Artifact、Context Compaction 和脱敏 `audit.jsonl` 观测。
 - 为本地 CLI 或其他宿主提供版本化 JSON-RPC Worker transport。
@@ -33,28 +33,15 @@ aihi-models  →  aihi-agent  →  aihi-code-agent Worker  ←  @aihi/code-cli
 
 ## 安装
 
-已发布版本：
-
-```bash
-python -m pip install aihi-code-agent==0.1.0
-```
-
-参见 [PyPI 项目页](https://pypi.org/project/aihi-code-agent/0.1.0/)。该命令会自动安装兼容的
-`aihi-agent` 和 `aihi-models` 依赖。仓库开发使用：
-
-在仓库根目录执行：
+本应用从仓库源码单独安装，不从 PyPI 安装。在仓库根目录执行：
 
 ```bash
 uv sync
-```
-
-将 Worker 安装到已有 Python 环境：
-
-```bash
 uv pip install -e packages/aihi/code-agent
 ```
 
-本包要求 Python 3.11+，并提供 `aihi-code-agent-worker` console script。
+该本地包要求 Python 3.11+，并在单独的 editable 安装后提供 `aihi-code-agent-worker` console
+script。公开 PyPI distribution 只有 `aihi-models` 与 `aihi-agent`。
 
 ## 启动 Worker
 
@@ -65,11 +52,25 @@ aihi-code-agent-worker
 ```
 
 Worker 通过 stdin/stdout 读写使用 Content-Length framing 的 JSON-RPC 2.0 消息。Protocol 版本
-`0.2` 通过精确版本 handshake 协商。`run.start` 和 `run.resume` 以异步方式接受；进度和终态
+`0.3` 通过精确版本 handshake 协商。`run.start` 和 `run.resume` 以异步方式接受；进度和终态
 通过 notification 发送，例如 `run.completed`、`run.failed`、`run.interrupted`、
 `run.cancelled` 和 `approval.requested`。
 
 通常由 CLI 启动 Worker；也可以将它嵌入实现同一协议的其他本地宿主之后。
+
+嵌入 Coding Runtime 的应用需要显式创建由应用拥有的 Session metadata：
+
+```python
+from aihi.agent import InMemoryEventStore
+from aihi.code_agent import create_coding_session
+
+session = create_coding_session(
+    InMemoryEventStore(),
+    cwd="/path/to/project",
+    provider="deepseek",
+    model="deepseek-chat",
+)
+```
 
 ## 配置
 
@@ -101,10 +102,10 @@ api_key_env = "LOCAL_API_KEY"
 
 [sandbox]
 backend = "docker"
-root = "."
 
 [agent]
-permission_mode = "default" # default | accept_edits | plan | bypass
+access_mode = "workspace_write" # read_only | workspace_write | full_access
+run_mode = "execute"            # execute | plan
 
 [audit]
 enabled = true
@@ -122,13 +123,25 @@ command = "npx"
 args = ["-y", "some-mcp-server"]
 ```
 
-API Key 只放在环境变量中；`config.get` 只向外暴露非敏感 metadata。`permission_mode` 会和
-Run startup configuration 一起持久化。任何 mode 下硬安全拒绝都保持生效。Host 执行采用 fail-closed
-策略，且不是隔离边界；交互式确认会按精确的 Workspace/root 写入 `~/.aihi/host-workspaces.json`。
+API Key 只放在环境变量中；`config.get` 只向外暴露非敏感 metadata。Workspace 不允许在 TOML 中配置；
+`create_coding_session(...)` 会规范化传入的 `cwd`，并把它存为应用拥有的 Session metadata，基础 Harness
+不解释该字段。`access_mode`、`run_mode`、该 Workspace 和命令 Sandbox
+descriptor 一起持久化到 Run profile，因此 Resume 不能漂移或提升权限。Host 执行采用 fail-closed 策略，
+且不是隔离边界；交互式确认会按精确的 Session Workspace 写入 `~/.aihi/host-workspaces.json`。
+
+`read_only` 拒绝变更和进程执行；`workspace_write` 允许应用拥有的本地文件编辑，但 Bash 和其他外部变更
+仍需审批；`full_access` 在硬安全检查后允许特权 Tool。`plan` 是独立的硬只读上限，审批也不能绕过。
 
 每个 Provider 可以通过 `models = [...]` 暴露多个 Model。Provider 的 active/default Model 是
 `model` 指定的值，或 catalog 第一项。Model 只有在声明它的 Provider 下才有效；`config.get`
 向客户端返回不含 Secret 的 Provider/Model catalog。
+
+## Tool 执行边界
+
+Coding 文件 Tool（`read_file`、`glob`、`grep`、`edit_file`、`write_file`）属于应用层本地 Tool。
+它们在 Policy 前按 Session cwd 规范化路径，然后直接操作 Host Workspace，不经过 Sandbox 文件 API。
+`bash` 是唯一在构造时接收 Sandbox backend 的 Coding Tool；模型生成的任意命令只通过
+`SandboxBackend.run_command` 执行。只读 Git Tool 使用应用写死的 argv，不接受模型生成的命令。
 
 ## Skill 与 Subagent
 
@@ -137,8 +150,9 @@ Run startup configuration 一起持久化。任何 mode 下硬安全拒绝都保
 索引；调用 `load_skill` 时使用裸 Skill name（例如 `code_review`），不要使用带版本后缀的展示名称。
 
 命名 Subagent 通过 `task` Tool 选择：`explore`、`code_review`、`test` 和 `general`。默认配置将
-Subagent 限制为深度 1、最多 3 个子 Agent 和只读文件系统能力。必须使用 Worker Session Store，才能
-将父 Run 与子 Run 一起 Replay。
+Subagent 限制为深度 1、最多 3 个子 Agent 和只读文件系统能力。每个子 Run 保持父级 Session 的 canonical
+Workspace；Code Agent 根据获批能力派生子级 AccessMode，再与父级 AccessMode 取交集；Plan 始终生成
+只读的 Plan 子 Run。必须使用 Worker Session Store，才能将父 Run 与子 Run 一起 Replay。
 
 ## 审计与运行行为
 
@@ -166,7 +180,6 @@ Live 门禁按 Provider/Model 精确选择基线，并在 pass@1 退化时失败
 uv run pytest packages/aihi/code-agent/tests
 uv run ruff check packages/aihi/code-agent
 uv run mypy
-uv run python -m build --wheel --no-isolation packages/aihi/code-agent
 ```
 
 完整 workspace 检查见[仓库 README](../../../README.zh-CN.md)。Worker Protocol 契约与
@@ -176,8 +189,8 @@ uv run python -m build --wheel --no-isolation packages/aihi/code-agent
 
 - 将模型输出、Tool 输入、MCP 响应、Skill 和 Subagent 输出视为不可信输入。
 - 凭据放在环境变量或外部 Secret Manager 中，不要写入 TOML 或 Event 内容。
-- 不要把 `HostBackend` 当作 Sandbox；需要进程隔离时选择隔离 backend。
-- 保持有限的 turn limit，审查 `permission_mode`，启用不安全的本地执行前必须获得显式 Host 确认。
+- `HostBackend` 是需要显式确认不安全性的命令 backend；`bash` 需要进程隔离时应选择隔离 backend。
+- 保持有限的 turn limit，审查 `access_mode` 与 `run_mode`，启用不安全的本地执行前必须获得显式 Host 确认。
 
 ## 相关文档
 

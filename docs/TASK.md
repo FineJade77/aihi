@@ -8,9 +8,9 @@
 | Field | Value |
 | --- | --- |
 | Status | Foundation complete; application and platform roadmap remains |
-| Current release line | Python packages 0.1.0 on PyPI; Code Protocol 0.2 |
+| Current release line | Public aihi-models and aihi-agent 0.2.0 on PyPI; Code Protocol 0.3 |
 | Architecture | [ARCHITECTURE.md](ARCHITECTURE.md) |
-| Last completed slice | H-19 prompt cache and ContextState v2 compaction |
+| Last completed slice | P-08 public Python distribution boundary |
 
 Architecture decision records and RFC drafts in docs/adr/ and docs/rfcs/ are local-only working files.
 They are deliberately ignored by Git; stable decisions must be reflected in architecture, package
@@ -48,9 +48,9 @@ The repository is a multi-package monorepo with a runnable local Coding Agent ve
 | aihi-models | Provider-neutral messages, codecs, capabilities, token estimation and Fake, OpenAI, Anthropic, OpenAI-compatible and DeepSeek adapters | Done |
 | aihi-agent | Recoverable loop, default turn budget, event store, replay, context/compaction, tools, policy, approvals, sandbox, artifacts, skills, MCP, plugins, memory, subagents, evals and audit hooks | Done |
 | aihi-code-agent | Coding configuration, project/user .aihi config discovery, provider/model catalog, Worker, Session/Run/Task APIs, Coding tools and TUI composition | Done |
-| @aihi/code-protocol | Code Protocol 0.2 DTOs, method map, guards and schemas | Done |
+| @aihi/code-protocol | Code Protocol 0.3 DTOs, method map, guards and schemas | Done |
 | @aihi/code-cli | Ink TUI, transcript replay, scrolling/composer UX, session/model pickers, slash commands, approvals, skills/MCP/tools management and doctor checks | Done |
-| Packaging | Separate wheels, PEP 420 namespace, installed-wheel compatibility, frozen fixture replay and PyPI 0.1.0 publication | Done |
+| Packaging | Public aihi-models/aihi-agent wheels, PEP 420 namespace, installed-wheel compatibility, frozen fixture replay, and private local aihi-code-agent outside uv workspace | Done |
 | Operability | Redacted local audit.jsonl, doctor audit target checks, session recovery and replay diagnostics | Done |
 
 ### Foundation history
@@ -108,6 +108,43 @@ PEP 420 smoke coverage.
 | H-19.4 | Recoverable old Tool Result pruning | Only durable, artifact-backed completed results are replaced; minimum reclaim is met; Tool pairing, Event history and stable prefix are unchanged |
 | H-19.5 | Evidence-backed ContextState hard compaction | Deterministic event projection precedes model enrichment; recent complete groups remain raw; repeated compactions preserve all critical facts and reach the target budget |
 | H-19.6 | Joint eval, compatibility, documentation and packaging gates | Cache/compaction golden traces, long-session evals, frozen fixture replay, installed-wheel checks and synchronized English/Chinese docs pass |
+
+### H-20 — Application context and command-sandbox boundary
+
+**Status: Done.** The reusable Harness is application-neutral: Tool and Policy execution
+receive an opaque typed application context, applications persist an opaque run authority profile,
+and Sandbox becomes an explicitly injected command-execution capability rather than a Runtime-wide
+filesystem abstraction.
+
+| Slice | Scope | Acceptance |
+| --- | --- | --- |
+| H-20.1 | `PreparedToolCall`, typed application context and opaque run profile | Validation precedes side-effect-free preparation; Policy and Tool execution consume the same normalized input; Resume rejects profile drift |
+| H-20.2 | Command-only Sandbox and Runtime decoupling | Sandbox exposes only command execution; Runtime, Session, Hook and generic Tool context contain no workspace or global Sandbox assumption; Session persists application metadata opaquely |
+| H-20.3 | Generic delegation scope | Base Subagent types contain no Coding workspace or permission mode; an injected application policy proves child authority is a subset |
+
+### P-07 — Coding workspace and permission ownership
+
+**Status: Done.** `aihi-code-agent` now owns Coding tools, canonical workspace handling,
+`AccessMode`, `RunMode` and command-sandbox selection. `create_coding_session(...)` canonicalizes the supplied
+`cwd` into application-owned Session metadata; TOML discovers configuration from that workspace but never defines it.
+
+| Slice | Scope | Acceptance |
+| --- | --- | --- |
+| P-07.1 | Application-owned workspace and Coding tools | File tools use guarded local I/O; only Bash owns a Sandbox; `sandbox.root` and `workspace_read_only` are removed |
+| P-07.2 | `AccessMode` and `RunMode` policy | `read_only`, `workspace_write`, `full_access` and `execute`/`plan` have tested ALLOW/ASK/DENY matrices; Plan cannot be upgraded within a Run |
+| P-07.3 | Worker, Protocol and CLI | Code Protocol 0.3 exposes access/run modes without a configured workspace root; Resume prevents authority drift; CLI reflects the effective modes |
+
+### P-08 — Public Python distribution boundary
+
+**Status: Done.** Only `aihi-models` and `aihi-agent` are public PyPI release artifacts; both are
+published at `0.2.0`.
+`aihi-code-agent` remains an installable private local application outside the uv workspace so the local Worker, CLI and
+tests can compose it without turning product code into a third public distribution.
+
+| Slice | Scope | Acceptance |
+| --- | --- | --- |
+| P-08.1 | Canonical release manifest | Root `tool.aihi.release.python-distributions` lists exactly models and agent; packaging tests build and install only those wheels |
+| P-08.2 | Private Coding application | code-agent declares `publish = false` and `Private :: Do Not Upload`; install docs use workspace/editable source and contain no PyPI install or release-build path |
 
 ### P-06 — Coding Agent benchmark
 

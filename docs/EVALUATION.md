@@ -185,7 +185,7 @@ Reports are written below `eval-results/<mode>/`. Exit code `0` means the gate
 passed, `1` means an evaluation case failed, and `2` means setup or
 configuration failed. `nightly` and `release` require an explicit
 `--config <path>` containing a real Provider, its `api_key_env`, a Docker image,
-`permission_mode = "bypass"`, and networking disabled; fake Provider, MCP
+`access_mode = "full_access"`, `run_mode = "execute"`, and networking disabled; fake Provider, MCP
 servers, missing credentials, placeholder models and interactive permission
 modes fail closed. The committed
 `evals/aihi_code_agent/v1/nightly.config.example.toml` is a credential-free

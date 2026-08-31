@@ -38,7 +38,6 @@ class StructuredSummary:
     verified_state: tuple[str, ...] = ()
     open_questions: tuple[str, ...] = ()
     next_steps: tuple[str, ...] = ()
-    permission_mode: str | None = None
     skills: tuple[str, ...] = ()
     subagents: tuple[str, ...] = ()
     artifacts: tuple[str, ...] = ()
@@ -55,7 +54,6 @@ class StructuredSummary:
             "verified_state": list(self.verified_state),
             "open_questions": list(self.open_questions),
             "next_steps": list(self.next_steps),
-            "permission_mode": self.permission_mode,
             "skills": list(self.skills),
             "subagents": list(self.subagents),
             "artifacts": list(self.artifacts),

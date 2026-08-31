@@ -12,6 +12,7 @@ placeholders; everything a reader could depend on is compared verbatim.
 from __future__ import annotations
 
 import copy
+import json
 import re
 from pathlib import Path
 from typing import Any
@@ -21,29 +22,39 @@ from aihi.agent import (
     ApprovalOutcome,
     ArtifactLifecycle,
     ArtifactPolicy,
+    ChildRunContext,
     FileArtifactStore,
-    HostBackend,
     InMemoryEventStore,
     InMemoryMemoryStore,
     MemoryAccess,
     MemoryScope,
     MemoryService,
-    PermissionMode,
-    ReadFileTool,
     RunCoordinator,
     Session,
     StaticApprovalResolver,
     ToolRegistry,
-    WorkspaceScope,
-    WriteFileTool,
 )
 from aihi.agent._core.events import Event
 from aihi.agent.agents.graph import TaskGraph
 from aihi.models import FakeProvider, FakeStep, Message
 
+from packages.aihi.agent.tests.support_tools import ReadTestTool, WriteTestTool
+
 FIXED_TIME = "2026-01-01T00:00:00+00:00"
 _GENERATED_ID = re.compile(r"^[a-z][a-z0-9_]*_[0-9a-f]{24}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _fixture_session_metadata(root: Path, **extra: Any) -> dict[str, Any]:
+    """Preserve the frozen v1 application metadata while testing an opaque Session."""
+
+    return {
+        "cwd": str(root.resolve()),
+        "provider": "fake",
+        "model": "fake-model",
+        "harness_version": "0.1.0",
+        **extra,
+    }
 
 
 def _coordinator(
@@ -56,8 +67,9 @@ def _coordinator(
 ) -> RunCoordinator:
     return RunCoordinator(
         FakeProvider(steps),
-        registry=ToolRegistry(tools if tools is not None else [WriteFileTool(), ReadFileTool()]),
-        sandbox=HostBackend(tmp_path, unsafe=True),
+        registry=ToolRegistry(
+            tools if tools is not None else [WriteTestTool(tmp_path), ReadTestTool(tmp_path)]
+        ),
         approval_resolver=None if outcome is None else StaticApprovalResolver(outcome),
         **kwargs,
     )
@@ -67,7 +79,9 @@ async def _authorized_session(root: Path, store: InMemoryEventStore) -> Session:
     """Approval, lease, tool lifecycle, artifacts, memory and a subagent record."""
 
     session = Session.create(
-        store, cwd=root, provider="fake", model="fake-model", session_id="ses-golden-a"
+        store,
+        session_id="ses-golden-a",
+        metadata=_fixture_session_metadata(root),
     )
     session.add_message(Message(role="system", content=(), metadata={"origin": "project_rules"}))
     artifacts = FileArtifactStore(root / ".artifacts")
@@ -154,7 +168,6 @@ async def _authorized_session(root: Path, store: InMemoryEventStore) -> Session:
         parent_run_id=suspended.run_id,
         objective="investigate",
         budget=AgentBudget(max_tokens=512, timeout_seconds=10.0, max_tool_calls=2),
-        workspace=WorkspaceScope(root=str(root), read_only=True),
         capabilities=frozenset({"filesystem.read"}),
     )
     return session
@@ -169,31 +182,42 @@ async def _delegating_session(root: Path, store: InMemoryEventStore) -> Session:
         SubagentAuthority,
         SubagentTool,
         restrict_registry,
-        subagent_session_factory,
     )
 
-    tools = ToolRegistry([ReadFileTool()])
-    sandbox = HostBackend(root, unsafe=True)
+    tools = ToolRegistry([ReadTestTool(root)])
+
+    def session_factory(spec: Any, context: Any) -> Session:
+        return Session.create(
+            store,
+            metadata=_fixture_session_metadata(
+                root,
+                parent_session_id=context.session_id,
+                parent_run_id=context.run_id,
+                task_id=spec.task_id,
+                depth=spec.depth,
+            ),
+        )
+
     runner = ChildRunSubagentRunner(
-        lambda spec, child_sandbox: RunCoordinator(
+        lambda spec: RunCoordinator(
             FakeProvider([FakeStep(text="the child looked around")]),
             registry=restrict_registry(tools, frozenset(spec.capabilities)),
-            sandbox=child_sandbox,
         ),
-        subagent_session_factory(store, provider="fake", model="fake-model"),
-        sandbox=sandbox,
+        session_factory,
         model="fake-model",
+        child_context_factory=lambda spec, context: ChildRunContext(),
     )
     tool = SubagentTool(
         runner,
         authority=SubagentAuthority(
             budget=AgentBudget(max_tokens=512, timeout_seconds=10.0, max_tool_calls=2),
-            workspace=WorkspaceScope(root=str(root), read_only=True),
             capabilities=frozenset({SPAWN_CAPABILITY, "filesystem.read"}),
         ),
     )
     parent = Session.create(
-        store, cwd=root, provider="fake", model="fake-model", session_id="ses-golden-parent"
+        store,
+        session_id="ses-golden-parent",
+        metadata=_fixture_session_metadata(root),
     )
     coordinator = _coordinator(
         root,
@@ -213,7 +237,9 @@ async def _failure_session(root: Path, store: InMemoryEventStore) -> Session:
     """Rejection, compaction, repair, and the three non-happy terminals."""
 
     session = Session.create(
-        store, cwd=root, provider="fake", model="fake-model", session_id="ses-golden-b"
+        store,
+        session_id="ses-golden-b",
+        metadata=_fixture_session_metadata(root),
     )
     for index in range(12):
         session.add_message(Message.text("user", f"history {index} " + "x" * 90))
@@ -250,7 +276,6 @@ async def _failure_session(root: Path, store: InMemoryEventStore) -> Session:
         session,
         model="fake-model",
         user_message=Message.text("user", "write then give up"),
-        permission_mode=PermissionMode.DEFAULT,
     )
     abandoning.abandon(session, run_id=suspended.run_id, reason="operator gave up")
     session.repair_orphan_tool_calls(run_id=suspended.run_id)
@@ -346,6 +371,10 @@ def without_additive_v1_fields(payload: object) -> object:
         for event in session.get("events", []):
             if not isinstance(event, dict):
                 continue
+            # The frozen corpus keeps v1 envelopes. Current events are reduced
+            # to that shape only for writer-drift comparison; the migration is
+            # tested independently in the Agent contract suite.
+            event["schema_version"] = 1
             data = event.get("data")
             if isinstance(data, dict):
                 if event.get("type") == "model.usage":
@@ -376,17 +405,55 @@ def without_additive_v1_fields(payload: object) -> object:
                 data.pop("message_schema_version", None)
                 data.pop("summary_message_schema_version", None)
                 if event.get("type") == "approval.requested":
-                    for additive in ("tool_input", "required_capabilities", "sandbox"):
+                    for additive in (
+                        "tool_input",
+                        "required_capabilities",
+                        "sandbox",
+                        "execution",
+                    ):
                         data.pop(additive, None)
+                if event.get("type") == "tool.started":
+                    data.pop("execution", None)
+                    for retired in ("sandbox", "sandbox_descriptor", "unsafe"):
+                        data.pop(retired, None)
                 if event.get("type") in {"run.started", "run.resumed"}:
                     data.pop("max_output_tokens", None)
                     data.pop("max_turns", None)
                     data.pop("system_prompt_sha256", None)
                     data.pop("workspace_root", None)
-                    descriptor = data.get("sandbox_descriptor")
-                    if (
-                        isinstance(descriptor, dict)
-                        and descriptor.get("mount_scope") == "/workspace"
+                    data.pop("application_profile", None)
+                    for retired in (
+                        "sandbox",
+                        "sandbox_descriptor",
+                        "unsafe",
+                        "permission_mode",
                     ):
-                        descriptor["mount_scope"] = None
+                        data.pop(retired, None)
+                if event.get("type") == "compaction.created":
+                    data["before_tokens"] = 0
+                    data["after_tokens"] = 0
+                    summary = data.get("summary")
+                    if isinstance(summary, dict):
+                        content = summary.get("content")
+                        if isinstance(content, list):
+                            for block in content:
+                                if not isinstance(block, dict) or not isinstance(
+                                    block.get("text"), str
+                                ):
+                                    continue
+                                try:
+                                    structured = json.loads(block["text"])
+                                except json.JSONDecodeError:
+                                    continue
+                                if isinstance(structured, dict):
+                                    structured.pop("permission_mode", None)
+                                    block["text"] = json.dumps(
+                                        structured,
+                                        sort_keys=True,
+                                        separators=(",", ":"),
+                                    )
+                if event.get("type") == "subagent.spawned":
+                    task = data.get("task")
+                    if isinstance(task, dict):
+                        task.pop("workspace", None)
     return normalized

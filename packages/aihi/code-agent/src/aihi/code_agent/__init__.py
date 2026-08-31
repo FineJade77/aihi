@@ -18,12 +18,18 @@ from aihi.code_agent.evals import (
     directory_sha256,
 )
 from aihi.code_agent.framing import FrameError, read_frame, write_frame
+from aihi.code_agent.permissions import AccessMode, RunMode
 from aihi.code_agent.protocol import (
     COMMAND_DESCRIPTORS,
     PROTOCOL_VERSION,
     SERVER_NAME,
 )
 from aihi.code_agent.runtime import CodeAgentRuntime
+from aihi.code_agent.sessions import (
+    CodingSessionMetadata,
+    CodingSessionMetadataError,
+    create_coding_session,
+)
 from aihi.code_agent.turns import (
     ApprovalRequested,
     AssistantMessage,
@@ -53,11 +59,14 @@ def __getattr__(name: str) -> Any:
 __all__ = [
     "COMMAND_DESCRIPTORS",
     "ApprovalRequested",
+    "AccessMode",
     "AssistantMessage",
     "CodeAgentEvalRunner",
     "CodeAgentConfig",
     "CodeAgentConfigError",
     "CodeAgentRuntime",
+    "CodingSessionMetadata",
+    "CodingSessionMetadataError",
     "CodeEvalGateFailed",
     "CodeEvalReport",
     "CodeEvalValidationError",
@@ -69,6 +78,7 @@ __all__ = [
     "PreparedWorkspace",
     "PROTOCOL_VERSION",
     "RunStateChanged",
+    "RunMode",
     "SERVER_NAME",
     "SubagentCompleted",
     "SubagentSpawned",
@@ -80,6 +90,7 @@ __all__ = [
     "TurnEvent",
     "TurnFinished",
     "WorkspaceManager",
+    "create_coding_session",
     "directory_sha256",
     "WorkerServer",
     "main",

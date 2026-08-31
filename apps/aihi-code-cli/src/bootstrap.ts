@@ -30,8 +30,7 @@ function metadataText(session: SessionDescriptor, key: string): string | undefin
 }
 
 function belongsToWorkspace(session: SessionDescriptor, cwd: string): boolean {
-  const sessionCwd = metadataText(session, "cwd");
-  return sessionCwd !== undefined && resolve(sessionCwd) === cwd;
+  return resolve(session.cwd) === cwd;
 }
 
 /** Resolve config and Session before Ink mounts, so the composer never sees placeholders. */

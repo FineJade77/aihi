@@ -3,7 +3,7 @@
 [English](README.md) | **简体中文**
 
 面向 AIHI Coding Agent Worker 的本地 TypeScript/Ink 终端 UI。CLI 启动 Python Worker，完成
-Code Protocol `0.2` handshake，渲染 durable/live events，并提供简化 Coding Agent CLI 的交互。
+Code Protocol `0.3` handshake，渲染 durable/live events，并提供简化 Coding Agent CLI 的交互。
 
 ## 功能
 
@@ -31,28 +31,27 @@ TUI 只负责展示和交互；Worker 负责配置、Provider/runtime 组合、�
 - Node.js 20+
 - pnpm 9
 - Python 3.11+
-- 已安装或可从 workspace 找到 `aihi-code-agent-worker`
+- 已单独以 editable 模式安装的 `aihi-code-agent-worker`
 
 ## 安装、构建和运行
 
 ```bash
+uv sync
+uv pip install -e packages/aihi/code-agent
 pnpm install
 pnpm --dir apps/aihi-code-cli build
 pnpm --dir apps/aihi-code-cli start -- --workspace /path/to/project
 ```
 
-安装已发布的 Python Worker：
+Python Worker 是位于 uv workspace 之外的私有本地应用，因此必须单独执行上面的 editable 安装。
+它不发布到 PyPI；公开 Python distribution 只有 `aihi-models` 与 `aihi-agent`。
 
-```bash
-python -m pip install aihi-code-agent==0.1.0
-```
-
-仓库开发时改用 `uv pip install -e packages/aihi/code-agent`。参见
-[aihi-code-agent PyPI 项目](https://pypi.org/project/aihi-code-agent/0.1.0/)。
-
-常用参数包括 `--workspace`/`--cwd`、`--session`、`--model`、`--provider` 和
-`--permission-mode`。配置文件路径固定为用户 `~/.aihi/aihi-code.toml` 与项目
+常用参数包括 `--workspace`/`--cwd`、`--session`、`--model` 和 `--provider`。配置文件路径固定为用户
+`~/.aihi/aihi-code.toml` 与项目
 `<workspace>/.aihi/aihi-code.toml`，不能通过 CLI 改变配置目录。
+
+`[agent]` 使用 `access_mode = "read_only" | "workspace_write" | "full_access"` 与
+`run_mode = "execute" | "plan"`。Workspace 不在 TOML 中配置，而是 Session 创建时传入的 canonical cwd。
 
 ## 使用示例
 
@@ -69,7 +68,9 @@ CLI 展示流式进度、Tool Result、Skill 加载和可恢复的 Session Heade
 
 Worker 是 EventStore 唯一写入端；TUI 重连时先分页 replay，再消费实时通知。`/doctor` 检查
 Session-scoped 状态、Worker、配置、MCP、Skill 和 audit JSONL 目标。Host 执行必须显式
-`unsafe=true`，CLI 不绕过 Policy 或 Sandbox。
+`unsafe=true`，CLI 不绕过 Policy 或命令 Sandbox。Host 不是进程或文件系统隔离：命令以 Workspace
+作为 cwd、使用本地用户权限执行。启动页、`/config`、`/status`、`/doctor`、`/runs` 和状态栏显示实际
+生效的 Access/Run Mode；存在 Run 时以其持久化 Profile 为准。
 
 ## 开发
 

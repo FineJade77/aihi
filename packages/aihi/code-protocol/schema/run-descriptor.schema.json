@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aihi.dev/schemas/code-protocol/run-descriptor-0.3.json",
+  "title": "AIHI Code run descriptor",
+  "type": "object",
+  "required": [
+    "run_id",
+    "state",
+    "started_at",
+    "updated_at",
+    "provider",
+    "model",
+    "access_mode",
+    "run_mode",
+    "error",
+    "pending_approval_id"
+  ],
+  "properties": {
+    "run_id": { "type": "string", "minLength": 1 },
+    "state": {
+      "enum": [
+        "created",
+        "running",
+        "waiting_tool",
+        "waiting_approval",
+        "completed",
+        "failed",
+        "interrupted",
+        "cancelled"
+      ]
+    },
+    "started_at": { "type": "string", "minLength": 1 },
+    "updated_at": { "type": "string", "minLength": 1 },
+    "provider": { "type": ["string", "null"] },
+    "model": { "type": ["string", "null"] },
+    "access_mode": {
+      "oneOf": [
+        { "enum": ["read_only", "workspace_write", "full_access"] },
+        { "type": "null" }
+      ]
+    },
+    "run_mode": { "oneOf": [{ "enum": ["execute", "plan"] }, { "type": "null" }] },
+    "error": { "type": ["string", "null"] },
+    "pending_approval_id": { "type": ["string", "null"] }
+  },
+  "additionalProperties": false
+}

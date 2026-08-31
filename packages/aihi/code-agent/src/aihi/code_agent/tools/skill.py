@@ -33,7 +33,7 @@ class LoadSkillTool:
     def __init__(self, loader: SkillLoader) -> None:
         self.loader = loader
 
-    async def run(self, input: dict[str, Any], context: ToolContext) -> ToolExecutionResult:
+    async def run(self, input: dict[str, Any], context: ToolContext[Any]) -> ToolExecutionResult:
         name = input.get("name")
         if not isinstance(name, str) or not name.strip():
             return ToolExecutionResult(

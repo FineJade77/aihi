@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://aihi.dev/schemas/code-protocol/approval-descriptor-0.2.json",
+  "$id": "https://aihi.dev/schemas/code-protocol/approval-descriptor-0.3.json",
   "title": "AIHI Code Worker pending approval descriptor",
   "type": "object",
   "required": [
@@ -28,6 +28,7 @@
       "type": "array",
       "items": { "type": "string" }
     },
+    "execution": { "type": "object" },
     "sandbox": { "type": "object" }
   },
   "additionalProperties": true

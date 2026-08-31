@@ -59,13 +59,18 @@ uv sync
 pnpm install
 ```
 
-使用已发布的 Python 包：
+PyPI 只发布两个基础 distribution：
 
 ```bash
-python -m pip install aihi-code-agent==0.1.0
+python -m pip install aihi-models==0.2.0 aihi-agent==0.2.0
 ```
 
-该命令会自动安装 `aihi-agent` 和 `aihi-models` 依赖；仓库开发仍可使用 editable 安装。
+`aihi-code-agent` 是私有本地应用，不发布到 PyPI，有意不加入 uv workspace；从源码运行 Worker
+或 CLI 时单独执行：
+
+```bash
+uv pip install -e packages/aihi/code-agent
+```
 
 ### 运行检查
 
@@ -100,14 +105,14 @@ pnpm --dir apps/aihi-code-cli start -- --workspace /path/to/project
 - [任务路线图](docs/TASK.zh-CN.md)
 - [各项目 README](packages/aihi/models/README.zh-CN.md)
 
-PyPI：[`aihi-models`](https://pypi.org/project/aihi-models/0.1.0/) · [`aihi-agent`](https://pypi.org/project/aihi-agent/0.1.0/) · [`aihi-code-agent`](https://pypi.org/project/aihi-code-agent/0.1.0/)
+PyPI：[`aihi-models`](https://pypi.org/project/aihi-models/0.2.0/) · [`aihi-agent`](https://pypi.org/project/aihi-agent/0.2.0/)。`aihi-code-agent` 仅作为 uv workspace 外的私有本地应用使用。
 
 ADR/RFC 仅保存在本地 `docs/adr/` 和 `docs/rfcs/`，不会提交到 Git。
 
 ## 设计原则
 
 - 事件日志是运行时事实源，摘要、Memory 和 UI 都是派生视图。
-- 所有副作用必须经过 `tool → policy → hooks → sandbox`。
+- 所有副作用必须经过 `校验/Prepare → Policy → Approval → Hook → 受治理的 Tool 执行`；只有执行任意命令的 Tool 接收 Sandbox backend。
 - Host 执行必须显式声明 `unsafe=true`，不能被误认为安全隔离。
 - 基础包不实现 ModelRouter、ModelGateway 或产品 UI。
 

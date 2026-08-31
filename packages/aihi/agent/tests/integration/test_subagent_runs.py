@@ -4,10 +4,8 @@ from pathlib import Path
 
 import pytest
 from aihi.agent import (
-    HostBackend,
+    ChildRunContext,
     InMemoryEventStore,
-    PermissionMode,
-    ReadFileTool,
     RunCoordinator,
     RunState,
     Session,
@@ -20,20 +18,23 @@ from aihi.agent.agents import (
     ChildRunSubagentRunner,
     SubagentAuthority,
     SubagentTool,
-    WorkspaceScope,
     restrict_registry,
-    subagent_session_factory,
 )
 from aihi.agent.policy import ApprovalOutcome
 from aihi.models import FakeProvider, FakeStep, Message
 
+from packages.aihi.agent.tests.support_tools import (
+    ReadTestTool,
+    WriteTestTool,
+    app_session_factory,
+)
+
 CHILD_ANSWER = "child summarized the workspace"
 
 
-def authority_for(tmp_path: Path, **overrides: object) -> SubagentAuthority:
+def authority_for(**overrides: object) -> SubagentAuthority:
     defaults: dict[str, object] = {
         "budget": AgentBudget(max_tokens=2_048, timeout_seconds=30.0, max_tool_calls=4),
-        "workspace": WorkspaceScope(root=str(tmp_path), read_only=True),
         "capabilities": frozenset({SPAWN_CAPABILITY, "filesystem.read"}),
         "max_depth": 2,
         "max_children": 2,
@@ -51,34 +52,29 @@ def build(
     child_resolver: object | None = None,
 ) -> tuple[RunCoordinator, Session, InMemoryEventStore, ToolRegistry]:
     store = InMemoryEventStore()
-    sandbox = HostBackend(tmp_path, unsafe=True)
-    full_registry = ToolRegistry([ReadFileTool()])
+    full_registry = ToolRegistry([ReadTestTool(tmp_path)])
 
-    def coordinator_factory(spec: object, child_sandbox: object) -> RunCoordinator:
+    def coordinator_factory(spec: object) -> RunCoordinator:
         capabilities = frozenset(getattr(spec, "capabilities", frozenset()))
         return RunCoordinator(
             FakeProvider(list(child_steps)),
             registry=restrict_registry(full_registry, capabilities),
-            sandbox=child_sandbox,  # type: ignore[arg-type]
             approval_resolver=child_resolver,  # type: ignore[arg-type]
         )
 
     runner = ChildRunSubagentRunner(
         coordinator_factory,
-        subagent_session_factory(store, provider="fake", model="fake-model"),
-        sandbox=sandbox,
+        app_session_factory(store, workspace=tmp_path),
         model="fake-model",
+        child_context_factory=lambda spec, context: ChildRunContext(),
     )
-    tool = SubagentTool(runner, authority=authority or authority_for(tmp_path))
+    tool = SubagentTool(runner, authority=authority or authority_for())
     parent = RunCoordinator(
         FakeProvider(list(parent_steps)),
         registry=ToolRegistry([tool]),
-        sandbox=sandbox,
         approval_resolver=StaticApprovalResolver(ApprovalOutcome.GRANTED),
     )
-    session = Session.create(
-        store, cwd=tmp_path, provider="fake", model="fake-model", session_id="ses-parent"
-    )
+    session = Session.create(store, session_id="ses-parent")
     return parent, session, store, full_registry
 
 
@@ -155,7 +151,7 @@ async def test_child_budget_is_clamped_to_the_parent_ceiling(tmp_path: Path) -> 
                 summary="ok",
             )
 
-    tool = SubagentTool(Recording(), authority=authority_for(tmp_path))
+    tool = SubagentTool(Recording(), authority=authority_for())
     parent = RunCoordinator(
         FakeProvider(
             [
@@ -167,12 +163,9 @@ async def test_child_budget_is_clamped_to_the_parent_ceiling(tmp_path: Path) -> 
             ]
         ),
         registry=ToolRegistry([tool]),
-        sandbox=HostBackend(tmp_path, unsafe=True),
         approval_resolver=StaticApprovalResolver(ApprovalOutcome.GRANTED),
     )
-    session = Session.create(
-        InMemoryEventStore(), cwd=tmp_path, provider="fake", model="fake-model"
-    )
+    session = Session.create(InMemoryEventStore())
 
     await parent.run(session, model="fake-model", user_message=Message.text("user", "go"))
 
@@ -194,7 +187,7 @@ async def test_sibling_limit_binds_across_calls_in_one_parent_run(tmp_path: Path
             FakeStep(text="done"),
         ],
         child_steps=[FakeStep(text=CHILD_ANSWER)],
-        authority=authority_for(tmp_path, max_children=2),
+        authority=authority_for(max_children=2),
     )
 
     result = await parent.run(
@@ -211,7 +204,7 @@ async def test_sibling_limit_binds_across_calls_in_one_parent_run(tmp_path: Path
 
 @pytest.mark.asyncio
 async def test_child_restricted_registry_hides_tools_it_cannot_hold(tmp_path: Path) -> None:
-    registry = ToolRegistry([ReadFileTool()])
+    registry = ToolRegistry([ReadTestTool(tmp_path)])
 
     kept = restrict_registry(registry, frozenset({"filesystem.read"}))
     dropped = restrict_registry(registry, frozenset())
@@ -225,37 +218,29 @@ async def test_a_suspended_child_is_reported_without_failing_the_parent(tmp_path
     workspace = tmp_path / "ws"
     workspace.mkdir()
     store = InMemoryEventStore()
-    sandbox = HostBackend(workspace, unsafe=True)
 
-    def coordinator_factory(spec: object, child_sandbox: object) -> RunCoordinator:
+    def coordinator_factory(spec: object) -> RunCoordinator:
         # The child has no resolver, so its mutating call suspends the child run.
-        from aihi.agent.tools.builtin import WriteFileTool
-
         return RunCoordinator(
             FakeProvider([FakeStep.call_tool("write_file", {"path": "x.txt", "content": "x"})]),
-            registry=ToolRegistry([WriteFileTool()]),
-            sandbox=child_sandbox,  # type: ignore[arg-type]
+            registry=ToolRegistry([WriteTestTool(tmp_path)]),
         )
 
     runner = ChildRunSubagentRunner(
         coordinator_factory,
-        subagent_session_factory(store, provider="fake", model="fake-model"),
-        sandbox=sandbox,
+        app_session_factory(store, workspace=workspace),
         model="fake-model",
-        permission_mode=PermissionMode.DEFAULT,
+        child_context_factory=lambda spec, context: ChildRunContext(),
     )
-    tool = SubagentTool(runner, authority=authority_for(workspace))
+    tool = SubagentTool(runner, authority=authority_for())
     parent = RunCoordinator(
         FakeProvider(
             [FakeStep.call_tool("task", {"objective": "write a file"}), FakeStep(text="noted")]
         ),
         registry=ToolRegistry([tool]),
-        sandbox=sandbox,
         approval_resolver=StaticApprovalResolver(ApprovalOutcome.GRANTED),
     )
-    session = Session.create(
-        store, cwd=workspace, provider="fake", model="fake-model", session_id="ses-suspend"
-    )
+    session = Session.create(store, session_id="ses-suspend")
 
     result = await parent.run(
         session, model="fake-model", user_message=Message.text("user", "delegate")
@@ -270,59 +255,46 @@ async def test_a_suspended_child_is_reported_without_failing_the_parent(tmp_path
 
 
 @pytest.mark.asyncio
-async def test_a_child_cannot_be_more_permissive_than_its_parent(tmp_path: Path) -> None:
-    """Delegation must not be a way to widen the parent's permission mode."""
+async def test_child_run_receives_injected_application_authority(tmp_path: Path) -> None:
+    """The Harness passes application child authority through without interpreting it."""
 
-    seen: list[str] = []
+    seen: list[tuple[object, object]] = []
 
     class Recording:
         async def run(self, session: Session, **kwargs: object) -> object:
-            seen.append(str(kwargs["permission_mode"]))
+            seen.append((kwargs["app_context"], kwargs["run_profile"]))
             raise RuntimeError("stop here")
 
-    def parent_for(mode: PermissionMode) -> tuple[RunCoordinator, Session]:
+    child_context = object()
+
+    def parent_for() -> tuple[RunCoordinator, Session]:
         runner = ChildRunSubagentRunner(
-            lambda spec, child_sandbox: Recording(),  # type: ignore[arg-type,return-value]
-            subagent_session_factory(InMemoryEventStore(), provider="fake", model="fake-model"),
-            sandbox=HostBackend(tmp_path, unsafe=True),
+            lambda spec: Recording(),  # type: ignore[arg-type,return-value]
+            app_session_factory(InMemoryEventStore(), workspace=tmp_path),
             model="fake-model",
-            permission_mode=PermissionMode.ACCEPT_EDITS,
+            child_context_factory=lambda spec, context: ChildRunContext(
+                app_context=child_context,
+                run_profile={"authority": "narrowed"},
+            ),
         )
         coordinator = RunCoordinator(
             FakeProvider(
                 [FakeStep.call_tool("task", {"objective": "edit things"}), FakeStep(text="done")]
             ),
-            registry=ToolRegistry([SubagentTool(runner, authority=authority_for(tmp_path))]),
-            sandbox=HostBackend(tmp_path, unsafe=True),
+            registry=ToolRegistry([SubagentTool(runner, authority=authority_for())]),
             approval_resolver=StaticApprovalResolver(ApprovalOutcome.GRANTED),
         )
-        session = Session.create(
-            InMemoryEventStore(), cwd=tmp_path, provider="fake", model="fake-model"
-        )
+        session = Session.create(InMemoryEventStore())
         return coordinator, session
 
-    # The runner is configured for accept_edits, but the parent only holds default.
-    coordinator, session = parent_for(PermissionMode.DEFAULT)
+    coordinator, session = parent_for()
     await coordinator.run(
         session,
         model="fake-model",
         user_message=Message.text("user", "go"),
-        permission_mode=PermissionMode.DEFAULT,
+        app_context={"authority": "parent"},
     )
-    assert seen == [PermissionMode.DEFAULT]
-
-    # Plan mode does not even reach the runner: spawning is a mutating tool.
-    seen.clear()
-    coordinator, session = parent_for(PermissionMode.PLAN)
-    await coordinator.run(
-        session,
-        model="fake-model",
-        user_message=Message.text("user", "go"),
-        permission_mode=PermissionMode.PLAN,
-    )
-    assert seen == []
-    denied = session.messages[-2].tool_results[0]
-    assert denied.metadata["error_code"] == "permission_denied"
+    assert seen == [(child_context, {"authority": "narrowed"})]
 
 
 @pytest.mark.asyncio

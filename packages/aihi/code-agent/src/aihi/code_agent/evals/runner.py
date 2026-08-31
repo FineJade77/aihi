@@ -36,9 +36,10 @@ from aihi.code_agent.evals.graders import (
 )
 from aihi.code_agent.evals.report import CodeEvalReport, CodeTaskResult
 from aihi.code_agent.evals.workspace import WorkspaceManager, changed_paths
-from aihi.code_agent.prompts import build_system_prompt, load_builtin_prompt
+from aihi.code_agent.permissions import AccessMode, RunMode
+from aihi.code_agent.prompts import load_builtin_prompt
 from aihi.code_agent.runtime import CodeAgentRuntime
-from aihi.models import Message
+from aihi.code_agent.sessions import create_coding_session
 
 _MAX_COMMAND_OUTPUT = 4_096
 
@@ -271,25 +272,27 @@ class CodeAgentEvalRunner:
             raise CodeAgentConfigError("benchmark execution requires the Docker sandbox")
         if self.config.sandbox.allow_network:
             raise CodeAgentConfigError("benchmark execution requires network access to be disabled")
-        if self.config.permission_mode.value != "bypass":
+        if self.config.access_mode is not AccessMode.FULL_ACCESS:
             raise CodeAgentConfigError(
-                "benchmark execution requires permission_mode=bypass for non-interactive "
+                "benchmark execution requires access_mode=full_access for non-interactive "
                 "process execution"
             )
+        if self.config.run_mode is not RunMode.EXECUTE:
+            raise CodeAgentConfigError("benchmark execution requires run_mode=execute")
         scoped = replace(
             self.config,
             base_dir=workspace,
             artifact_path=None,
             audit_path=None,
-            sandbox=replace(self.config.sandbox, root=workspace, allow_network=False),
+            sandbox=replace(self.config.sandbox, allow_network=False),
         )
-        session = Session.create(
+        session = create_coding_session(
             store,
             cwd=workspace,
             provider=scoped.provider.name,
             model=scoped.provider.model,
         )
-        runtime = await CodeAgentRuntime.create(scoped, store=store)
+        runtime = await CodeAgentRuntime.create(scoped, session=session)
         tool_payload = [
             spec.model_definition.to_dict() for spec in runtime.runtime.registry.specs
         ]
@@ -306,13 +309,10 @@ class CodeAgentEvalRunner:
             raise CodeAgentConfigError("benchmark tool definitions changed between attempts")
         self._tools_sha256 = tools_sha256
         try:
-            result = await runtime.runtime.coordinator.run(
+            result = await runtime.run(
                 session,
                 model=scoped.provider.model,
-                user_message=Message.text("user", task.prompt),
-                permission_mode=scoped.permission_mode,
-                require_capability_lease=scoped.require_capability_lease,
-                system_prompt=build_system_prompt(scoped, workspace=workspace),
+                user_message=task.prompt,
                 max_turns=task.max_turns,
                 max_output_tokens=task.max_tokens,
             )

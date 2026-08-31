@@ -67,9 +67,6 @@ def test_event_store_returns_immutable_snapshots_and_rejects_non_json_data(store
 def test_session_projection_and_reload(store, tmp_path) -> None:
     session = Session.create(
         store,
-        cwd=tmp_path,
-        provider="fake",
-        model="fake-model",
         session_id="ses-projection",
     )
     session.add_message(Message.text("user", "hi"))
@@ -88,9 +85,6 @@ def test_session_projection_and_reload(store, tmp_path) -> None:
 def test_session_parent_link_is_persisted_in_store_metadata(store, tmp_path) -> None:
     child = Session.create(
         store,
-        cwd=tmp_path,
-        provider="fake",
-        model="fake-model",
         session_id="ses-child",
         metadata={"parent_session_id": "ses-parent"},
     )
@@ -102,7 +96,7 @@ def test_session_parent_link_is_persisted_in_store_metadata(store, tmp_path) -> 
 def test_sqlite_store_survives_close_and_reopen(tmp_path) -> None:
     database_path = tmp_path / "persistent.db"
     first = SQLiteEventStore(database_path)
-    first.create_session("ses-persistent", {"cwd": "/workspace"})
+    first.create_session("ses-persistent", {"application": "test"})
     first.append("ses-persistent", 0, [Event(type="session.created", session_id="ses-persistent")])
     first.close()
 
@@ -117,9 +111,7 @@ def test_sqlite_store_survives_close_and_reopen(tmp_path) -> None:
 def test_session_reload_repairs_orphans_without_replaying_tools(store, tmp_path) -> None:
     from aihi.models import ToolCallBlock
 
-    session = Session.create(
-        store, cwd=tmp_path, provider="fake", model="fake-model", session_id="ses-repair"
-    )
+    session = Session.create(store, session_id="ses-repair")
     session.add_message(
         Message(role="assistant", content=(ToolCallBlock("call-1", "read_file", {"path": "x"}),))
     )
@@ -134,9 +126,7 @@ def test_session_reload_repairs_orphans_without_replaying_tools(store, tmp_path)
 
 
 def test_compaction_replaces_projection_but_not_raw_events(store, tmp_path) -> None:
-    session = Session.create(
-        store, cwd=tmp_path, provider="fake", model="fake-model", session_id="ses-compact"
-    )
+    session = Session.create(store, session_id="ses-compact")
     first = session.add_message(Message.text("user", "old question"))
     second = session.add_message(Message.text("assistant", "old answer"))
     summary = Message.text("assistant", "summary")

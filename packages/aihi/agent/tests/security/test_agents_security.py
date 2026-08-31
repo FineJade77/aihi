@@ -6,7 +6,6 @@ from aihi.agent.agents import (
     AgentState,
     TaskGraph,
     TaskResult,
-    WorkspaceScope,
 )
 from aihi.agent.agents.errors import (
     AgentBudgetExceeded,
@@ -23,7 +22,6 @@ def _graph(*, max_depth: int = 1) -> tuple[TaskGraph, str]:
         parent_run_id="run_parent",
         objective="root",
         budget=AgentBudget(max_tokens=10, max_cost_usd=1, timeout_seconds=5, max_tool_calls=2),
-        workspace=WorkspaceScope("/tmp", read_only=True),
         capabilities={"read"},
         max_depth=max_depth,
     )
@@ -35,12 +33,6 @@ def test_child_cannot_escalate_authority() -> None:
     graph, root_id = _graph()
     with pytest.raises(AgentPermissionDenied):
         graph.spawn(root_id, objective="write", capabilities={"write"})
-    with pytest.raises(AgentPermissionDenied):
-        graph.spawn(root_id, objective="escape", workspace=WorkspaceScope("/"))
-    with pytest.raises(AgentPermissionDenied):
-        graph.spawn(
-            root_id, objective="mutate", workspace=WorkspaceScope("/tmp", read_only=False)
-        )
     with pytest.raises(AgentBudgetExceeded):
         graph.spawn(
             root_id,
@@ -66,7 +58,6 @@ def test_snapshot_tampering_is_rejected() -> None:
         parent_run_id="run",
         objective="root",
         budget=AgentBudget(),
-        workspace=WorkspaceScope("/tmp"),
     )
     snapshot = graph.snapshot()
     snapshot["roots"] = []
@@ -80,7 +71,6 @@ def test_result_state_must_match_transition() -> None:
         parent_run_id="run",
         objective="root",
         budget=AgentBudget(),
-        workspace=WorkspaceScope("/tmp"),
     )
     graph.transition(root.spec.task_id, AgentState.RUNNING)
     with pytest.raises(AgentValidationError):

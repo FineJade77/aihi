@@ -9,7 +9,7 @@
 | 状态 | 当前基线 |
 | 范围 | `aihi-models`、`aihi-agent`、`aihi-code-agent`、`@aihi/code-protocol`、`@aihi/code-cli` |
 | 运行时 | Python 3.11+；TypeScript/Ink CLI |
-| 协议 | Code Protocol 0.2 |
+| 协议 | Code Protocol 0.3 |
 | 事实源 | Runtime 使用事件日志；本文描述稳定边界 |
 
 本文说明契约、职责、依赖方向和安全不变式。交付进度见 [TASK.md](TASK.md)；`docs/adr/` 和
@@ -82,7 +82,7 @@ flowchart TB
 所有副作用都必须经过：
 
 ```text
-Tool input → 校验 → Policy/Approval → Hook → Sandbox → 持久化 Tool Result
+Tool input → 校验/Prepare → Policy/Approval → Hook → 受治理的 Tool 执行 → 持久化 Tool Result
 ```
 
 事件日志是事实源，模型响应和 TUI 内存都不是。
@@ -92,7 +92,7 @@ Tool input → 校验 → Policy/Approval → Hook → Sandbox → 持久化 Too
 ```text
 packages/aihi/models         aihi-models；模型契约与 Provider
 packages/aihi/agent          aihi-agent；Runtime、Session、Tool、安全链路
-packages/aihi/code-agent     aihi-code-agent；Coding Worker 与应用组合
+packages/aihi/code-agent     aihi-code-agent；位于 uv workspace 外的私有本地 Coding Worker 与应用组合
 packages/aihi/code-protocol  @aihi/code-protocol；DTO 与 JSON Schema
 apps/aihi-code-cli           @aihi/code-cli；Ink TUI
 tests/                       契约、集成、打包和冻结 fixture
@@ -134,7 +134,8 @@ RUNNING → COMPLETED | FAILED | INTERRUPTED | CANCELLED
 1. 执行 Tool 前先持久化 Assistant Tool Call。
 2. 每个已执行 Tool Call 恰好产生一个持久化 Result；等待审批的调用保持 pending。
 3. Policy 和 Tool 结果立即落盘；流式 chunk 仅作为 UI ephemeral event。
-4. Resume 使用首次 `run.started` 固化的 Provider、Model、Workspace、Sandbox、permission mode、Prompt 摘要和 output budget。
+4. Resume 使用首次 `run.started` 固化的 Provider、Model、应用权限 Profile、Prompt 摘要和 output budget；
+   对 Coding Agent，该 Profile 固化 Session Workspace、AccessMode、RunMode 与命令 Sandbox descriptor。
 5. 取消或进程重启修复孤儿调用，但不盲目重放可能已产生副作用的 Tool。
 6. 一个 Session 只有一个 writer，`seq` 单调递增，追加使用 `expected_seq` 检测冲突。
 
@@ -182,30 +183,41 @@ Cache Hit Ratio、Cache Key 变化次数以及 Soft/Hard Compaction 次数。只
 
 | 类别 | 示例 | 默认行为 |
 | --- | --- | --- |
-| 只读 | `read_file`、`glob`、`grep` | 声明并发安全时可并行 |
-| 工作区修改 | `write_file`、`edit_file` | 受 `accept_edits` 或 Approval 控制 |
-| 进程执行 | `bash` | 始终需要显式 Approval，不使用 `shell=True` |
+| 只读 | `read_file`、`glob`、`grep` | 所有 AccessMode/RunMode 均允许，声明并发安全时可并行 |
+| 工作区修改 | `write_file`、`edit_file` | `read_only`/`plan` 拒绝；`workspace_write`/`full_access` 允许 |
+| 进程执行 | `bash` | `read_only`/`plan` 拒绝；`workspace_write` 为 ASK；`full_access` 为 ALLOW |
 
 Policy 输出 `ALLOW`、`DENY` 或 `ASK`。`ASK` 会持久化 `approval.requested` 并挂起 Run，由应用提供
 人工 Resolver。Approval 和 Capability Lease 按 `run_id` 作用域化，Resume 时从事件重建；一次性
-Approval 只能消费一次。`HostBackend` 需要显式 `unsafe=true`，只提供 workspace 约束、超时、输出
-上限和进程组清理，不提供系统隔离。
+Approval 只能消费一次。Coding Workspace 是 Session 中以应用自有 metadata 持久化的 canonical cwd；
+基础 Harness 只负责不透明地持久化和 Fork 这些 metadata，不提供 cwd 属性或 Workspace 语义。TOML 只能
+从该目录发现配置，不能定义另一套 Workspace。文件 Tool 通过应用 Context 规范化路径并在本地执行，只有 Bash
+持有 Sandbox backend。`HostBackend` 需要显式 `unsafe=true`，只提供命令 cwd、超时、输出上限和进程组
+清理，不提供系统隔离；Docker 命令执行在能力不可用时 fail closed。
+
+基础 Harness 只治理子级预算与能力子集、深度和子任务数量；cwd 和应用权限对它是不透明值。Code Agent
+让子 Run 保持父级 Session 的 canonical cwd，并注入子级 `CodeAgentPermissionContext`：获批能力决定
+请求的 AccessMode，父级 AccessMode 是上限，而 Plan 强制生成只读的 Plan 子 Run。
 
 ## Skill、MCP 与扩展
 
 可选能力通过 `RuntimeExtensions` 接入：Skill 先发现元数据和 Hash，正文只有被显式请求才加载；
 内置 Skill 由包完整性隐式信任，用户/项目/Workspace Skill 必须精确 trust。MCP 和 Plugin Tool
-注册后经过统一 ToolRegistry、Policy、Hook、Sandbox 链路；Plugin 在独立受限 Host 进程中激活；
+注册后经过统一 ToolRegistry、Policy 和 Hook 链路；需要执行任意命令的 Tool 必须显式持有应用注入的
+命令 Sandbox。Plugin 在独立受限 Host 进程中激活；
 Memory 作用域化且写入需要授权；Subagent 以受治理的 `task` Tool 在独立 Session 中运行。
 
 ## Coding Worker 与 TUI 协议
 
 `aihi-code-agent` 是应用 Runtime 和 EventStore 唯一写入端；`@aihi/code-cli` 是薄客户端。两者通过
-Code Protocol 0.2 的 stdio 通讯：
+Code Protocol 0.3 的 stdio 通讯：
 
 - JSON-RPC 2.0、`Content-Length` framing 和精确版本 handshake。
 - `run.start`/`run.resume` 立即返回包含 `run_id` 的 acceptance。
 - 进度和终态由版本化 notification 传递，启动前失败使用 `run.error`。
+- Session descriptor 直接暴露 canonical cwd；Config descriptor 暴露应用拥有的 Access/Run Mode 和
+  `command_sandbox`；Run descriptor 暴露持久化后的实际生效模式。
+- Task DTO 只包含通用委派范围，不携带 Workspace 权限。
 - 重连先完整分页 `session.events(after_seq)`，再接收实时通知。
 - TUI 的 replay 和实时事件共用 reducer，按 `seq` 去重，以 canonical `assistant.message` 覆盖临时 `model.chunk`。
 
@@ -215,14 +227,19 @@ TUI 只拥有 viewport、折叠 Tool 输出、Slash 补全和草稿历史等展�
 ## 持久化与可观测性
 
 默认使用 SQLite WAL；大型输出、Diff 和附件存入 Artifact Store，并带 Session/Run retention 和
-访问检查。Snapshot 与 Compaction 只是派生加速数据，不替代原始事件。`audit.jsonl` 是本地脱敏、
+访问检查。Snapshot 与 Compaction 只是派生加速数据，不替代原始事件。Event envelope v2 从
+`subagent.spawned` 的 Task payload 中删除旧的 Harness-owned Workspace；envelope v3 从
+Run/Tool/Approval/Compaction Event 中删除 Runtime 全局 Workspace、Sandbox 和权限模式字段。应用权限
+保留在不透明 Run profile 中，命令 Sandbox 事实保留在 Tool 自有 execution metadata 中；注册的
+v1 → v2 → v3 migration 继续读取冻结 Session，而不会恢复已退役的基础层概念。`audit.jsonl` 是本地脱敏、
 尽力而为的运维日志，不能成为事实源；`/doctor` 检查审计目标及其父目录可写性。Trace、Replay 和
 Eval 只处理脱敏事件 Bundle，不重新执行 Tool 或 Provider。
 
 ## 扩展规则与质量门禁
 
 新增能力时先判断是否 Provider-neutral 且可跨产品复用，再定义协议、事件和失败语义；产品默认值
-和 UX 留在应用层；所有副作用保持 `tool → policy → hooks → sandbox` 链路；公共符号必须先有兼容性、
+和 UX 留在应用层；所有副作用保持 `tool → policy → hooks → 受治理执行` 链路，只有执行任意命令的 Tool
+才注入命令 Sandbox；公共符号必须先有兼容性、
 安全性和 installed-package 测试。
 
 ```bash
@@ -233,12 +250,17 @@ mypy
 pnpm --dir apps/aihi-code-cli test
 ```
 
-打包测试还必须独立构建和安装 wheels，验证 PEP 420、`py.typed` 及冻结 Event/SQLite/Trace fixture
-可回放且不被重新生成。契约测试直接读取三个 distribution 的源码：包导入上层、跨 distribution 深入
-对方私有或内部模块而非包公共面、`__all__` 导出无任何绑定的名字，都会让构建失败。这些是 wheel
-元数据查不出的——开发态下三个 `src` 都在 `pythonpath` 上，反向导入既能通过类型检查也能运行。三个 Python distribution 已以 `0.1.0` 发布到 PyPI：
-[`aihi-models`](https://pypi.org/project/aihi-models/0.1.0/)、
-[`aihi-agent`](https://pypi.org/project/aihi-agent/0.1.0/) 和
-[`aihi-code-agent`](https://pypi.org/project/aihi-code-agent/0.1.0/)。
+打包测试必须独立和组合构建、安装两个公开 wheel，验证 PEP 420、`py.typed`、依赖 metadata、
+`aihi-code-agent` 的发布清单排除契约，并保证冻结 Event/SQLite/Trace fixture 可回放且不被重新生成。
+契约测试直接读取三个 Python 包的源码：包导入上层、跨包深入对方私有或内部模块而非受支持公共面、
+`__all__` 导出无任何绑定的名字，都会让构建失败。这些是 wheel 元数据查不出的——开发态下三个 `src`
+都在 `pythonpath` 上，反向导入既能通过类型检查也能运行。
+
+公开 PyPI distribution 只有当前版本为 `0.2.0` 的
+[`aihi-models`](https://pypi.org/project/aihi-models/0.2.0/) 与
+[`aihi-agent`](https://pypi.org/project/aihi-agent/0.2.0/)。`aihi-code-agent` 仍是可安装的私有本地应用，
+位于 uv workspace 之外，供本地 Worker 和 CLI 使用，但不属于 PyPI release artifact。根 `pyproject.toml` 中的
+`tool.aihi.release.python-distributions` 是公开发布清单的唯一事实源；code-agent 还声明
+`Private :: Do Not Upload`，阻止误操作直接上传到 PyPI。
 
 参见 [任务路线图](TASK.zh-CN.md) 和各包中文 README。

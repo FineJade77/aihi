@@ -5,7 +5,6 @@ from __future__ import annotations
 import copy
 from collections.abc import Callable, Collection
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 from aihi.agent._core.errors import EventInvariantViolation
@@ -93,41 +92,28 @@ class Session:
         cls,
         store: EventStore,
         *,
-        cwd: str | Path,
-        provider: str,
-        model: str,
         session_id: str | None = None,
         metadata: dict[str, Any] | None = None,
         event_observer: Callable[[Event], None] | None = None,
     ) -> Session:
-        resolved_cwd = str(Path(cwd).resolve())
+        """Create a durable Session with application-owned JSON metadata."""
+
         sid = session_id or new_id("ses")
-        # Reserved keys are the session's identity; extras (such as a fork or
-        # subagent parent link) are persisted with it rather than living only in
-        # memory, so a reloaded session still knows where it came from.
-        extra = {
-            key: value
-            for key, value in (metadata or {}).items()
-            if key not in {"cwd", "provider", "model", "harness_version"}
-        }
-        metadata = {
-            "cwd": resolved_cwd,
-            "provider": provider,
-            "model": model,
-            "harness_version": "0.1.0",
-            **extra,
-        }
-        raw_parent_session_id = extra.get("parent_session_id")
+        # Session metadata belongs to the embedding application. The Harness
+        # persists and copies it but does not assign workspace, provider, model,
+        # or any other product meaning to its keys.
+        session_metadata = copy.deepcopy(metadata or {})
+        raw_parent_session_id = session_metadata.get("parent_session_id")
         parent_session_id = (
             raw_parent_session_id if isinstance(raw_parent_session_id, str) else None
         )
-        store.create_session(sid, metadata, parent_session_id=parent_session_id)
-        event = Event(type="session.created", session_id=sid, data=metadata)
+        store.create_session(sid, session_metadata, parent_session_id=parent_session_id)
+        event = Event(type="session.created", session_id=sid, data=session_metadata)
         persisted = store.append(sid, 0, [event])
         session = cls(
             id=sid,
             store=store,
-            metadata=metadata,
+            metadata=session_metadata,
             head_seq=1,
             _events=persisted,
             _messages=[],
@@ -189,13 +175,12 @@ class Session:
             for event in self._events
             if event.seq is not None and event.seq <= at_seq and event.type != "session.created"
         ]
+        child_metadata = copy.deepcopy(self.metadata)
+        child_metadata.update({"parent_session_id": self.id, "forked_at_seq": at_seq})
         child = Session.create(
             self.store,
-            cwd=self.cwd,
-            provider=str(self.metadata.get("provider", "")),
-            model=str(self.metadata.get("model", "")),
             session_id=session_id,
-            metadata={"parent_session_id": self.id, "forked_at_seq": at_seq},
+            metadata=child_metadata,
             event_observer=event_observer,
         )
         child.append_many(
@@ -246,10 +231,6 @@ class Session:
     @property
     def messages(self) -> tuple[Message, ...]:
         return tuple(self._messages)
-
-    @property
-    def cwd(self) -> Path:
-        return Path(str(self.metadata["cwd"]))
 
     @property
     def authorization(self) -> AuthorizationState:

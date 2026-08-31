@@ -14,7 +14,6 @@ from aihi.agent.policy.engine import (
     DecisionEffect,
     DefaultPolicyEngine,
     PermissionContext,
-    PermissionMode,
     PolicyEngine,
 )
 from aihi.agent.policy.leases import Approval, AuthorizationState, CapabilityLease
@@ -30,7 +29,6 @@ __all__ = [
     "DecisionEffect",
     "DefaultPolicyEngine",
     "PermissionContext",
-    "PermissionMode",
     "PolicyEngine",
     "StaticApprovalResolver",
     "SuspendingApprovalResolver",

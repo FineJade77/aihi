@@ -26,7 +26,6 @@ from aihi.agent import (
     SkillTrustManager,
     SQLiteEventStore,
     TaskGraph,
-    WorkspaceScope,
     approval_input_preview,
 )
 from aihi.agent import Event as AgentEvent
@@ -38,6 +37,7 @@ from aihi.code_agent.config import (
     load_worker_config,
 )
 from aihi.code_agent.runtime import CodeAgentRuntime
+from aihi.code_agent.sessions import CodingSessionMetadata, create_coding_session
 from aihi.code_agent.skills import builtin_skill_root
 
 from ..protocol import (
@@ -322,7 +322,7 @@ class WorkerServer:
         ):
             raise RpcValidationError("session_id must be a non-empty string", code=INVALID_PARAMS)
         metadata = self._optional_mapping(params, "metadata")
-        session = Session.create(
+        session = create_coding_session(
             self._ensure_store(),
             cwd=cwd,
             provider=selected.provider.name,
@@ -336,19 +336,20 @@ class WorkerServer:
 
     def _session_list(self, params: JsonObject) -> JsonObject:
         limit = self._limit(params.get("limit", 50), name="limit", maximum=100)
-        sessions = self._ensure_store().list_sessions(limit=limit)
-        return {
-            "sessions": [
+        sessions: list[JsonObject] = []
+        for info in self._ensure_store().list_sessions(limit=limit):
+            coding = CodingSessionMetadata.from_mapping(info.metadata)
+            sessions.append(
                 {
                     "session_id": info.session_id,
+                    "cwd": str(coding.workspace),
                     "head_seq": info.head_seq,
                     "created_at": info.created_at,
                     "metadata": deepcopy(info.metadata),
                     "parent_session_id": info.parent_session_id,
                 }
-                for info in sessions
-            ]
-        }
+            )
+        return {"sessions": sessions}
 
     def _session_fork(self, params: JsonObject) -> JsonObject:
         session = self._load_session(params)
@@ -422,13 +423,16 @@ class WorkerServer:
     def _task_create(self, params: JsonObject) -> JsonObject:
         session = self._load_session(params)
         graph = self._task_graph(session)
-        workspace = self._workspace(params.get("workspace"), default_root=str(session.cwd))
+        if "workspace" in params:
+            raise RpcValidationError(
+                "task workspace is application-owned and is not a Harness task field",
+                code=INVALID_PARAMS,
+            )
         budget = self._budget(params.get("budget"))
         node = graph.create_root(
             parent_run_id=self._required_text(params, "parent_run_id"),
             objective=self._required_text(params, "objective"),
             budget=budget,
-            workspace=workspace,
             capabilities=self._string_collection(params.get("capabilities", []), "capabilities"),
             constraints=self._string_collection(params.get("constraints", []), "constraints"),
             max_depth=self._non_negative_int(params.get("max_depth", 4), "max_depth"),
@@ -449,12 +453,11 @@ class WorkerServer:
             if raw_budget is not None
             else None
         )
-        raw_workspace = params.get("workspace")
-        workspace = (
-            self._workspace(raw_workspace, default_root=parent.spec.workspace.root)
-            if raw_workspace is not None
-            else None
-        )
+        if "workspace" in params:
+            raise RpcValidationError(
+                "task workspace is application-owned and is not a Harness task field",
+                code=INVALID_PARAMS,
+            )
         raw_capabilities = params.get("capabilities")
         capabilities = (
             self._string_collection(raw_capabilities, "capabilities")
@@ -465,7 +468,6 @@ class WorkerServer:
             parent.spec.task_id,
             objective=self._required_text(params, "objective"),
             budget=budget,
-            workspace=workspace,
             capabilities=capabilities,
             constraints=self._string_collection(params.get("constraints", []), "constraints"),
             metadata=self._optional_mapping(params, "metadata"),
@@ -525,7 +527,7 @@ class WorkerServer:
             params.get("max_output_tokens"), "max_output_tokens"
         )
         run_id = self._optional_text_value(params.get("run_id"), "run_id", max_length=256)
-        config = self._config_loader(session.cwd)
+        config = self._config_loader(CodingSessionMetadata.from_session(session).workspace)
         config = config.select_provider(provider, model=model)
         return asyncio.run(
             self._execute_run_start(
@@ -567,7 +569,7 @@ class WorkerServer:
                 code=INVALID_PARAMS,
             )
         try:
-            path = acknowledge_host_execution(cwd, root=config.sandbox.root)
+            path = acknowledge_host_execution(cwd)
         except (OSError, ValueError) as error:
             raise RpcValidationError(
                 f"Cannot persist Host acknowledgement: {error}", code=INTERNAL_ERROR
@@ -581,7 +583,6 @@ class WorkerServer:
         return {
             "path": str(path),
             "workspace": str(Path(cwd).expanduser().resolve(strict=True)),
-            "root": str(config.sandbox.root),
             "acknowledged": True,
         }
 
@@ -599,7 +600,7 @@ class WorkerServer:
         max_output_tokens = self._optional_positive_int(
             params.get("max_output_tokens"), "max_output_tokens"
         )
-        config = self._config_loader(session.cwd)
+        config = self._config_loader(CodingSessionMetadata.from_session(session).workspace)
         return asyncio.run(
             self._execute_run_resume(
                 config,
@@ -626,6 +627,8 @@ class WorkerServer:
                     "updated_at": event.created_at,
                     "provider": None,
                     "model": None,
+                    "access_mode": None,
+                    "run_mode": None,
                     "error": None,
                     "pending_approval_id": None,
                 },
@@ -635,6 +638,14 @@ class WorkerServer:
                 descriptor["state"] = "running"
                 descriptor["provider"] = event.data.get("provider")
                 descriptor["model"] = event.data.get("model")
+                profile = event.data.get("application_profile")
+                if isinstance(profile, dict):
+                    access_mode = profile.get("access_mode")
+                    run_mode = profile.get("run_mode")
+                    if access_mode in {"read_only", "workspace_write", "full_access"}:
+                        descriptor["access_mode"] = access_mode
+                    if run_mode in {"execute", "plan"}:
+                        descriptor["run_mode"] = run_mode
             elif event.type == "run.resumed":
                 descriptor["state"] = "running"
             elif event.type == "run.suspended":
@@ -656,7 +667,7 @@ class WorkerServer:
         session = self._load_session(params)
         run_id = self._required_text(params, "run_id", max_length=256)
         reason = self._optional_text_value(params.get("reason"), "reason", max_length=4_096)
-        config = self._config_loader(session.cwd)
+        config = self._config_loader(CodingSessionMetadata.from_session(session).workspace)
         return asyncio.run(self._execute_run_cancel(config, session, run_id=run_id, reason=reason))
 
     @staticmethod
@@ -667,7 +678,7 @@ class WorkerServer:
         run_id: str,
         reason: str | None,
     ) -> JsonObject:
-        runtime = await CodeAgentRuntime.create(config, store=session.store)
+        runtime = await CodeAgentRuntime.create(config, session=session)
         try:
             result = runtime.runtime.coordinator.abandon(
                 session, run_id=run_id, reason=reason or "cancelled by user"
@@ -687,7 +698,7 @@ class WorkerServer:
         max_output_tokens: int | None,
         cancel_signal: threading.Event | None = None,
     ) -> JsonObject:
-        runtime = await CodeAgentRuntime.create(config, store=session.store)
+        runtime = await CodeAgentRuntime.create(config, session=session)
         cancel_event, watcher = await WorkerServer._cancel_bridge(cancel_signal)
         try:
             result = await runtime.run(
@@ -714,7 +725,7 @@ class WorkerServer:
         max_output_tokens: int | None,
         cancel_signal: threading.Event | None = None,
     ) -> JsonObject:
-        runtime = await CodeAgentRuntime.create(config, store=session.store)
+        runtime = await CodeAgentRuntime.create(config, session=session)
         cancel_event, watcher = await WorkerServer._cancel_bridge(cancel_signal)
         try:
             result = await runtime.resume(
@@ -812,7 +823,7 @@ class WorkerServer:
 
     def _skill_list(self, params: JsonObject) -> JsonObject:
         session = self._load_session(params)
-        config = self._config_loader(session.cwd)
+        config = self._config_loader(CodingSessionMetadata.from_session(session).workspace)
         discovery, trust = self._skill_components(config)
         candidates = discovery.discover()
         return {
@@ -841,7 +852,7 @@ class WorkerServer:
         enable = params.get("enable", True)
         if not isinstance(enable, bool):
             raise RpcValidationError("enable must be a boolean", code=INVALID_PARAMS)
-        config = self._config_loader(session.cwd)
+        config = self._config_loader(CodingSessionMetadata.from_session(session).workspace)
         discovery, trust = self._skill_components(config)
         candidate = discovery.resolve(name)
         record = trust.trust(candidate, trusted_by=trusted_by, enable=enable)
@@ -850,7 +861,7 @@ class WorkerServer:
     def _skill_untrust(self, params: JsonObject) -> JsonObject:
         session = self._load_session(params)
         name = self._required_text(params, "name", max_length=256)
-        config = self._config_loader(session.cwd)
+        config = self._config_loader(CodingSessionMetadata.from_session(session).workspace)
         discovery, trust = self._skill_components(config)
         candidate = discovery.resolve(name)
         if candidate.scope is SkillScope.BUILTIN:
@@ -865,7 +876,7 @@ class WorkerServer:
 
     def _mcp_list(self, params: JsonObject) -> JsonObject:
         session = self._load_session(params)
-        config = self._config_loader(session.cwd)
+        config = self._config_loader(CodingSessionMetadata.from_session(session).workspace)
         return {
             "session_id": session.id,
             "servers": [
@@ -887,7 +898,7 @@ class WorkerServer:
 
     def _tool_list(self, params: JsonObject) -> JsonObject:
         session = self._load_session(params)
-        config = self._config_loader(session.cwd)
+        config = self._config_loader(CodingSessionMetadata.from_session(session).workspace)
         names = list(config.tools)
         if config.skill_load_tool and "load_skill" not in names:
             names.append("load_skill")
@@ -929,7 +940,7 @@ class WorkerServer:
                 "rule_id",
                 "reason",
                 "required_capabilities",
-                "sandbox",
+                "execution",
             ):
                 if key in event.data:
                     descriptor[key] = (
@@ -937,6 +948,9 @@ class WorkerServer:
                         if key == "tool_input" and isinstance(event.data[key], dict)
                         else event.data[key]
                     )
+            execution = event.data.get("execution")
+            if isinstance(execution, dict) and isinstance(execution.get("sandbox"), dict):
+                descriptor["sandbox"] = deepcopy(execution["sandbox"])
             break
         return descriptor
 
@@ -981,7 +995,7 @@ class WorkerServer:
                 "Persisted task graph must contain one root", code=INVALID_PARAMS
             )
         snapshot: dict[str, object] = {
-            "schema_version": 1,
+            "schema_version": 2,
             "session_id": session.id,
             "roots": roots,
             "nodes": nodes,
@@ -1012,8 +1026,10 @@ class WorkerServer:
 
     def _session_descriptor(self, session: Session) -> JsonObject:
         info = self._ensure_store().get(session.id)
+        coding = CodingSessionMetadata.from_session(session)
         return {
             "session_id": info.session_id,
+            "cwd": str(coding.workspace),
             "head_seq": info.head_seq,
             "created_at": info.created_at,
             "metadata": deepcopy(info.metadata),
@@ -1078,14 +1094,6 @@ class WorkerServer:
                 raise RpcValidationError("budget must be a JSON object", code=INVALID_PARAMS)
             defaults.update(dict(value))
         return AgentBudget.from_dict(defaults)
-
-    @staticmethod
-    def _workspace(value: object, *, default_root: str) -> WorkspaceScope:
-        if value is None:
-            return WorkspaceScope(root=default_root)
-        if not isinstance(value, Mapping):
-            raise RpcValidationError("workspace must be a JSON object", code=INVALID_PARAMS)
-        return WorkspaceScope.from_dict(dict(value))
 
     def emit_event(
         self,

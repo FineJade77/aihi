@@ -9,7 +9,7 @@
 | Status | Active baseline |
 | Scope | aihi-models, aihi-agent, aihi-code-agent, @aihi/code-protocol, @aihi/code-cli |
 | Runtime | Python 3.11+; TypeScript/Ink CLI |
-| Protocol | Code Protocol 0.2 |
+| Protocol | Code Protocol 0.3 |
 | Source of truth | Event log for runtime state; this document for stable boundaries |
 
 This document describes contracts, ownership, dependency direction and safety invariants. Delivery status
@@ -88,7 +88,7 @@ flowchart TB
 Every side effect follows:
 
 ~~~text
-Tool input -> validation -> policy/approval -> hooks -> sandbox -> durable Tool Result
+Tool input -> validation/preparation -> policy/approval -> hooks -> governed Tool execution -> durable Tool Result
 ~~~
 
 The event log, not the model response or TUI memory, is the runtime source of truth.
@@ -99,7 +99,7 @@ The event log, not the model response or TUI memory, is the runtime source of tr
 packages/aihi/
 ├── models/                 # distribution: aihi-models; import: aihi.models
 ├── agent/                  # distribution: aihi-agent; import: aihi.agent
-├── code-agent/             # distribution: aihi-code-agent; Coding Worker/runtime
+├── code-agent/             # private local app outside uv workspace: aihi-code-agent; Worker/runtime
 └── code-protocol/          # npm package: @aihi/code-protocol; DTOs and JSON Schemas
 apps/
 └── aihi-code-cli/          # private npm app: @aihi/code-cli; Ink TUI
@@ -149,8 +149,9 @@ abandonment and cannot be resumed.
 1. Persist the assistant tool call before executing it.
 2. Every executed tool call receives exactly one durable result; a pending approval remains pending.
 3. Append policy and tool outcomes immediately; streaming chunks are UI-only ephemeral events.
-4. Resume uses the first run.started configuration: provider, model, workspace, sandbox, permission mode,
-   prompt summary and output budget cannot drift.
+4. Resume uses the first run.started configuration: provider, model, application authority profile,
+   prompt summary and output budget cannot drift. For the Coding Agent that profile freezes the Session
+   workspace, AccessMode, RunMode and command-sandbox descriptor.
 5. Cancellation and restart repair orphaned calls without blindly replaying unknown side effects.
 6. A session has one writer and monotonic seq; appends use expected_seq for conflict detection.
 
@@ -208,17 +209,25 @@ governance.
 
 | Class | Examples | Default behavior |
 | --- | --- | --- |
-| Read-only | read_file, glob, grep | Can run concurrently when declared safe |
-| Workspace mutation | write_file, edit_file | Governed by accept_edits or approval |
-| Process execution | bash | Always requires explicit approval; no shell=True |
+| Read-only | read_file, glob, grep | Allowed in every AccessMode and RunMode; may run concurrently when safe |
+| Workspace mutation | write_file, edit_file | Denied by read_only/plan; allowed by workspace_write/full_access |
+| Process execution | bash | Denied by read_only/plan; ASK in workspace_write; ALLOW in full_access |
 
 Policy returns ALLOW, DENY or ASK. ASK persists approval.requested and suspends the run; the application
 supplies the human resolver. Approval and capability leases are append-only, scoped to run_id and
 reconstructed on resume. One-shot approvals are consumed exactly once.
 
-HostBackend requires explicit unsafe=true and provides workspace boundaries, timeouts, output limits and
-process-group cleanup only. Optional local-isolated and Docker backends fail closed when capabilities
-are unavailable. Child runs may only receive stricter permission, budget and workspace subsets.
+The Coding workspace is the canonical cwd stored as application-owned metadata in its Session; the base
+Harness persists and forks that metadata opaquely and has no cwd property or workspace semantics. TOML
+may discover configuration from that directory but cannot define another workspace. File tools canonicalize
+and operate locally through the application context. Only Bash owns a Sandbox backend. HostBackend requires explicit unsafe=true and
+provides command cwd, timeouts, output limits and process-group cleanup, not isolation. Docker command
+execution fails closed when required capabilities are unavailable.
+
+The base Harness governs child budget and capability subsets, depth and child count; it treats cwd and
+application authority as opaque values. Code Agent keeps a child in the parent's canonical Session cwd
+and injects a child `CodeAgentPermissionContext`: granted capabilities determine the requested
+AccessMode, the parent AccessMode remains the ceiling, and Plan forces a read-only Plan child.
 
 ## Skills, MCP and extensions
 
@@ -227,7 +236,8 @@ Optional capabilities enter through RuntimeExtensions, not hard-coded imports in
 - Skills are discovered as metadata and hashes; only an explicit request loads the body.
 - Built-in skills are implicitly trusted by package integrity. User/project/workspace skills require
   exact trust for name, version, scope and content hash.
-- MCP and plugin tools register through ToolRegistry and share policy, hooks and sandbox governance.
+- MCP and plugin tools register through ToolRegistry and share policy and hook governance; a tool that
+  executes arbitrary commands must explicitly own an application-supplied command Sandbox.
 - Plugins are discovered without execution and activated in a separate bounded host process.
 - Memory contributes scoped, sanitized context and requires explicit access for writes.
 - Subagents run as ordinary governed task tools in independent sessions.
@@ -235,11 +245,14 @@ Optional capabilities enter through RuntimeExtensions, not hard-coded imports in
 ## Coding worker and TUI protocol
 
 aihi-code-agent is the application runtime and sole EventStore writer. @aihi/code-cli is a thin local
-client. They communicate over stdio using Code Protocol 0.2:
+client. They communicate over stdio using Code Protocol 0.3:
 
 - JSON-RPC 2.0 with Content-Length framing and an exact-version initialize handshake.
 - run.start and run.resume immediately return acceptance containing run_id.
 - Progress and terminal states arrive as versioned notifications; startup failures use run.error.
+- Session descriptors expose the canonical cwd directly. Config descriptors expose application-owned
+  access/run modes plus `command_sandbox`; Run descriptors expose their persisted effective modes.
+- Task DTOs contain generic delegation scope only and never carry workspace authority.
 - Reconnects replay session.events(after_seq) before accepting live notifications.
 - The TUI uses one reducer for replay and live events, de-duplicates by seq, and treats canonical
   assistant.message as authoritative over temporary model.chunk buffers.
@@ -251,7 +264,11 @@ history are not persisted. User messages and runtime events are persisted by the
 
 SQLite WAL is the default local store. Artifacts hold large outputs, diffs and attachments outside the
 prompt with session/run retention and explicit access checks. Snapshots and compaction are derived
-accelerators; they never replace original events.
+accelerators; they never replace original events. Event envelope v2 removes the legacy Harness-owned
+workspace from `subagent.spawned` task payloads. Envelope v3 removes Runtime-wide workspace, Sandbox
+and permission-mode fields from Run/Tool/Approval/Compaction events; application authority remains in
+the opaque Run profile and command Sandbox facts remain in tool-owned execution metadata. Registered
+v1 → v2 → v3 migrations keep frozen sessions readable without restoring retired base-layer concepts.
 
 audit.jsonl is a local, redacted operational log and never runtime truth. /doctor checks its configured
 target and recent writable parent; failures are surfaced without changing the run result. Trace export,
@@ -262,7 +279,8 @@ replay and eval operate on redacted event bundles and never re-execute tools or 
 1. Decide whether a capability is provider-neutral and reusable across products.
 2. Define protocol, event types and failure semantics first.
 3. Put product defaults and UX in the application layer.
-4. Keep all side effects on the tool -> policy -> hooks -> sandbox path.
+4. Keep all side effects on the tool -> policy -> hooks -> governed execution path; inject a command
+   Sandbox only into tools that execute arbitrary commands.
 5. Add compatibility, security and installed-package tests before exposing a public symbol.
 
 If an implementation must change RunCoordinator semantics, relax a security default or introduce a
@@ -278,14 +296,19 @@ mypy
 pnpm --dir apps/aihi-code-cli test
 ~~~
 
-Packaging tests build and install wheels independently and together, verify PEP 420 namespace layout and
-py.typed, and replay the frozen event/SQLite/trace fixtures without regenerating them. Contract tests read
-the source of all three distributions and fail the build when a package imports a layer above it, reaches
-into another distribution's private or internal module instead of its package surface, or exports an
+Packaging tests build and install the two public wheels independently and together, verify PEP 420
+namespace layout, py.typed, dependency metadata and the release-manifest exclusion of aihi-code-agent,
+and replay the frozen event/SQLite/trace fixtures without regenerating them. Contract tests read the
+source of all three Python packages and fail the build when a package imports a layer above it, reaches
+into another package's private or internal module instead of its supported surface, or exports an
 `__all__` name nothing binds. Wheel metadata cannot catch those: in a development checkout every `src`
-tree is importable, so a reversed import type checks and runs. The three Python
-distributions are published as `0.1.0` on PyPI: [aihi-models](https://pypi.org/project/aihi-models/0.1.0/),
-[aihi-agent](https://pypi.org/project/aihi-agent/0.1.0/) and
-[aihi-code-agent](https://pypi.org/project/aihi-code-agent/0.1.0/).
+tree is importable, so a reversed import type checks and runs.
+
+The public PyPI distributions are [aihi-models](https://pypi.org/project/aihi-models/0.2.0/) and
+[aihi-agent](https://pypi.org/project/aihi-agent/0.2.0/), currently at `0.2.0`. aihi-code-agent remains
+an installable private local application outside the uv workspace for the local Worker and CLI, but it is not a PyPI release
+artifact. The canonical public release list lives in root `pyproject.toml` under
+`tool.aihi.release.python-distributions`; code-agent also declares `Private :: Do Not Upload` as a
+defense against an accidental direct PyPI upload.
 
 See [TASK.md](TASK.md) for the delivery matrix and each package README for API usage.

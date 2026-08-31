@@ -1,4 +1,4 @@
-"""Remember which files a run has read, so an edit cannot precede a read.
+"""Remember which Coding Agent files a run has read before editing.
 
 Editing a file the model has not looked at in this run is how confident,
 plausible, wrong patches get written. The check lives with the tools rather

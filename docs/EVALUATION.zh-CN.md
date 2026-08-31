@@ -145,8 +145,8 @@ python3 -m scripts.evals.run --mode nightly \
 
 报告写入 `eval-results/<mode>/`。退出码 `0` 表示门禁通过，`1` 表示评估案例失败，`2` 表示准备或配置失败。
 `nightly` 和 `release` 必须显式传入 `--config <path>`，配置必须指定真实 Provider、`api_key_env`、Docker
-镜像、`permission_mode = "bypass"` 并关闭网络；Fake Provider、MCP Server、缺少凭据、占位 Model 或交互式
-Permission Mode 都会 fail closed。提交的
+镜像、`access_mode = "full_access"`、`run_mode = "execute"` 并关闭网络；Fake Provider、MCP Server、
+缺少凭据、占位 Model 或交互式 Access Mode 都会 fail closed。提交的
 `evals/aihi_code_agent/v1/nightly.config.example.toml` 是不含凭据的模板。`nightly` 和 `release`
 默认每个任务执行三次，可用 `--repeat` 覆盖。重复传入 `--config` 可以在同一次运行中
 比较多个 Provider/Model；所有配置必须先通过 fail-closed 校验，之后才会产生真实 Provider 调用。

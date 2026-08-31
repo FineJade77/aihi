@@ -4,12 +4,15 @@
 
 UI-free coding-agent runtime and stdio Worker for AIHI.
 
-`aihi-code-agent` is the application layer that composes `aihi-models` and `aihi-agent` into a coding workflow. It owns configuration, coding prompts, workspace tools, Skills/MCP integration, subagents, audit wiring, and the Worker entrypoint. The TypeScript TUI is a separate package.
+`aihi-code-agent` is the private local application layer outside the uv workspace that composes `aihi-models` and
+`aihi-agent` into a coding workflow. It owns configuration, coding prompts, workspace tools, Skills/MCP
+integration, subagents, audit wiring, and the Worker entrypoint. It is not published to PyPI; the
+TypeScript TUI is a separate private workspace package.
 
 ## Features
 
 - Provider profiles for OpenAI, Anthropic, DeepSeek, OpenAI-compatible endpoints, and the deterministic fake provider.
-- Coding tools, read-only Git tools, sandbox selection, permission modes, approvals, and resumable runs.
+- Coding tools, read-only Git tools, command-sandbox selection, access/run modes, approvals, and resumable runs.
 - Built-in and user/project Skills with trust management and an explicit `load_skill` tool.
 - MCP stdio servers, governed subagents, artifacts, context compaction, and redacted `audit.jsonl` observations.
 - Versioned JSON-RPC Worker transport for a local CLI or another host application.
@@ -29,28 +32,15 @@ This package is UI-free. The shared DTO and schema boundary lives in [`@aihi/cod
 
 ## Installation
 
-Published release:
-
-```bash
-python -m pip install aihi-code-agent==0.1.0
-```
-
-See the [PyPI project page](https://pypi.org/project/aihi-code-agent/0.1.0/). This installs the
-compatible `aihi-agent` and `aihi-models` dependencies automatically. For repository development:
-
-From the repository root:
+This application is installed separately from the repository source, not from PyPI. From the repository root:
 
 ```bash
 uv sync
-```
-
-To install the Worker into an existing Python environment:
-
-```bash
 uv pip install -e packages/aihi/code-agent
 ```
 
-The package requires Python 3.11+ and publishes the `aihi-code-agent-worker` console script.
+The local package requires Python 3.11+ and exposes the `aihi-code-agent-worker` console script after
+the separate editable install. Only `aihi-models` and `aihi-agent` are public PyPI distributions.
 
 ## Start the Worker
 
@@ -60,9 +50,23 @@ python -m aihi.code_agent.worker
 aihi-code-agent-worker
 ```
 
-The Worker reads and writes Content-Length framed JSON-RPC 2.0 messages on stdin/stdout. Protocol version `0.2` is negotiated by an exact-version handshake. `run.start` and `run.resume` are accepted asynchronously; progress and terminal state arrive as notifications such as `run.completed`, `run.failed`, `run.interrupted`, `run.cancelled`, and `approval.requested`.
+The Worker reads and writes Content-Length framed JSON-RPC 2.0 messages on stdin/stdout. Protocol version `0.3` is negotiated by an exact-version handshake. `run.start` and `run.resume` are accepted asynchronously; progress and terminal state arrive as notifications such as `run.completed`, `run.failed`, `run.interrupted`, `run.cancelled`, and `approval.requested`.
 
 The Worker is normally launched by the CLI. It can also be embedded behind another local host that implements the same protocol.
+
+Applications embedding the Coding runtime create its application-owned Session metadata explicitly:
+
+```python
+from aihi.agent import InMemoryEventStore
+from aihi.code_agent import create_coding_session
+
+session = create_coding_session(
+    InMemoryEventStore(),
+    cwd="/path/to/project",
+    provider="deepseek",
+    model="deepseek-chat",
+)
+```
 
 ## Configuration
 
@@ -94,10 +98,10 @@ api_key_env = "LOCAL_API_KEY"
 
 [sandbox]
 backend = "docker"
-root = "."
 
 [agent]
-permission_mode = "default" # default | accept_edits | plan | bypass
+access_mode = "workspace_write" # read_only | workspace_write | full_access
+run_mode = "execute"            # execute | plan
 
 [audit]
 enabled = true
@@ -115,15 +119,26 @@ command = "npx"
 args = ["-y", "some-mcp-server"]
 ```
 
-API keys stay in environment variables; configuration exposes only non-secret metadata through `config.get`. `permission_mode` is persisted with the run startup configuration. Hard safety denies remain active in every mode. Host execution is fail-closed and is not an isolation boundary; interactive acknowledgement is stored for the exact workspace/root in `~/.aihi/host-workspaces.json`.
+API keys stay in environment variables; configuration exposes only non-secret metadata through `config.get`. The workspace is never configured in TOML: `create_coding_session(...)` canonicalizes the supplied `cwd` and stores it as application-owned Session metadata. The base Harness does not interpret it. `access_mode`, `run_mode`, that workspace and the command-sandbox descriptor are persisted in the Run profile, so Resume cannot drift or upgrade authority. Host execution is fail-closed and is not an isolation boundary; interactive acknowledgement is stored for the exact Session workspace in `~/.aihi/host-workspaces.json`.
+
+`read_only` denies mutation and process execution; `workspace_write` allows application-owned local file edits but asks before Bash or other external mutation; `full_access` allows privileged tools after hard safety checks. `plan` is an independent hard read-only ceiling and cannot be bypassed by approval.
 
 Each provider can expose multiple models through `models = [...]`. The provider's active/default model is `model` or the first catalog entry. A model is valid only for the provider that declares it; `config.get` returns the non-secret provider/model catalog to clients.
+
+## Tool execution boundary
+
+Coding file tools (`read_file`, `glob`, `grep`, `edit_file`, and `write_file`) are
+application-owned local tools. They canonicalize paths against the session cwd before Policy and
+operate directly on the host workspace; they are not routed through a Sandbox filesystem API.
+`bash` is the only Coding tool constructed with a Sandbox backend, and arbitrary model-authored
+commands execute exclusively through `SandboxBackend.run_command`. The read-only Git tools use
+closed, application-authored argv and do not accept a model-authored command.
 
 ## Skills and subagents
 
 Built-in Skills (`code_review`, `debug`, `refactor`, and `test_writing`) are package content and are trusted implicitly. User, project, and workspace Skills require explicit trust before loading. The model-facing Skill index is emitted only when the load tool is available; use the `load_skill` tool with the plain Skill name (for example `code_review`), not a display name with a version suffix.
 
-Named subagents are selected through the `task` tool: `explore`, `code_review`, `test`, and `general`. The default configuration limits subagents to depth 1, three children, and read-only filesystem capabilities. A Worker session store is required so parent and child runs can be replayed together.
+Named subagents are selected through the `task` tool: `explore`, `code_review`, `test`, and `general`. The default configuration limits subagents to depth 1, three children, and read-only filesystem capabilities. Every child keeps the parent's canonical Session workspace. Code Agent derives the child's AccessMode from its granted capabilities and intersects it with the parent AccessMode; Plan always produces a read-only Plan child. A Worker session store is required so parent and child runs can be replayed together.
 
 ## Audit and operational behavior
 
@@ -151,7 +166,6 @@ regression; they never compare model capability with the scripted reference.
 uv run pytest packages/aihi/code-agent/tests
 uv run ruff check packages/aihi/code-agent
 uv run mypy
-uv run python -m build --wheel --no-isolation packages/aihi/code-agent
 ```
 
 Run the complete workspace checks from the [repository README](../../../README.md). The Worker protocol contract is tested with [`@aihi/code-protocol`](../code-protocol/README.md).
@@ -160,8 +174,8 @@ Run the complete workspace checks from the [repository README](../../../README.m
 
 - Treat model output, tool input, MCP responses, Skills, and subagent output as untrusted.
 - Keep credentials in environment variables or an external secret manager, never in TOML or event content.
-- Do not use `HostBackend` as a sandbox; choose an isolated backend when process isolation matters.
-- Keep a finite turn limit, review `permission_mode`, and require explicit host acknowledgement before enabling unsafe local execution.
+- `HostBackend` is an explicitly unsafe command backend; choose an isolated backend for `bash` when process isolation matters.
+- Keep a finite turn limit, review `access_mode` and `run_mode`, and require explicit host acknowledgement before enabling unsafe local execution.
 
 ## Related documentation
 

@@ -11,15 +11,17 @@ from .errors import (
 from .graph import TaskGraph
 from .subagent import (
     SPAWN_CAPABILITY,
+    ChildContextFactory,
+    ChildRunContext,
     ChildRunSubagentRunner,
+    SessionFactory,
     SubagentAuthority,
     SubagentRunner,
     SubagentTool,
     SubagentTypeSpec,
     restrict_registry,
-    subagent_session_factory,
 )
-from .types import AgentBudget, AgentState, TaskNode, TaskResult, TaskSpec, WorkspaceScope
+from .types import AgentBudget, AgentState, TaskNode, TaskResult, TaskSpec
 
 __all__ = [
     "AgentBudget",
@@ -30,8 +32,11 @@ __all__ = [
     "AgentState",
     "AgentStateError",
     "AgentValidationError",
+    "ChildContextFactory",
+    "ChildRunContext",
     "ChildRunSubagentRunner",
     "SPAWN_CAPABILITY",
+    "SessionFactory",
     "SubagentAuthority",
     "SubagentRunner",
     "SubagentTool",
@@ -40,7 +45,5 @@ __all__ = [
     "TaskNode",
     "TaskResult",
     "TaskSpec",
-    "WorkspaceScope",
     "restrict_registry",
-    "subagent_session_factory",
 ]

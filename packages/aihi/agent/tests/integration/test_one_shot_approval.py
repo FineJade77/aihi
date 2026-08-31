@@ -5,24 +5,22 @@ from pathlib import Path
 import pytest
 from aihi.agent import (
     ApprovalOutcome,
-    HostBackend,
     InMemoryEventStore,
     RunCoordinator,
     RunState,
     Session,
     StaticApprovalResolver,
     ToolRegistry,
-    WriteFileTool,
 )
 from aihi.agent._core.errors import EventInvariantViolation
 from aihi.agent._core.events import Event
 from aihi.models import FakeProvider, FakeStep, Message
 
+from packages.aihi.agent.tests.support_tools import WriteTestTool
+
 
 def session_for(tmp_path: Path, name: str) -> Session:
-    return Session.create(
-        InMemoryEventStore(), cwd=tmp_path, provider="fake", model="fake-model", session_id=name
-    )
+    return Session.create(InMemoryEventStore(), session_id=name)
 
 
 def two_writes() -> list[FakeStep]:
@@ -36,8 +34,7 @@ def two_writes() -> list[FakeStep]:
 def coordinator_for(tmp_path: Path, outcome: ApprovalOutcome) -> RunCoordinator:
     return RunCoordinator(
         FakeProvider(two_writes()),
-        registry=ToolRegistry([WriteFileTool()]),
-        sandbox=HostBackend(tmp_path, unsafe=True),
+        registry=ToolRegistry([WriteTestTool(tmp_path)]),
         approval_resolver=StaticApprovalResolver(outcome),
     )
 
@@ -48,8 +45,7 @@ async def test_a_run_scoped_grant_is_not_asked_again(tmp_path: Path) -> None:
     resolver = StaticApprovalResolver(ApprovalOutcome.GRANTED)
     coordinator = RunCoordinator(
         FakeProvider(two_writes()),
-        registry=ToolRegistry([WriteFileTool()]),
-        sandbox=HostBackend(tmp_path, unsafe=True),
+        registry=ToolRegistry([WriteTestTool(tmp_path)]),
         approval_resolver=resolver,
     )
 
@@ -69,8 +65,7 @@ async def test_a_one_shot_grant_is_spent_and_the_next_call_asks_again(tmp_path: 
     resolver = StaticApprovalResolver(ApprovalOutcome.GRANTED_ONCE)
     coordinator = RunCoordinator(
         FakeProvider(two_writes()),
-        registry=ToolRegistry([WriteFileTool()]),
-        sandbox=HostBackend(tmp_path, unsafe=True),
+        registry=ToolRegistry([WriteTestTool(tmp_path)]),
         approval_resolver=resolver,
     )
 
@@ -93,8 +88,7 @@ async def test_an_out_of_band_one_shot_grant_is_also_spent(tmp_path: Path) -> No
     session = session_for(tmp_path, "ses-out-of-band")
     coordinator = RunCoordinator(
         FakeProvider(two_writes()),
-        registry=ToolRegistry([WriteFileTool()]),
-        sandbox=HostBackend(tmp_path, unsafe=True),
+        registry=ToolRegistry([WriteTestTool(tmp_path)]),
     )
     suspended = await coordinator.run(
         session, model="fake-model", user_message=Message.text("user", "write twice")

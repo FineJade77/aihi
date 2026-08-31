@@ -7,9 +7,9 @@
 | 字段 | 内容 |
 | --- | --- |
 | 状态 | 基础能力完成；应用和平台路线图持续推进 |
-| 当前版本线 | Python 包已以 `0.1.0` 发布到 PyPI；Code Protocol `0.2` |
+| 当前版本线 | 公开 `aihi-models` 与 `aihi-agent` 已以 `0.2.0` 发布到 PyPI；Code Protocol `0.3` |
 | 架构 | [ARCHITECTURE.md](ARCHITECTURE.md) |
-| 最近完成 | H-19 Prompt Cache 与 ContextState v2 Compaction |
+| 最近完成 | P-08 公开 Python distribution 边界 |
 
 `docs/adr/` 与 `docs/rfcs/` 下的 ADR/RFC 是本地工作文件，已加入 `.gitignore`，稳定决策必须同步
 到架构文档、项目 README、代码契约和测试中。
@@ -35,9 +35,9 @@
 | `aihi-models` | Provider-neutral 消息、codec、能力、Token 估算及 Fake/OpenAI/Anthropic/OpenAI-compatible/DeepSeek Adapter | Done |
 | `aihi-agent` | 可恢复 Loop、默认 turn budget、EventStore、Replay、Context/Compaction、Tool、Policy、Approval、Sandbox、Artifact、Skill、MCP、Plugin、Memory、Subagent、Eval | Done |
 | `aihi-code-agent` | Coding 配置、用户/项目 `.aihi` 配置发现、Provider/Model catalog、Worker、Session/Run/Task API、Coding Tool 和 TUI 组合 | Done |
-| `@aihi/code-protocol` | Code Protocol 0.2 DTO、method map、guard 和 Schema | Done |
+| `@aihi/code-protocol` | Code Protocol 0.3 DTO、method map、guard 和 Schema | Done |
 | `@aihi/code-cli` | Ink TUI、Transcript Replay、滚动/输入体验、Session/Model picker、Slash 命令、Approval、Skill/MCP/Tool 管理和 Doctor | Done |
-| 打包 | 独立 wheels、PEP 420 namespace、installed-wheel 兼容性、冻结 fixture Replay 和 PyPI `0.1.0` 发布 | Done |
+| 打包 | 公开 `aihi-models`/`aihi-agent` wheels、PEP 420 namespace、installed-wheel 兼容性、冻结 fixture Replay，以及 uv workspace 外的私有本地 `aihi-code-agent` | Done |
 | 运维 | 脱敏本地 `audit.jsonl`、Doctor 审计检查、Session 恢复和 Replay 诊断 | Done |
 
 M0–M7 和 H-01–H-17 基础建设已完成，建立了多包边界、事件 Schema 兼容性、安全不变式、上下文预算、
@@ -87,6 +87,42 @@ Tool Result 清理、结构化压缩、持久化和 Replay 属于 `aihi-agent`�
 | H-19.4 | 可恢复的旧 Tool Result 清理 | 只替换已持久化且有 Artifact 的完整 Result；满足最小回收量；Tool 配对、Event 历史和 Stable Prefix 不变 |
 | H-19.5 | 带证据的 ContextState Hard Compaction | 先确定性投影 Event，再由模型补充；近期完整 Group 保留原文；多轮压缩保留所有关键事实并达到目标预算 |
 | H-19.6 | 联合 Eval、兼容性、文档和打包门禁 | Cache/Compaction Golden Trace、长 Session Eval、冻结 Fixture Replay、installed-wheel 检查和中英文文档全部通过 |
+
+### H-20：应用 Context 与命令 Sandbox 边界
+
+**状态：Done。** 可复用 Harness 已保持应用无关：Tool 和 Policy 执行接收不透明的类型化应用
+Context，应用持久化不透明的 Run 权限 Profile；Sandbox 从 Runtime 全局文件系统抽象收缩为显式注入的
+命令执行能力。
+
+| 切片 | 范围 | 验收 |
+| --- | --- | --- |
+| H-20.1 | `PreparedToolCall`、类型化应用 Context 和不透明 Run Profile | 先校验再做无副作用 Prepare；Policy 与 Tool 执行消费同一份规范化输入；Resume 拒绝 Profile 漂移 |
+| H-20.2 | 纯命令 Sandbox 与 Runtime 解耦 | Sandbox 只暴露命令执行；Runtime、Session、Hook 和通用 Tool Context 不包含 workspace 或全局 Sandbox 假设；Session 只不透明持久化应用 metadata |
+| H-20.3 | 通用委派 Scope | 基础 Subagent 类型不包含 Coding workspace 或权限模式；由注入的应用 Policy 证明子权限是父权限子集 |
+
+### P-07：Coding Workspace 与权限归属
+
+**状态：Done。** Coding Tool、canonical workspace、`AccessMode`、`RunMode` 和命令
+Sandbox 选择均已归属 `aihi-code-agent`。`create_coding_session(...)` 将传入的 `cwd` 规范化为应用拥有的
+Session metadata；TOML 只从该 workspace 发现配置，不能定义 workspace。
+
+| 切片 | 范围 | 验收 |
+| --- | --- | --- |
+| P-07.1 | 应用拥有 Workspace 与 Coding Tool | 文件 Tool 使用受约束的本地 I/O；只有 Bash 持有 Sandbox；删除 `sandbox.root` 和 `workspace_read_only` |
+| P-07.2 | `AccessMode` 与 `RunMode` Policy | `read_only`、`workspace_write`、`full_access` 和 `execute`/`plan` 的 ALLOW/ASK/DENY 矩阵均有测试；Plan 不能在同一 Run 内升级 |
+| P-07.3 | Worker、Protocol 与 CLI | Code Protocol 0.3 暴露 Access/Run Mode 且不配置 workspace root；Resume 阻止权限漂移；CLI 展示实际生效模式 |
+
+### P-08：公开 Python distribution 边界
+
+**状态：Done。** 公开 PyPI release artifact 只包含 `aihi-models` 与 `aihi-agent`，二者当前均已发布
+`0.2.0`。
+`aihi-code-agent` 保持为位于 uv workspace 外的可安装私有本地应用，使本地 Worker、CLI 和测试仍能完成组合，但不再
+把产品代码作为第三个公开 distribution。
+
+| 切片 | 范围 | 验收 |
+| --- | --- | --- |
+| P-08.1 | 唯一发布清单 | 根 `tool.aihi.release.python-distributions` 只列出 models 与 agent；打包测试只构建、安装这两个 wheel |
+| P-08.2 | 私有 Coding 应用 | code-agent 声明 `publish = false` 与 `Private :: Do Not Upload`；安装文档只使用 workspace/editable 源码，不再包含 PyPI 安装或 release build 路径 |
 
 ### P-06：Coding Agent 基准
 

@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from aihi.agent.tools.base import ToolContext, ToolExecutionResult
-from aihi.agent.tools.builtin.ledger import ReadLedger
-from aihi.agent.tools.spec import ToolSpec
+from aihi.agent import PreparedToolCall, ToolContext, ToolExecutionResult, ToolSpec
+
+from .ledger import ReadLedger
+from .workspace import workspace_from_context
 
 
 class ReadFileTool:
@@ -35,11 +36,19 @@ class ReadFileTool:
         self.max_chars = max_chars
         self.ledger = ledger
 
-    async def run(self, input: dict[str, Any], context: ToolContext) -> ToolExecutionResult:
+    def prepare(
+        self, input: dict[str, Any], context: ToolContext[Any]
+    ) -> PreparedToolCall:
+        prepared = dict(input)
+        prepared["path"] = str(workspace_from_context(context).resolve_path(str(input["path"])))
+        return PreparedToolCall(prepared, {"transport": "local"})
+
+    async def run(self, input: dict[str, Any], context: ToolContext[Any]) -> ToolExecutionResult:
         path = str(input["path"])
         offset = max(0, int(input.get("offset", 0)))
         limit = max(1, min(int(input.get("limit", 2_000)), 10_000))
-        text, truncated_by_chars = await context.sandbox.read_text(path, max_chars=self.max_chars)
+        workspace = workspace_from_context(context)
+        text, truncated_by_chars = await workspace.read_text(path, max_chars=self.max_chars)
         lines = text.splitlines()
         selected = lines[offset : offset + limit]
         truncated = truncated_by_chars or offset + limit < len(lines)
@@ -52,7 +61,7 @@ class ReadFileTool:
                 "\n\n[Output truncated. Read another range with offset/limit; "
                 f"source remains at {path}.]"
             )
-        resolved = context.sandbox.resolve_path(path)
+        resolved = workspace.resolve_path(path)
         if self.ledger is not None:
             self.ledger.record(context.run_id, resolved)
         return ToolExecutionResult(

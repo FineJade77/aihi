@@ -910,7 +910,6 @@ def _summary_message(omitted: list[Message], all_messages: tuple[Message, ...]) 
         "verified_state": [],
         "open_questions": [],
         "next_steps": [],
-        "permission_mode": None,
         "skills": [],
         "subagents": [],
         "artifacts": [],

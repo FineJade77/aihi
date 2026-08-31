@@ -29,7 +29,7 @@ function metadataText(session: SessionDescriptor, key: string): string | undefin
 
 export function sessionPickerOptions(sessions: readonly SessionDescriptor[]): PickerOption[] {
   return sessions.map((session) => {
-    const sessionCwd = metadataText(session, "cwd");
+    const sessionCwd = session.cwd;
     const sessionProvider = metadataText(session, "provider");
     const sessionModel = metadataText(session, "model");
     const title = metadataText(session, "title") ?? `Session ${session.session_id.slice(-12)}`;

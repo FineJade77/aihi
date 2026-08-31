@@ -4,8 +4,8 @@ import sys
 from pathlib import Path
 
 import pytest
-from aihi.agent._core.errors import SandboxConfigurationError, SandboxViolation
-from aihi.agent.sandbox import LocalIsolatedBackend
+from aihi.agent._core.errors import SandboxConfigurationError
+from aihi.agent.sandbox import LocalIsolatedBackend, SandboxBackend
 
 
 class FakeLauncher:
@@ -33,8 +33,19 @@ class FakeLauncher:
         return argv
 
 
+def test_sandbox_protocol_exposes_only_command_execution() -> None:
+    operations = {
+        name
+        for name, value in vars(SandboxBackend).items()
+        if not name.startswith("_") and callable(value)
+    }
+    assert operations == {"run_command"}
+
+
 @pytest.mark.asyncio
-async def test_local_backend_has_explicit_capabilities_and_guarded_io(tmp_path: Path) -> None:
+async def test_local_backend_has_explicit_capabilities_and_command_only_api(
+    tmp_path: Path,
+) -> None:
     launcher = FakeLauncher()
     backend = LocalIsolatedBackend(tmp_path, launcher=launcher)
     assert backend.descriptor.name == "local"
@@ -42,11 +53,10 @@ async def test_local_backend_has_explicit_capabilities_and_guarded_io(tmp_path: 
     assert backend.descriptor.filesystem_write_isolated is True
     assert backend.descriptor.mechanism == "fake-native"
 
-    await backend.write_text("note.txt", "hello")
-    content, truncated = await backend.read_text("note.txt", max_chars=10)
-    assert (content, truncated) == ("hello", False)
-    with pytest.raises(SandboxViolation):
-        backend.resolve_path("../outside.txt")
+    assert not hasattr(backend, "read_text")
+    assert not hasattr(backend, "write_text")
+    assert not hasattr(backend, "list_paths")
+    assert not hasattr(backend, "resolve_path")
 
     result = await backend.run_command(
         (sys.executable, "-c", "print('ok')"), timeout_seconds=1, max_output_chars=100
@@ -61,9 +71,12 @@ async def test_local_backend_read_only_and_network_capability_are_fail_closed(
     tmp_path: Path,
 ) -> None:
     backend = LocalIsolatedBackend(tmp_path, launcher=FakeLauncher())
-    readonly = LocalIsolatedBackend(tmp_path, launcher=FakeLauncher(), read_only=True)
-    with pytest.raises(SandboxViolation):
-        await readonly.write_text("note.txt", "blocked")
+    readonly_launcher = FakeLauncher()
+    readonly = LocalIsolatedBackend(tmp_path, launcher=readonly_launcher, read_only=True)
+    await readonly.run_command(
+        (sys.executable, "-c", "pass"), timeout_seconds=1, max_output_chars=100
+    )
+    assert readonly_launcher.calls[0][2] is True
     with pytest.raises(SandboxConfigurationError):
         LocalIsolatedBackend(
             tmp_path,

@@ -63,9 +63,7 @@ def test_docker_backend_rejects_mount_csv_delimiter_in_workspace(tmp_path: Path)
 
 
 @pytest.mark.asyncio
-async def test_docker_backend_rejects_non_finite_timeout_and_path_escape(tmp_path: Path) -> None:
+async def test_docker_backend_rejects_non_finite_timeout(tmp_path: Path) -> None:
     backend = DockerBackend(tmp_path, image="image", runner=FakeDockerRunner())
     with pytest.raises(SandboxViolation):
         await backend.run_command(("true",), timeout_seconds=math.inf, max_output_chars=10)
-    with pytest.raises(SandboxViolation):
-        backend.resolve_path("../outside")

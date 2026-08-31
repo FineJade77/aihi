@@ -4,7 +4,6 @@ from pathlib import Path
 
 import pytest
 from aihi.agent import (
-    HostBackend,
     InMemoryEventStore,
     RunCoordinator,
     RunState,
@@ -12,26 +11,23 @@ from aihi.agent import (
     SQLiteEventStore,
     StaticApprovalResolver,
     ToolRegistry,
-    WriteFileTool,
 )
 from aihi.agent._core.errors import EventInvariantViolation
 from aihi.agent.evals import ReplayEngine, TraceBundle
 from aihi.agent.policy import ApprovalOutcome
 from aihi.models import FakeProvider, FakeStep, Message
 
+from packages.aihi.agent.tests.support_tools import WriteTestTool
+
 
 async def two_turn_session(tmp_path: Path, store: object | None = None) -> Session:
     session = Session.create(
         store or InMemoryEventStore(),  # type: ignore[arg-type]
-        cwd=tmp_path,
-        provider="fake",
-        model="fake-model",
         session_id="ses-parent",
     )
     coordinator = RunCoordinator(
         FakeProvider([FakeStep(text="first answer"), FakeStep(text="second answer")]),
         registry=ToolRegistry(),
-        sandbox=HostBackend(tmp_path, unsafe=True),
     )
     await coordinator.run(session, model="fake-model", user_message=Message.text("user", "one"))
     await coordinator.run(session, model="fake-model", user_message=Message.text("user", "two"))
@@ -87,7 +83,6 @@ async def test_a_child_is_a_normal_session_that_can_keep_running(tmp_path: Path)
     coordinator = RunCoordinator(
         FakeProvider([FakeStep(text="a different direction")]),
         registry=ToolRegistry(),
-        sandbox=HostBackend(tmp_path, unsafe=True),
     )
 
     result = await coordinator.run(
@@ -121,9 +116,7 @@ async def test_both_branches_replay_independently(tmp_path: Path) -> None:
 async def test_forking_mid_tool_call_leaves_an_orphan_the_next_run_repairs(
     tmp_path: Path,
 ) -> None:
-    session = Session.create(
-        InMemoryEventStore(), cwd=tmp_path, provider="fake", model="fake-model"
-    )
+    session = Session.create(InMemoryEventStore())
     coordinator = RunCoordinator(
         FakeProvider(
             [
@@ -131,8 +124,7 @@ async def test_forking_mid_tool_call_leaves_an_orphan_the_next_run_repairs(
                 FakeStep(text="ok"),
             ]
         ),
-        registry=ToolRegistry([WriteFileTool()]),
-        sandbox=HostBackend(tmp_path, unsafe=True),
+        registry=ToolRegistry([WriteTestTool(tmp_path)]),
         approval_resolver=StaticApprovalResolver(ApprovalOutcome.GRANTED),
     )
     await coordinator.run(session, model="fake-model", user_message=Message.text("user", "write"))

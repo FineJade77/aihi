@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aihi.dev/schemas/code-protocol/session-descriptor-0.3.json",
+  "title": "AIHI Code session descriptor",
+  "type": "object",
+  "required": ["session_id", "cwd", "head_seq", "created_at", "metadata", "parent_session_id"],
+  "properties": {
+    "session_id": { "type": "string", "minLength": 1 },
+    "cwd": { "type": "string", "minLength": 1 },
+    "head_seq": { "type": "integer", "minimum": 0 },
+    "created_at": { "type": "string", "minLength": 1 },
+    "metadata": { "type": "object" },
+    "parent_session_id": { "type": ["string", "null"] }
+  },
+  "additionalProperties": false
+}

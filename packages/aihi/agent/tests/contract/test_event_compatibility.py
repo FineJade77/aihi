@@ -73,7 +73,7 @@ async def test_the_frozen_corpus_still_matches_what_the_harness_writes(
     fresh = await build_corpus(tmp_path)
     frozen = json.loads(CORPUS.read_text(encoding="utf-8"))
 
-    assert without_additive_v1_fields(fresh) == frozen, (
+    assert without_additive_v1_fields(fresh) == without_additive_v1_fields(frozen), (
         "The harness now writes different events than the frozen corpus. "
         "Review the change, then regenerate: python tests/fixtures/generate_corpus.py"
     )
@@ -107,19 +107,21 @@ async def test_the_frozen_corpus_still_matches_what_the_harness_writes(
         4096,
         4096,
     ]
-    assert all(event["data"]["workspace_root"] == "/workspace" for event in lifecycle)
+    retired_runtime_authority = {
+        "sandbox",
+        "sandbox_descriptor",
+        "workspace_root",
+        "unsafe",
+        "permission_mode",
+    }
+    assert all(retired_runtime_authority.isdisjoint(event["data"]) for event in lifecycle)
     assert all(
         event["data"]["system_prompt_sha256"] == "0" * 64 for event in lifecycle
     )
 
-    child_started = next(
-        event
-        for session in fresh["sessions"]
-        if session["session_id"] == "ses-1"
-        for event in session["events"]
-        if event["type"] == "run.started"
-    )
-    assert child_started["data"]["sandbox_descriptor"]["mount_scope"] == "/workspace"
+    for event in compactions:
+        summary = json.loads(event["data"]["summary"]["content"][0]["text"])
+        assert "permission_mode" not in summary
 
 
 def test_source_only_writes_declared_event_types() -> None:
@@ -145,7 +147,94 @@ def test_frozen_events_round_trip_without_drift() -> None:
     raw = json.loads(CORPUS.read_text(encoding="utf-8"))
     for entry in raw["sessions"]:
         for item in entry["events"]:
-            assert Event.from_dict(item).to_dict() == item
+            assert Event.from_dict(item).to_dict() == upgrade_event_payload(item)
+
+
+def test_v1_subagent_workspace_is_removed_by_the_v2_migration() -> None:
+    raw = json.loads(CORPUS.read_text(encoding="utf-8"))
+    legacy = next(
+        event
+        for session in raw["sessions"]
+        for event in session["events"]
+        if event["type"] == "subagent.spawned"
+        and "workspace" in event["data"]["task"]
+    )
+
+    upgraded = upgrade_event_payload(legacy)
+
+    assert upgraded["schema_version"] == EVENT_SCHEMA_VERSION
+    assert "workspace" not in upgraded["data"]["task"]
+    assert "workspace" in legacy["data"]["task"]
+
+
+def test_v1_runtime_authority_is_removed_by_the_v3_migration() -> None:
+    raw = json.loads(CORPUS.read_text(encoding="utf-8"))
+    legacy = next(
+        event
+        for session in raw["sessions"]
+        for event in session["events"]
+        if event["type"] == "run.started"
+    )
+
+    upgraded = upgrade_event_payload(legacy)
+
+    assert upgraded["schema_version"] == EVENT_SCHEMA_VERSION == 3
+    assert {
+        "sandbox",
+        "sandbox_descriptor",
+        "workspace_root",
+        "unsafe",
+        "permission_mode",
+    }.isdisjoint(upgraded["data"])
+
+
+def test_v1_tool_and_compaction_authority_is_removed_by_the_v3_migration() -> None:
+    raw = json.loads(CORPUS.read_text(encoding="utf-8"))
+    legacy_tool = next(
+        event
+        for session in raw["sessions"]
+        for event in session["events"]
+        if event["type"] == "tool.started"
+    )
+    legacy_compaction = next(
+        event
+        for session in raw["sessions"]
+        for event in session["events"]
+        if event["type"] == "compaction.created"
+    )
+
+    upgraded_tool = upgrade_event_payload(legacy_tool)
+    upgraded_compaction = upgrade_event_payload(legacy_compaction)
+    summary = json.loads(upgraded_compaction["data"]["summary"]["content"][0]["text"])
+
+    assert {"sandbox", "sandbox_descriptor", "unsafe"}.isdisjoint(
+        upgraded_tool["data"]
+    )
+    assert "permission_mode" not in summary
+
+
+def test_v2_approval_migration_keeps_only_tool_owned_execution_evidence() -> None:
+    legacy = {
+        "id": "evt-approval-v2",
+        "type": "approval.requested",
+        "session_id": "ses-v2",
+        "run_id": "run-v2",
+        "created_at": "2026-01-01T00:00:00+00:00",
+        "schema_version": 2,
+        "data": {
+            "sandbox": {"name": "host", "unsafe": True},
+            "execution": {
+                "transport": "sandbox",
+                "sandbox": {"name": "docker", "unsafe": False},
+            },
+        },
+    }
+
+    upgraded = upgrade_event_payload(legacy)
+
+    assert upgraded["schema_version"] == 3
+    assert "sandbox" not in upgraded["data"]
+    assert upgraded["data"]["execution"]["sandbox"]["name"] == "docker"
 
 
 def test_a_stored_session_still_projects_the_same_state() -> None:
@@ -235,9 +324,6 @@ def test_an_unknown_message_version_is_rejected_before_append(tmp_path: Path) ->
     store = InMemoryEventStore()
     session = Session.create(
         store,
-        cwd=tmp_path,
-        provider="fake",
-        model="fake-model",
         session_id="ses-message-version",
     )
     initial_head = session.head_seq
@@ -258,7 +344,7 @@ def test_an_unknown_message_version_is_rejected_before_append(tmp_path: Path) ->
     assert store.get(session.id).head_seq == initial_head
 
 
-@pytest.mark.parametrize("version", [0, 2, 99])
+@pytest.mark.parametrize("version", [0, 4, 99])
 def test_an_unreadable_envelope_version_fails_closed(version: int) -> None:
     payload = {
         "id": "evt-x",

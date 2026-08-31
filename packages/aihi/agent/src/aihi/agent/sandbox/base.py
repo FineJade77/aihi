@@ -46,25 +46,13 @@ class CommandResult:
 
 
 class SandboxBackend(Protocol):
+    """Backend for executing arbitrary commands under declared isolation."""
+
     @property
     def descriptor(self) -> SandboxDescriptor: ...
 
     @property
     def root(self) -> Path: ...
-
-    def resolve_path(self, path: str | Path) -> Path: ...
-
-    async def read_text(self, path: str | Path, *, max_chars: int) -> tuple[str, bool]: ...
-
-    async def list_paths(self, pattern: str, *, limit: int) -> tuple[str, ...]: ...
-
-    async def write_text(
-        self,
-        path: str | Path,
-        content: str,
-        *,
-        expected_sha256: str | None = None,
-    ) -> None: ...
 
     async def run_command(
         self,

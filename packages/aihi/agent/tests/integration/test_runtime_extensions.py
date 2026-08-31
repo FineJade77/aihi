@@ -6,7 +6,6 @@ import pytest
 from aihi.agent import (
     ContextRequest,
     ContextSection,
-    HostBackend,
     InMemoryEventStore,
     InMemoryMemoryStore,
     MemoryAccess,
@@ -43,9 +42,6 @@ Secret body that must never reach the model context.
 def session_for(tmp_path: Path, name: str) -> Session:
     return Session.create(
         InMemoryEventStore(),
-        cwd=tmp_path,
-        provider="fake",
-        model="fake-model",
         session_id=name,
     )
 
@@ -56,7 +52,6 @@ def coordinator_for(
     return RunCoordinator(
         provider or FakeProvider([FakeStep(text="done")]),
         registry=ToolRegistry(),
-        sandbox=HostBackend(tmp_path, unsafe=True),
         extensions=extensions,
     )
 

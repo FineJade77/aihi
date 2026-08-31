@@ -11,12 +11,11 @@ from aihi.agent import (
     SPAWN_CAPABILITY,
     AgentBudget,
     ApprovalOutcome,
+    ChildRunContext,
     ChildRunSubagentRunner,
     ContextCompiler,
     ContextState,
-    HostBackend,
     InMemoryEventStore,
-    ReadFileTool,
     RunCoordinator,
     RunState,
     Session,
@@ -24,12 +23,8 @@ from aihi.agent import (
     SubagentAuthority,
     SubagentTool,
     ToolRegistry,
-    WorkspaceScope,
-    WriteFileTool,
     restrict_registry,
-    subagent_session_factory,
 )
-from aihi.code_agent.config import CodeAgentConfig
 from aihi.models import (
     Capabilities,
     FakeProvider,
@@ -42,12 +37,8 @@ from aihi.models import (
 
 async def main(workspace: Path) -> None:
     workspace.mkdir(parents=True, exist_ok=True)
-    assert CodeAgentConfig.defaults(workspace).audit_path == workspace / ".aihi" / "audit.jsonl"
-    sandbox = HostBackend(workspace, unsafe=True)
 
-    basic_session = Session.create(
-        InMemoryEventStore(), cwd=workspace, provider="fake", model="fake-model"
-    )
+    basic_session = Session.create(InMemoryEventStore())
     cache_provider = FakeProvider(
         [
             FakeStep(
@@ -65,7 +56,6 @@ async def main(workspace: Path) -> None:
     basic = await RunCoordinator(
         cache_provider,
         registry=ToolRegistry(),
-        sandbox=sandbox,
     ).run(
         basic_session,
         model="fake-model",
@@ -80,58 +70,13 @@ async def main(workspace: Path) -> None:
     assert cache_usage.data["cache_write_input_tokens"] == 20
     assert isinstance(cache_usage.data["cache_key_hash"], str)
 
-    (workspace / "note.txt").write_text("wheel smoke", encoding="utf-8")
-    tool_session = Session.create(
-        InMemoryEventStore(), cwd=workspace, provider="fake", model="fake-model"
-    )
-    tool_run = await RunCoordinator(
-        FakeProvider(
-            [
-                FakeStep.call_tool("read_file", {"path": "note.txt"}),
-                FakeStep(text="read"),
-            ]
-        ),
-        registry=ToolRegistry([ReadFileTool()]),
-        sandbox=sandbox,
-    ).run(
-        tool_session,
-        model="fake-model",
-        user_message=Message.text("user", "read note.txt"),
-    )
-    assert tool_run.state == RunState.COMPLETED
-    assert any(
-        "wheel smoke" in result.content
-        for message in tool_session.messages
-        for result in message.tool_results
-    )
-
-    approval_session = Session.create(
-        InMemoryEventStore(), cwd=workspace, provider="fake", model="fake-model"
-    )
-    approval = await RunCoordinator(
-        FakeProvider(
-            [FakeStep.call_tool("write_file", {"path": "blocked.txt", "content": "x"})]
-        ),
-        registry=ToolRegistry([WriteFileTool()]),
-        sandbox=sandbox,
-    ).run(
-        approval_session,
-        model="fake-model",
-        user_message=Message.text("user", "write"),
-    )
-    assert approval.state == RunState.WAITING_APPROVAL
-    assert not (workspace / "blocked.txt").exists()
-
     interrupted_store = InMemoryEventStore()
-    interrupted_session = Session.create(
-        interrupted_store, cwd=workspace, provider="fake", model="fake-model"
-    )
+    interrupted_session = Session.create(interrupted_store)
     cancel = asyncio.Event()
     cancel.set()
     interrupted = await RunCoordinator(
         FakeProvider([FakeStep(text="not reached")]),
         registry=ToolRegistry(),
-        sandbox=sandbox,
     ).run(
         interrupted_session,
         model="fake-model",
@@ -143,14 +88,11 @@ async def main(workspace: Path) -> None:
     resumed = await RunCoordinator(
         FakeProvider([FakeStep(text="resumed")]),
         registry=ToolRegistry(),
-        sandbox=sandbox,
     ).resume(reloaded, run_id=interrupted.run_id, model="fake-model")
     assert resumed.state == RunState.COMPLETED
     assert reloaded.orphan_tool_calls == ()
 
-    compact_session = Session.create(
-        InMemoryEventStore(), cwd=workspace, provider="fake", model="fake-model"
-    )
+    compact_session = Session.create(InMemoryEventStore())
     for index in range(20):
         compact_session.add_message(Message.text("user", f"history {index} " + "x" * 80))
     raw_tokens = estimate_messages_tokens(compact_session.messages)
@@ -158,7 +100,6 @@ async def main(workspace: Path) -> None:
     compact = await RunCoordinator(
         FakeProvider([FakeStep(text="compacted")]),
         registry=ToolRegistry(),
-        sandbox=sandbox,
         context_compiler=ContextCompiler(),
         context_window=input_capacity + 64,
         context_safety_margin=0,
@@ -171,34 +112,39 @@ async def main(workspace: Path) -> None:
     assert ContextState.from_dict(compaction.data["context_state"]).schema_version == 2
 
     store = InMemoryEventStore()
-    full_registry = ToolRegistry([ReadFileTool()])
+    full_registry = ToolRegistry()
+
+    def child_session(spec, context):
+        return Session.create(
+            store,
+            metadata={"parent_session_id": context.session_id, "task_id": spec.task_id},
+        )
+
     child_runner = ChildRunSubagentRunner(
-        lambda spec, child_sandbox: RunCoordinator(
+        lambda spec: RunCoordinator(
             FakeProvider([FakeStep(text="child done")]),
             registry=restrict_registry(full_registry, frozenset(spec.capabilities)),
-            sandbox=child_sandbox,
         ),
-        subagent_session_factory(store, provider="fake", model="fake-model"),
-        sandbox=sandbox,
+        child_session,
         model="fake-model",
+        child_context_factory=lambda spec, context: ChildRunContext(
+            app_context=None,
+            run_profile={"scope": "read_only_child"},
+        ),
     )
     task = SubagentTool(
         child_runner,
         authority=SubagentAuthority(
             budget=AgentBudget(max_tokens=512, timeout_seconds=10, max_tool_calls=2),
-            workspace=WorkspaceScope(root=str(workspace), read_only=True),
-            capabilities=frozenset({SPAWN_CAPABILITY, "filesystem.read"}),
+            capabilities=frozenset({SPAWN_CAPABILITY}),
         ),
     )
-    parent_session = Session.create(
-        store, cwd=workspace, provider="fake", model="fake-model"
-    )
+    parent_session = Session.create(store)
     delegated = await RunCoordinator(
         FakeProvider(
             [FakeStep.call_tool("task", {"objective": "inspect"}), FakeStep(text="parent done")]
         ),
         registry=ToolRegistry([task]),
-        sandbox=sandbox,
         approval_resolver=StaticApprovalResolver(ApprovalOutcome.GRANTED),
     ).run(
         parent_session,

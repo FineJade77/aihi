@@ -7,16 +7,14 @@ from aihi.agent.sandbox import HostBackend
 from aihi.agent.sessions import InMemoryEventStore, Session
 from aihi.agent.tools import ToolExecutionResult, ToolRegistry, ToolSpec
 from aihi.agent.tools.base import ToolContext
-from aihi.agent.tools.builtin import ReadFileTool
 from aihi.models import FakeProvider, FakeStep, Message
+
+from packages.aihi.agent.tests.support_tools import ReadTestTool
 
 
 def session_for(tmp_path: Path, name: str) -> Session:
     return Session.create(
         InMemoryEventStore(),
-        cwd=tmp_path,
-        provider="fake",
-        model="fake-model",
         session_id=name,
     )
 
@@ -38,8 +36,7 @@ async def test_invalid_arguments_and_path_escape_become_stable_tool_errors(
     )
     coordinator = RunCoordinator(
         provider,
-        registry=ToolRegistry([ReadFileTool()]),
-        sandbox=HostBackend(tmp_path, unsafe=True),
+        registry=ToolRegistry([ReadTestTool(tmp_path)]),
     )
 
     result = await coordinator.run(
@@ -51,7 +48,7 @@ async def test_invalid_arguments_and_path_escape_become_stable_tool_errors(
 
 
 @pytest.mark.asyncio
-async def test_sensitive_path_is_denied_before_host_access(tmp_path: Path) -> None:
+async def test_application_tool_rejects_a_path_outside_its_workspace(tmp_path: Path) -> None:
     session = session_for(tmp_path, "ses-sensitive")
     sensitive_path = str(Path.home() / ".ssh" / "id_rsa")
     provider = FakeProvider(
@@ -59,8 +56,7 @@ async def test_sensitive_path_is_denied_before_host_access(tmp_path: Path) -> No
     )
     coordinator = RunCoordinator(
         provider,
-        registry=ToolRegistry([ReadFileTool()]),
-        sandbox=HostBackend(tmp_path, unsafe=True),
+        registry=ToolRegistry([ReadTestTool(tmp_path)]),
     )
 
     result = await coordinator.run(
@@ -68,8 +64,8 @@ async def test_sensitive_path_is_denied_before_host_access(tmp_path: Path) -> No
     )
 
     assert result.state == RunState.COMPLETED
-    assert session.messages[-2].tool_results[0].metadata["error_code"] == "permission_denied"
-    assert not any(event.type == "tool.started" for event in session.events)
+    assert session.messages[-2].tool_results[0].metadata["error_code"] == "sandbox_violation"
+    assert any(event.type == "tool.started" for event in session.events)
 
 
 def test_host_backend_requires_explicit_unsafe_acknowledgement(tmp_path: Path) -> None:
@@ -101,7 +97,6 @@ async def test_default_policy_asks_before_mutating_tool_execution(tmp_path: Path
     coordinator = RunCoordinator(
         provider,
         registry=ToolRegistry([MutatingTestTool()]),
-        sandbox=HostBackend(tmp_path, unsafe=True),
     )
 
     result = await coordinator.run(

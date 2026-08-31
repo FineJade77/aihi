@@ -1,23 +1,22 @@
 from __future__ import annotations
 
 from aihi.agent import (
-    HostBackend,
     InMemoryEventStore,
-    ReadFileTool,
     RuntimeBuilder,
     Session,
 )
 from aihi.models import FakeProvider, FakeStep, Message
 
+from packages.aihi.agent.tests.support_tools import ReadTestTool
+
 
 async def test_a_run_persists_usage_and_context_size(tmp_path) -> None:
     store = InMemoryEventStore()
-    session = Session.create(store, cwd=str(tmp_path), provider="fake", model="demo")
+    session = Session.create(store)
     runtime = RuntimeBuilder(
         provider=FakeProvider([FakeStep(text="done")]),
         model="demo",
-        sandbox=HostBackend(tmp_path, unsafe=True),
-        tools=[ReadFileTool()],
+        tools=[ReadTestTool(tmp_path)],
     ).build()
 
     await runtime.coordinator.run(

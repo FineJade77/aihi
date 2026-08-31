@@ -11,7 +11,6 @@ import math
 from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import StrEnum
-from pathlib import Path
 from typing import Any
 
 from aihi.agent._core.events import utc_now
@@ -68,25 +67,6 @@ def _json_object(value: object, name: str) -> dict[str, Any]:
     except (TypeError, ValueError) as exc:
         raise AgentValidationError(f"{name} must be JSON serializable") from exc
     return deepcopy(value)
-
-
-def _canonical_path(value: str, name: str) -> str:
-    if not isinstance(value, str) or not value.strip():
-        raise AgentValidationError(f"{name} must be a non-empty path")
-    path = Path(value).expanduser()
-    if not path.is_absolute():
-        raise AgentValidationError(f"{name} must be absolute")
-    # resolve(strict=False) catches existing symlinks while remaining useful
-    # for a workspace that is created after the task is persisted.
-    return str(path.resolve(strict=False))
-
-
-def _within(parent: str, child: str) -> bool:
-    try:
-        Path(child).relative_to(Path(parent))
-    except ValueError:
-        return False
-    return True
 
 
 class AgentState(StrEnum):
@@ -192,76 +172,12 @@ class AgentBudget:
 
 
 @dataclass(frozen=True, slots=True)
-class WorkspaceScope:
-    """Canonical workspace authority; it is not itself a sandbox boundary."""
-
-    root: str
-    read_only: bool = True
-    allowed_paths: tuple[str, ...] = ()
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.read_only, bool):
-            raise AgentValidationError("workspace.read_only must be a boolean")
-        root = _canonical_path(self.root, "workspace.root")
-        if isinstance(self.allowed_paths, str) or not isinstance(
-            self.allowed_paths, (set, frozenset, tuple, list)
-        ):
-            raise AgentValidationError("workspace.allowed_paths must be a collection")
-        paths = tuple(
-            _canonical_path(path, "workspace.allowed_paths") for path in self.allowed_paths
-        )
-        if any(not _within(root, path) for path in paths):
-            raise AgentValidationError("workspace.allowed_paths must be within workspace.root")
-        object.__setattr__(self, "root", root)
-        object.__setattr__(self, "allowed_paths", paths)
-
-    def contains(self, child: WorkspaceScope) -> bool:
-        if self.read_only and not child.read_only:
-            return False
-        if not _within(self.root, child.root):
-            return False
-        parent_paths = self.allowed_paths or (self.root,)
-        child_paths = child.allowed_paths or (child.root,)
-        return all(
-            any(_within(parent_path, child_path) for parent_path in parent_paths)
-            for child_path in child_paths
-        )
-
-    def to_dict(self) -> dict[str, object]:
-        return {
-            "root": self.root,
-            "read_only": self.read_only,
-            "allowed_paths": list(self.allowed_paths),
-        }
-
-    @classmethod
-    def from_dict(cls, value: dict[str, object]) -> WorkspaceScope:
-        if not isinstance(value, dict):
-            raise AgentValidationError("workspace must be a JSON object")
-        paths = value.get("allowed_paths", [])
-        if not isinstance(paths, (list, tuple)) or any(not isinstance(item, str) for item in paths):
-            raise AgentValidationError("workspace.allowed_paths must be a collection")
-        raw_root = value.get("root")
-        if not isinstance(raw_root, str):
-            raise AgentValidationError("workspace.root must be a string")
-        read_only = value.get("read_only", True)
-        if not isinstance(read_only, bool):
-            raise AgentValidationError("workspace.read_only must be a boolean")
-        return cls(
-            root=raw_root,
-            read_only=read_only,
-            allowed_paths=tuple(paths),
-        )
-
-
-@dataclass(frozen=True, slots=True)
 class TaskSpec:
     """A durable subagent request and its inherited authority."""
 
     parent_run_id: str
     objective: str
     budget: AgentBudget
-    workspace: WorkspaceScope
     task_id: str = field(default_factory=lambda: new_id("task"))
     child_run_id: str = field(default_factory=lambda: new_id("run"))
     parent_task_id: str | None = None
@@ -311,7 +227,6 @@ class TaskSpec:
             "parent_run_id": self.parent_run_id,
             "objective": self.objective,
             "budget": self.budget.to_dict(),
-            "workspace": self.workspace.to_dict(),
             "task_id": self.task_id,
             "child_run_id": self.child_run_id,
             "parent_task_id": self.parent_task_id,
@@ -332,7 +247,6 @@ class TaskSpec:
             "parent_run_id",
             "objective",
             "budget",
-            "workspace",
             "task_id",
             "child_run_id",
         }
@@ -362,7 +276,6 @@ class TaskSpec:
             parent_run_id=_text(value["parent_run_id"], "parent_run_id"),
             objective=_text(value["objective"], "objective"),
             budget=AgentBudget.from_dict(_mapping(value["budget"], "task budget")),
-            workspace=WorkspaceScope.from_dict(_mapping(value["workspace"], "task workspace")),
             task_id=_text(value["task_id"], "task_id"),
             child_run_id=_text(value["child_run_id"], "child_run_id"),
             parent_task_id=parent_task_id,

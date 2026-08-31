@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 JsonObject: TypeAlias = dict[str, Any]
 JsonRpcId: TypeAlias = str | int
 
-PROTOCOL_VERSION: Final = "0.2"
+PROTOCOL_VERSION: Final = "0.3"
 SERVER_NAME: Final = "aihi-code-agent"
 
 PARSE_ERROR: Final = -32700

@@ -87,7 +87,7 @@ async def test_fail_fast_stops_following_hooks() -> None:
 
 
 @pytest.mark.asyncio
-async def test_mutating_hooks_require_trust_and_policy_sandbox_governance() -> None:
+async def test_mutating_hooks_require_trust_and_policy_governance() -> None:
     bus = HookBus()
 
     async def mutate(_event) -> None:
@@ -104,15 +104,7 @@ async def test_mutating_hooks_require_trust_and_policy_sandbox_governance() -> N
             "tool.before",
             {},
             governance=HookGovernance(
-                run_id="run-1", policy_allowed=False, sandbox={"name": "host"}
-            ),
-        )
-    with pytest.raises(HookGovernanceError):
-        await bus.emit(
-            "tool.before",
-            {},
-            governance=HookGovernance(
-                run_id="run-1", policy_allowed=True, sandbox={"name": "host", "unsafe": False}
+                run_id="run-1", policy_allowed=False
             ),
         )
 
@@ -122,7 +114,6 @@ async def test_mutating_hooks_require_trust_and_policy_sandbox_governance() -> N
         governance=HookGovernance(
             run_id="run-1",
             policy_allowed=True,
-            sandbox={"name": "host", "unsafe": True},
         ),
     )
     assert dispatch.outcomes[0].success is True

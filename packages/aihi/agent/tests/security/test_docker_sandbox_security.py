@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from aihi.agent._core.errors import SandboxConfigurationError, SandboxViolation
+from aihi.agent._core.errors import SandboxConfigurationError
 from aihi.agent.sandbox import DockerBackend
 from aihi.agent.sandbox.base import CommandResult
 
@@ -20,17 +20,16 @@ class Runner:
         return CommandResult(exit_code=0, stdout="", stderr="")
 
 
-def test_docker_workspace_read_only_is_enforced_before_host_write(tmp_path: Path) -> None:
+def test_docker_workspace_read_only_is_encoded_in_the_command_mount(tmp_path: Path) -> None:
     backend = DockerBackend(
         tmp_path,
         image="image",
         runner=Runner(),
         workspace_read_only=True,
     )
-    with pytest.raises(SandboxViolation):
-        import asyncio
-
-        asyncio.run(backend.write_text("x.txt", "no"))
+    command = backend.build_run_argv(("true",))
+    mount = command[command.index("--mount") + 1]
+    assert "readonly" in mount
 
 
 def test_network_enablement_requires_explicit_opt_in(tmp_path: Path) -> None:

@@ -9,13 +9,12 @@ from pathlib import Path
 
 from aihi.agent import (
     EventStore,
-    HostBackend,
     RunCoordinator,
     RunState,
-    Session,
     ToolRegistry,
 )
 from aihi.agent.context import StructuredSummary, SummaryRequest
+from aihi.code_agent import create_coding_session
 from aihi.code_agent.evals import CodeTask, TaskExecution
 from aihi.code_agent.prompts import load_builtin_prompt
 from aihi.models import (
@@ -100,7 +99,7 @@ async def context_reference_executor(
 ) -> TaskExecution:
     """Execute the same task above and below the hard-compaction threshold."""
 
-    session = Session.create(store, cwd=workspace, provider="fake", model=_MODEL)
+    session = create_coding_session(store, cwd=workspace, provider="fake", model=_MODEL)
     for message in _history():
         session.add_message(message)
 
@@ -126,7 +125,6 @@ async def context_reference_executor(
     coordinator = RunCoordinator(
         provider,
         registry=ToolRegistry(),
-        sandbox=HostBackend(workspace, unsafe=True),
         context_window=context_window,
         context_safety_margin=0,
         summary_generator=_ContextEvalSummaryGenerator(),

@@ -3,9 +3,9 @@
 from pathlib import Path
 
 import pytest
-from aihi.agent import HostBackend, ToolContext, ToolRegistry
-from aihi.agent._core.errors import SandboxViolation, ToolInputError
-from aihi.agent.tools.builtin import BashTool, GlobTool, GrepTool
+from aihi.agent import HostBackend, ToolContext, ToolInputError, ToolRegistry
+from aihi.code_agent.permissions import AccessMode, CodeAgentPermissionContext, RunMode
+from aihi.code_agent.tools import BashTool, GlobTool, GrepTool
 
 
 def workspace(tmp_path: Path) -> Path:
@@ -20,11 +20,16 @@ def workspace(tmp_path: Path) -> Path:
 
 
 def ctx(root: Path) -> ToolContext:
+    sandbox = HostBackend(root, unsafe=True)
     return ToolContext(
-        cwd=str(root),
         session_id="ses-search",
         run_id="run-search",
-        sandbox=HostBackend(root, unsafe=True),
+        app_context=CodeAgentPermissionContext(
+            workspace=root,
+            access_mode=AccessMode.WORKSPACE_WRITE,
+            run_mode=RunMode.EXECUTE,
+            command_sandbox=sandbox.descriptor,
+        ),
     )
 
 
@@ -68,7 +73,7 @@ async def test_glob_cannot_escape_the_workspace(tmp_path: Path) -> None:
     (tmp_path / "outside.py").write_text("secret", encoding="utf-8")
 
     for pattern in ("../*.py", "/etc/*", "../../**/*.py"):
-        with pytest.raises(SandboxViolation):
+        with pytest.raises(ToolInputError):
             await GlobTool().run({"pattern": pattern}, ctx(root))
 
 
@@ -130,7 +135,9 @@ async def test_grep_stops_at_the_match_limit(tmp_path: Path) -> None:
 
 
 def test_the_registry_exposes_one_execution_tool(tmp_path: Path) -> None:
-    registry = ToolRegistry([BashTool(), GlobTool(), GrepTool()])
+    registry = ToolRegistry(
+        [BashTool(HostBackend(tmp_path, unsafe=True)), GlobTool(), GrepTool()]
+    )
 
     executing = [
         spec.name for spec in registry.specs if "process.exec" in spec.required_capabilities

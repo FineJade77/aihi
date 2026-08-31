@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://aihi.dev/schemas/code-protocol/rpc-envelope-0.2.json",
+  "$id": "https://aihi.dev/schemas/code-protocol/rpc-envelope-0.3.json",
   "title": "AIHI Code RPC envelope",
   "oneOf": [
     { "$ref": "#/$defs/request" },

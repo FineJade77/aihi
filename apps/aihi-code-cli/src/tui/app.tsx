@@ -2,9 +2,11 @@ import { homedir } from "node:os";
 import { Box, Text, useApp, useInput, useStdout } from "ink";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
+  AccessMode,
   ApprovalDescriptor,
   ConfigDescriptor,
   ProviderDescriptor,
+  RunMode,
   RunResult,
   SessionDescriptor,
   TaskDescriptor,
@@ -22,6 +24,12 @@ import {
   type TranscriptProjection,
 } from "../transcript.js";
 import { Banner, GradientText } from "./banner.js";
+import {
+  authorityFromEventData,
+  effectiveAuthority,
+  formatAuthority,
+  type EffectiveAuthority,
+} from "./authority.js";
 import {
   createComposerState,
   slashSuggestions,
@@ -74,8 +82,9 @@ export interface TuiAppProps {
   sessionId?: string;
   storePath?: string;
   configPaths?: string[];
+  accessMode: AccessMode;
+  runMode: RunMode;
   hostConsentRequired?: boolean;
-  hostExecutionRoot?: string;
   /** First turn to run once the session is up. */
   prompt?: string;
   onSessionOpened?: (sessionId: string) => void;
@@ -140,6 +149,7 @@ function statusReport({
   context,
   tasks,
   approvals,
+  authority,
 }: {
   cwd: string;
   selectedSession?: SessionDescriptor;
@@ -151,6 +161,7 @@ function statusReport({
   context: { tokens: number; limit: number };
   tasks: TaskDescriptor[];
   approvals: ApprovalDescriptor[];
+  authority: EffectiveAuthority;
 }): CommandReport {
   return {
     title: "STATUS",
@@ -158,6 +169,7 @@ function statusReport({
       `workspace · ${tildePath(cwd)}`,
       `session · ${selectedSessionId ?? "none"}${selectedSession ? ` · seq ${transcript.headSeq}` : ""}`,
       `model · ${activeProvider}/${activeModel}`,
+      `authority · ${formatAuthority(authority)}`,
       `run · ${activeRunId ?? "ready"}${approvals.length > 0 ? ` · ${approvals.length} approval(s)` : ""}`,
       `context · ${context.limit > 0 ? `${context.tokens}/${context.limit} (${((context.tokens / context.limit) * 100).toFixed(1)}%)` : "not reported"}`,
       `tasks · ${tasks.length}`,
@@ -174,8 +186,8 @@ function configReport(config: ConfigDescriptor): CommandReport {
     lines: [
       "✓ config loaded" + (config.source_path ? ` · ${tildePath(config.source_path)}` : " · defaults"),
       `✓ providers · ${config.providers.length || 1} configured · ${providerSummary || config.provider.name} · active ${config.provider.name}/${config.provider.model}`,
-      `✓ permissions · ${config.permission_mode}`,
-      `✓ sandbox · ${config.sandbox.backend}${config.sandbox.unsafe ? " · unsafe host opt-in" : ""}`,
+      `✓ authority · ${config.access_mode} · ${config.run_mode}`,
+      `✓ command sandbox · ${config.command_sandbox.backend}${config.command_sandbox.unsafe ? " · unsafe host opt-in" : ""}`,
       `✓ tools · ${config.tools.length}`,
       `audit · ${config.audit?.enabled ? config.audit.path ?? "enabled without path" : "disabled"}`,
     ],
@@ -233,6 +245,7 @@ function Splash({
   configuredProviders,
   storePath,
   configPaths,
+  authority,
 }: {
   cwd: string;
   provider: string;
@@ -240,6 +253,7 @@ function Splash({
   configuredProviders?: readonly ProviderDescriptor[];
   storePath?: string;
   configPaths?: string[];
+  authority: EffectiveAuthority;
 }) {
   return (
     <Box flexDirection="column" marginBottom={1}>
@@ -247,6 +261,7 @@ function Splash({
       <Box flexDirection="column" marginTop={1} paddingX={2}>
         <InfoRow label="cwd" value={tildePath(cwd)} />
         <InfoRow label="provider" value={`${provider} · ${model}`} />
+        <InfoRow label="authority" value={formatAuthority(authority)} />
         {configuredProviders !== undefined && configuredProviders.length > 0 && (
           <InfoRow
             label="catalog"
@@ -281,6 +296,7 @@ function StatusBar({
   contextTokens,
   contextLimit,
   tasks,
+  authority,
 }: {
   cwd: string;
   provider: string;
@@ -288,6 +304,7 @@ function StatusBar({
   contextTokens: number;
   contextLimit: number;
   tasks: TaskDescriptor[];
+  authority: EffectiveAuthority;
 }) {
   const theme = useTheme();
   const ratio = contextLimit > 0 ? contextTokens / contextLimit : 0;
@@ -309,6 +326,8 @@ function StatusBar({
       <Text color={theme.brand}>
         {provider}/{model}
       </Text>
+      <Text color={theme.faint}>{"  ·  "}</Text>
+      <Text color={theme.muted}>{formatAuthority(authority)}</Text>
       <Text color={theme.faint}>{"  ·  "}</Text>
       {contextLimit > 0 ? (
         <Text color={contextTone}>
@@ -367,17 +386,16 @@ function ApprovalPanel({ approvals }: { approvals: ApprovalDescriptor[] }) {
   );
 }
 
-function HostConsentPanel({ cwd, root }: { cwd: string; root: string }) {
+function HostConsentPanel({ cwd }: { cwd: string }) {
   const theme = useTheme();
   return (
     <Box borderStyle="round" borderColor={theme.warn} flexDirection="column" paddingX={1}>
       <Text bold color={theme.warn}>TRUST THIS WORKSPACE?</Text>
       <Text color={theme.text} wrap="wrap">
-        Host mode is not an isolation boundary. AIHI tools can read and modify files and run
-        commands as your local user inside this execution root:
+        Host mode is not an isolation boundary. Commands run as your local user with this
+        workspace as cwd, and may access any file or network resource allowed by the OS:
       </Text>
-      <Text bold color={theme.accent}>{root}</Text>
-      {root !== cwd && <Text color={theme.muted}>workspace · {cwd}</Text>}
+      <Text bold color={theme.accent}>{cwd}</Text>
       <Text color={theme.muted}>[y] trust this workspace · [n] exit</Text>
     </Box>
   );
@@ -511,8 +529,9 @@ export function TuiApp({
   sessionId,
   storePath,
   configPaths,
+  accessMode,
+  runMode,
   hostConsentRequired = false,
-  hostExecutionRoot = cwd,
   prompt,
   onSessionOpened,
 }: TuiAppProps) {
@@ -538,6 +557,10 @@ export function TuiApp({
   const [activeProvider, setActiveProvider] = useState(provider);
   const [activeModel, setActiveModel] = useState(model);
   const [activeRunId, setActiveRunId] = useState<string>();
+  const [authority, setAuthority] = useState<EffectiveAuthority>({
+    accessMode,
+    runMode,
+  });
   const [streamText, setStreamText] = useState("");
   const [transcript, setTranscript] = useState<TranscriptProjection>({
     headSeq: 0,
@@ -602,11 +625,12 @@ export function TuiApp({
     // already published.
     loadingTranscriptSessionsRef.current.set(sessionId, generation);
     try {
-      const [session, historyPage, nextTasks, nextApprovals] = await Promise.all([
+      const [session, historyPage, nextTasks, nextApprovals, nextRuns] = await Promise.all([
         client.getSession(sessionId),
         readSessionHistory(client, sessionId),
         client.listTasks(sessionId),
         client.listApprovals(sessionId),
+        client.listRuns(sessionId),
       ]);
       if (generation !== sessionLoadGenerationRef.current) return;
       let selectedApprovals = nextApprovals;
@@ -650,6 +674,11 @@ export function TuiApp({
       transcriptRef.current = selectedTranscript;
       setTranscript(selectedTranscript);
       setActiveRunId(selectedTranscript.activeRunId);
+      setAuthority(effectiveAuthority(
+        { access_mode: accessMode, run_mode: runMode },
+        nextRuns,
+        selectedTranscript.activeRunId,
+      ));
       setApprovals(selectedApprovals);
       selectedSessionIdRef.current = session.session_id;
       setSelectedSessionId(session.session_id);
@@ -666,7 +695,7 @@ export function TuiApp({
         }
       }
     }
-  }, [client]);
+  }, [accessMode, client, runMode]);
 
   const refreshSessions = useCallback(async () => {
     const next = await client.listSessions();
@@ -742,6 +771,7 @@ export function TuiApp({
       const eventData = event.data;
       if (eventType === "run.started" || eventType === "run.resumed") {
         setActiveRunId(event.run_id);
+        setAuthority((current) => authorityFromEventData(eventData, current));
         setStreamText("");
         setNotice(undefined);
       }
@@ -845,7 +875,7 @@ export function TuiApp({
           .map((item) => `${item.name}[${(item.models ?? [item.model]).join(", ")}]`)
           .join(" · ");
         setStatus(
-          `${providerSummary} · active ${activeProvider}/${activeModel} · tools ${config.tools.length} · MCP ${config.mcp_servers.length} · Skill roots ${Array.isArray(config.skills.roots) ? config.skills.roots.length : 0}`,
+          `${providerSummary} · active ${activeProvider}/${activeModel} · ${config.access_mode}/${config.run_mode} · tools ${config.tools.length} · MCP ${config.mcp_servers.length} · Skill roots ${Array.isArray(config.skills.roots) ? config.skills.roots.length : 0}`,
         );
         return;
       }
@@ -861,6 +891,7 @@ export function TuiApp({
           context,
           tasks,
           approvals,
+          authority,
         }));
         setStatus("Status snapshot ready");
         return;
@@ -945,7 +976,12 @@ export function TuiApp({
         setStatus(
           runs.length === 0
             ? "No runs"
-            : runs.slice(0, 5).map((run) => `${shortId(run.run_id)} ${run.state}${run.model ? `/${run.model}` : ""}`).join(" · "),
+            : runs.slice(0, 5).map((run) => {
+                const modes = run.access_mode && run.run_mode
+                  ? ` ${run.access_mode}/${run.run_mode}`
+                  : "";
+                return `${shortId(run.run_id)} ${run.state}${run.model ? `/${run.model}` : ""}${modes}`;
+              }).join(" · "),
         );
         return;
       }
@@ -1160,7 +1196,7 @@ export function TuiApp({
       commandInFlightRef.current = false;
       setBusy(false);
     }
-  }, [activeModel, activeProvider, activeRunId, approvals, context, cwd, loadSession, model, openPicker, provider, quit, refreshSessions, resolvePendingApproval, selectedSession, selectedSessionId, tasks, transcript]);
+  }, [activeModel, activeProvider, activeRunId, approvals, authority, context, cwd, loadSession, model, openPicker, provider, quit, refreshSessions, resolvePendingApproval, selectedSession, selectedSessionId, tasks, transcript]);
 
   const selectPickerOption = useCallback(async (option: PickerOption) => {
     const mode = picker?.mode;
@@ -1398,6 +1434,7 @@ export function TuiApp({
           configuredProviders={configuredProviders}
           storePath={storePath}
           configPaths={configPaths}
+          authority={authority}
         />
       ) : (
         <>
@@ -1433,7 +1470,7 @@ export function TuiApp({
           </Box>
         </>
       )}
-      {hostConsentPending && <HostConsentPanel cwd={cwd} root={hostExecutionRoot} />}
+      {hostConsentPending && <HostConsentPanel cwd={cwd} />}
       <Box marginTop={1}>
         <Text color={theme.muted} wrap="truncate">{status}</Text>
       </Box>
@@ -1479,6 +1516,7 @@ export function TuiApp({
         contextTokens={context.tokens}
         contextLimit={context.limit}
         tasks={tasks}
+        authority={authority}
       />
       <Text color={theme.faint} wrap="truncate">PgUp/PgDn scroll · Ctrl-E follow · Ctrl-O tool output · ↑/↓ history · Tab slash · Ctrl-W/Ctrl-U erase · Ctrl-J newline · Ctrl-C interrupt/exit</Text>
     </Box>

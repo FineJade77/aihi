@@ -48,29 +48,20 @@ class HookGovernance:
 
     run_id: str | None
     policy_allowed: bool
-    sandbox: Mapping[str, Any] | None = None
     approval_id: str | None = None
     capability_lease_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.policy_allowed, bool):
             raise HookGovernanceError("Hook governance policy_allowed must be boolean")
-        if self.sandbox is not None:
-            object.__setattr__(self, "sandbox", MappingProxyType(dict(self.sandbox)))
-
     @property
     def allows_mutation(self) -> bool:
-        if not self.policy_allowed or self.sandbox is None or not self.sandbox:
-            return False
-        if self.sandbox.get("name") == "host" and self.sandbox.get("unsafe") is not True:
-            return False
-        return True
+        return self.policy_allowed
 
     def to_dict(self) -> dict[str, object]:
         return {
             "run_id": self.run_id,
             "policy_allowed": self.policy_allowed,
-            "sandbox": dict(self.sandbox) if self.sandbox is not None else None,
             "approval_id": self.approval_id,
             "capability_lease_ids": list(self.capability_lease_ids),
         }
@@ -248,7 +239,7 @@ class HookBus:
         if any(registration.mutates for registration in registrations):
             if governance is None or not governance.allows_mutation:
                 raise HookGovernanceError(
-                    f"Mutating Hooks require policy approval and sandbox governance: {event.name}"
+                    f"Mutating Hooks require policy approval: {event.name}"
                 )
         outcomes: list[HookOutcome] = []
         for registration in registrations:

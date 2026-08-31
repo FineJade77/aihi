@@ -75,7 +75,7 @@ def test_worker_rejects_unsupported_protocol_and_notification_is_silent() -> Non
     assert server.handle({"jsonrpc": "2.0", "method": "missing"}) is None
 
 
-def test_protocol_02_rejects_the_legacy_01_handshake() -> None:
+def test_protocol_03_rejects_the_legacy_02_handshake() -> None:
     server = WorkerServer()
 
     response = server.handle(
@@ -83,7 +83,7 @@ def test_protocol_02_rejects_the_legacy_01_handshake() -> None:
             "jsonrpc": "2.0",
             "id": 1,
             "method": "initialize",
-            "params": {"protocol_version": "0.1"},
+            "params": {"protocol_version": "0.2"},
         }
     )
 
@@ -171,6 +171,7 @@ def test_session_commands_persist_and_stream_durable_events(tmp_path) -> None:
     assert created is not None
     session = created["result"]["session"]  # type: ignore[index]
     session_id = session["session_id"]
+    assert session["cwd"] == str(tmp_path.resolve())
     notifications = server.drain_notifications()
     assert notifications[0]["params"]["event"]["event_type"] == "session.created"  # type: ignore[index]
     assert notifications[0]["params"]["event"]["seq"] == 1  # type: ignore[index]
@@ -180,6 +181,7 @@ def test_session_commands_persist_and_stream_durable_events(tmp_path) -> None:
     )
     assert listed is not None
     assert listed["result"]["sessions"][0]["session_id"] == session_id  # type: ignore[index]
+    assert listed["result"]["sessions"][0]["cwd"] == str(tmp_path.resolve())  # type: ignore[index]
 
     events = server.handle(
         {
@@ -207,11 +209,11 @@ models = ["gpt-4o", "gpt-4.1"]
 api_key_env = "OPENAI_API_KEY"
 
 [agent]
-permission_mode = "plan"
+access_mode = "read_only"
+run_mode = "plan"
 
 [sandbox]
 backend = "host"
-root = "."
 unsafe = true
 
 [mcp.servers.example]
@@ -236,7 +238,11 @@ allowed_tools = ["search"]
     descriptor = response["result"]["config"]  # type: ignore[index]
     assert descriptor["provider"]["name"] == "fake"
     assert descriptor["provider"]["models"] == ["demo", "fast-demo"]
-    assert descriptor["permission_mode"] == "plan"
+    assert descriptor["access_mode"] == "read_only"
+    assert descriptor["run_mode"] == "plan"
+    assert "permission_mode" not in descriptor
+    assert "sandbox" not in descriptor
+    assert "root" not in descriptor["command_sandbox"]
     assert {item["name"] for item in descriptor["providers"]} == {"fake", "openai"}
     openai_descriptor = next(
         item for item in descriptor["providers"] if item["name"] == "openai"
@@ -246,6 +252,7 @@ allowed_tools = ["search"]
     assert descriptor["source_paths"] == [str(config_path.resolve())]
     assert descriptor["audit"]["enabled"] is True
     assert descriptor["audit"]["path"] == str((tmp_path / ".aihi" / "audit.jsonl").resolve())
+    assert "context_window" not in descriptor
     created = server.handle(
         {
             "jsonrpc": "2.0",
@@ -337,6 +344,7 @@ def test_task_commands_rebuild_graph_from_session_events(tmp_path) -> None:
     )
     assert root_response is not None
     root = root_response["result"]["task"]  # type: ignore[index]
+    assert "workspace" not in root["spec"]
     root_id = root["spec"]["task_id"]
     server.drain_notifications()
 
@@ -380,6 +388,21 @@ def test_task_commands_rebuild_graph_from_session_events(tmp_path) -> None:
         root_id,
         child_id,
     }
+    rejected_workspace = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 61,
+            "method": "task.spawn",
+            "params": {
+                "session_id": session_id,
+                "parent_task_id": root_id,
+                "objective": "legacy scope",
+                "workspace": {"root": str(tmp_path)},
+            },
+        }
+    )
+    assert rejected_workspace is not None
+    assert rejected_workspace["error"]["code"] == INVALID_PARAMS  # type: ignore[index]
     server.close()
 
     restored = WorkerServer(store_path=store_path)
@@ -549,7 +572,6 @@ model = "demo"
 
 [sandbox]
 backend = "host"
-root = "."
 unsafe = true
 """,
         encoding="utf-8",
@@ -600,6 +622,8 @@ def test_run_list_and_session_fork_are_recoverable(tmp_path) -> None:
     )
     assert runs is not None
     assert runs["result"]["runs"][0]["state"] == "completed"  # type: ignore[index]
+    assert runs["result"]["runs"][0]["access_mode"] == "workspace_write"  # type: ignore[index]
+    assert runs["result"]["runs"][0]["run_mode"] == "execute"  # type: ignore[index]
 
     forked = server.handle(
         {
@@ -774,7 +798,7 @@ def test_config_host_acknowledgement_is_explicit_and_workspace_scoped(
     assert accepted is not None
     assert accepted["result"]["acknowledged"] is True  # type: ignore[index]
     assert accepted["result"]["workspace"] == str(workspace)  # type: ignore[index]
-    assert accepted["result"]["root"] == str(workspace)  # type: ignore[index]
+    assert "root" not in accepted["result"]  # type: ignore[operator]
 
     effective = server.handle(
         {
@@ -785,7 +809,7 @@ def test_config_host_acknowledgement_is_explicit_and_workspace_scoped(
         }
     )
     assert effective is not None
-    assert effective["result"]["config"]["sandbox"]["unsafe"] is True  # type: ignore[index]
+    assert effective["result"]["config"]["command_sandbox"]["unsafe"] is True  # type: ignore[index]
 
 
 def test_config_host_acknowledgement_rejects_non_host_backend_without_writing(

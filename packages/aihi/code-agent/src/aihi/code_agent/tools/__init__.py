@@ -2,25 +2,31 @@
 
 from __future__ import annotations
 
-from aihi.agent import (
-    BashTool,
-    EditFileTool,
-    GlobTool,
-    GrepTool,
-    ReadFileTool,
-    Tool,
-    WriteFileTool,
-)
+from typing import Any
+
+from aihi.agent import Tool
 
 from ..config import CodeAgentConfigError
+from .bash import BashTool, resolve_bash
+from .edit_file import EditFileTool
 from .git import GitDiffTool, GitStatusTool
+from .ledger import ReadLedger
+from .read_file import ReadFileTool
 from .registry import ToolBuildContext, ToolDefinition
+from .search import GlobTool, GrepTool
 from .skill import LoadSkillTool
+from .workspace import LocalWorkspace
+from .write_file import WriteFileTool
 
 
-def _load_skill(context: ToolBuildContext) -> Tool:
+def _load_skill(context: ToolBuildContext) -> Tool[Any]:
     assert context.skill_loader is not None  # guarded by ToolDefinition.requires
     return LoadSkillTool(context.skill_loader)
+
+
+def _bash(context: ToolBuildContext) -> Tool[Any]:
+    assert context.command_sandbox is not None  # guarded by ToolDefinition.requires
+    return BashTool(context.command_sandbox)
 
 
 CODING_TOOLSET: tuple[ToolDefinition, ...] = (
@@ -31,12 +37,12 @@ CODING_TOOLSET: tuple[ToolDefinition, ...] = (
     ToolDefinition("git_diff", lambda _: GitDiffTool()),
     ToolDefinition("edit_file", lambda ctx: EditFileTool(ledger=ctx.ledger)),
     ToolDefinition("write_file", lambda ctx: WriteFileTool(ledger=ctx.ledger)),
-    ToolDefinition("bash", lambda _: BashTool()),
+    ToolDefinition("bash", _bash, requires=("command_sandbox",)),
     ToolDefinition("load_skill", _load_skill, requires=("skill_loader",)),
 )
 
 
-def build_tools(context: ToolBuildContext) -> tuple[Tool, ...]:
+def build_tools(context: ToolBuildContext) -> tuple[Tool[Any], ...]:
     """Build the configured tools in configured order.
 
     An unknown name is an error rather than a silent omission: a typo in the
@@ -51,7 +57,7 @@ def build_tools(context: ToolBuildContext) -> tuple[Tool, ...]:
         and "load_skill" not in names
     ):
         names.append("load_skill")
-    tools: list[Tool] = []
+    tools: list[Tool[Any]] = []
     for name in names:
         definition = definitions.get(name)
         if definition is None:
@@ -67,11 +73,20 @@ def build_tools(context: ToolBuildContext) -> tuple[Tool, ...]:
 
 
 __all__ = [
+    "BashTool",
     "CODING_TOOLSET",
+    "EditFileTool",
     "GitDiffTool",
     "GitStatusTool",
+    "GlobTool",
+    "GrepTool",
     "LoadSkillTool",
+    "LocalWorkspace",
+    "ReadFileTool",
+    "ReadLedger",
     "ToolBuildContext",
     "ToolDefinition",
+    "WriteFileTool",
     "build_tools",
+    "resolve_bash",
 ]

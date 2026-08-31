@@ -5,7 +5,7 @@ a cross-distribution import actually lands on. In a development checkout every
 ``src`` tree is on ``pythonpath``, so a reversed or private-module import type
 checks and runs. This gate reads the source instead.
 
-Scope is the boundary *between* the three distributions. The spine *inside*
+Scope is the boundary *between* the three Python packages. The spine *inside*
 ``aihi.agent`` -- which package may import which -- is enforced separately by
 ``packages/aihi/agent/tests/contract/test_layering.py``.
 """
@@ -102,7 +102,7 @@ def test_distributions_only_import_the_layers_below_them(
 def test_cross_distribution_imports_target_a_public_package_surface(
     parsed: list[tuple[str, Path, ast.Module]],
 ) -> None:
-    """Applications consume published package surfaces, never internal modules."""
+    """Applications consume supported package surfaces, never internal modules."""
 
     violations: list[str] = []
     for distribution, path, tree in parsed:

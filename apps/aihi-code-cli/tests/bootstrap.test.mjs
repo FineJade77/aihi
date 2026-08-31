@@ -14,7 +14,9 @@ const config = {
     { name: "openai", model: "gpt-5", models: ["gpt-5", "gpt-5-mini"] },
   ],
   tools: [],
-  sandbox: { backend: "host", root: "/workspace", unsafe: true },
+  access_mode: "workspace_write",
+  run_mode: "execute",
+  command_sandbox: { backend: "host", unsafe: true },
   skills: {},
   mcp_servers: [],
 };
@@ -22,6 +24,7 @@ const config = {
 function session(id, cwd, provider = "deepseek", model = "deepseek-chat") {
   return {
     session_id: id,
+    cwd,
     head_seq: 1,
     created_at: "2026-08-12T00:00:00Z",
     metadata: { cwd, provider, model },

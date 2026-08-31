@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aihi.dev/schemas/code-protocol/config-descriptor-0.3.json",
+  "title": "AIHI Code configuration descriptor",
+  "type": "object",
+  "required": [
+    "source_path",
+    "source_paths",
+    "base_dir",
+    "provider",
+    "providers",
+    "tools",
+    "access_mode",
+    "run_mode",
+    "command_sandbox",
+    "skills",
+    "mcp_servers",
+    "audit"
+  ],
+  "properties": {
+    "source_path": { "type": ["string", "null"] },
+    "source_paths": { "type": "array", "items": { "type": "string" } },
+    "base_dir": { "type": "string" },
+    "provider": { "$ref": "#/$defs/provider" },
+    "providers": { "type": "array", "items": { "$ref": "#/$defs/provider" } },
+    "tools": { "type": "array", "items": { "type": "string" } },
+    "access_mode": { "enum": ["read_only", "workspace_write", "full_access"] },
+    "run_mode": { "enum": ["execute", "plan"] },
+    "command_sandbox": {
+      "type": "object",
+      "required": ["backend", "unsafe"],
+      "properties": {
+        "backend": { "type": "string", "minLength": 1 },
+        "unsafe": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "skills": { "type": "object" },
+    "mcp_servers": { "type": "array", "items": { "type": "string" } },
+    "artifacts": { "type": "object" },
+    "audit": {
+      "type": "object",
+      "required": ["enabled", "path"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "path": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "compact_model": { "type": ["string", "null"] },
+    "context_window": { "type": "integer", "minimum": 1 },
+    "subagents": { "type": "object" }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "provider": {
+      "type": "object",
+      "required": ["name", "model"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "model": { "type": "string", "minLength": 1 },
+        "models": { "type": "array", "items": { "type": "string" } },
+        "api_key_env": { "type": ["string", "null"] },
+        "base_url": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    }
+  }
+}

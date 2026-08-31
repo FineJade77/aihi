@@ -4,9 +4,7 @@ from pathlib import Path
 
 import pytest
 from aihi.agent import (
-    HostBackend,
     InMemoryEventStore,
-    ReadFileTool,
     RunCoordinator,
     RunState,
     Session,
@@ -16,45 +14,43 @@ from aihi.agent import (
 from aihi.agent.agents import (
     SPAWN_CAPABILITY,
     AgentBudget,
+    ChildRunContext,
     ChildRunSubagentRunner,
     SubagentAuthority,
     SubagentTool,
-    WorkspaceScope,
     restrict_registry,
-    subagent_session_factory,
 )
 from aihi.agent.evals import TraceGraph, replay_graph
 from aihi.agent.evals.errors import EvalValidationError
 from aihi.agent.policy import ApprovalOutcome
 from aihi.models import FakeProvider, FakeStep, Message
 
+from packages.aihi.agent.tests.support_tools import ReadTestTool, app_session_factory
+
 
 async def delegated_run(tmp_path: Path) -> tuple[Session, InMemoryEventStore, str]:
     """Run a parent that delegates one task, and return both logs."""
 
     store = InMemoryEventStore()
-    sandbox = HostBackend(tmp_path, unsafe=True)
-    tools = ToolRegistry([ReadFileTool()])
+    tools = ToolRegistry([ReadTestTool(tmp_path)])
 
-    def coordinator_factory(spec: object, child_sandbox: object) -> RunCoordinator:
+    def coordinator_factory(spec: object) -> RunCoordinator:
         capabilities = frozenset(getattr(spec, "capabilities", frozenset()))
         return RunCoordinator(
             FakeProvider([FakeStep(text="the child read the code")]),
             registry=restrict_registry(tools, capabilities),
-            sandbox=child_sandbox,  # type: ignore[arg-type]
         )
 
     runner = ChildRunSubagentRunner(
         coordinator_factory,
-        subagent_session_factory(store, provider="fake", model="fake-model"),
-        sandbox=sandbox,
+        app_session_factory(store, workspace=tmp_path),
         model="fake-model",
+        child_context_factory=lambda spec, context: ChildRunContext(),
     )
     tool = SubagentTool(
         runner,
         authority=SubagentAuthority(
             budget=AgentBudget(max_tokens=2_048, timeout_seconds=30.0, max_tool_calls=4),
-            workspace=WorkspaceScope(root=str(tmp_path), read_only=True),
             capabilities=frozenset({SPAWN_CAPABILITY, "filesystem.read"}),
         ),
     )
@@ -63,12 +59,9 @@ async def delegated_run(tmp_path: Path) -> tuple[Session, InMemoryEventStore, st
             [FakeStep.call_tool("task", {"objective": "read the code"}), FakeStep(text="done")]
         ),
         registry=ToolRegistry([tool]),
-        sandbox=sandbox,
         approval_resolver=StaticApprovalResolver(ApprovalOutcome.GRANTED),
     )
-    session = Session.create(
-        store, cwd=tmp_path, provider="fake", model="fake-model", session_id="ses-parent"
-    )
+    session = Session.create(store, session_id="ses-parent")
     result = await parent.run(
         session, model="fake-model", user_message=Message.text("user", "delegate")
     )
@@ -115,9 +108,7 @@ async def test_a_child_naming_a_parent_outside_the_graph_is_rejected(tmp_path: P
     child = Session.load(store, child_id)
 
     # Pair the child with a different parent session.
-    other = Session.create(
-        InMemoryEventStore(), cwd=tmp_path, provider="fake", model="fake-model", session_id="other"
-    )
+    other = Session.create(InMemoryEventStore(), session_id="other")
     with pytest.raises(EvalValidationError, match="names a parent outside this graph"):
         TraceGraph.from_sessions(list(other.events), [list(child.events)])
 
@@ -145,13 +136,10 @@ async def test_the_same_child_cannot_appear_twice(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_a_lone_parent_is_still_a_valid_graph(tmp_path: Path) -> None:
-    session = Session.create(
-        InMemoryEventStore(), cwd=tmp_path, provider="fake", model="fake-model", session_id="solo"
-    )
+    session = Session.create(InMemoryEventStore(), session_id="solo")
     coordinator = RunCoordinator(
         FakeProvider([FakeStep(text="no delegation here")]),
         registry=ToolRegistry(),
-        sandbox=HostBackend(tmp_path, unsafe=True),
     )
     await coordinator.run(session, model="fake-model", user_message=Message.text("user", "hi"))
 

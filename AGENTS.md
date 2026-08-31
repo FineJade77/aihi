@@ -45,11 +45,14 @@ aihi.models must not import aihi.agent; base packages must not import applicatio
 not copy runtime or safety implementations. aihi.agent.agents is subagent coordination infrastructure,
 not the directory for a user-facing Agent product.
 
-The three Python distributions are published at version 0.1.0:
+The two public Python distributions are published at version 0.2.0:
 
-- [aihi-models on PyPI](https://pypi.org/project/aihi-models/0.1.0/)
-- [aihi-agent on PyPI](https://pypi.org/project/aihi-agent/0.1.0/)
-- [aihi-code-agent on PyPI](https://pypi.org/project/aihi-code-agent/0.1.0/)
+- [aihi-models on PyPI](https://pypi.org/project/aihi-models/0.2.0/)
+- [aihi-agent on PyPI](https://pypi.org/project/aihi-agent/0.2.0/)
+
+aihi-code-agent is a private local application package outside the uv workspace. Keep it installable
+for local Worker/CLI development with a separate editable install, but do not build or publish it as a
+PyPI release artifact.
 
 ## Choose the right layer
 
@@ -57,7 +60,7 @@ The three Python distributions are published at version 0.1.0:
 | --- | --- | --- |
 | Message, model request/response, stream chunk, Provider error or adapter | packages/aihi/models | aihi-agent or an application |
 | Runtime, Session, EventStore, Context, ToolSpec, Policy, Sandbox, Skill, MCP, Memory, Subagent, Eval or Observability contract | packages/aihi/agent | Coding prompts, UI or product defaults |
-| Coding prompt, workspace rules, Provider/Model catalog, permission-mode defaults, Coding tools or Worker composition | packages/aihi/code-agent | The two base packages |
+| Coding prompt, workspace rules, Provider/Model catalog, access/run-mode defaults, Coding tools or Worker composition | packages/aihi/code-agent | The two base packages |
 | RPC method, DTO, event guard or JSON Schema shared by Worker and clients | packages/aihi/code-protocol | Runtime state or persistence |
 | Slash command, picker, transcript viewport, composer or terminal presentation | apps/aihi-code-cli | Worker business truth or EventStore writes |
 | Product-specific behavior | The relevant application | A reusable base package |
@@ -76,20 +79,21 @@ Requirements:
 - Node.js 20+
 - pnpm 9
 
-Install the workspace:
+Install the public uv workspace:
 
 ```bash
 uv sync
 pnpm install
 ```
 
-For normal use, install the published Coding Agent:
+Install the public foundation packages from PyPI:
 
 ```bash
-python -m pip install aihi-code-agent==0.1.0
+python -m pip install aihi-models==0.2.0 aihi-agent==0.2.0
 ```
 
-For repository development, use editable installs only when you need to test source changes:
+The Coding Agent is outside the uv workspace. Install its source separately when running the local
+Worker/CLI or testing application changes:
 
 ```bash
 uv pip install -e packages/aihi/models
@@ -133,19 +137,23 @@ pnpm --dir packages/aihi/code-protocol typecheck
 
 ### Packaging
 
-Build all Python distributions:
+Build the two public Python distributions listed in root `pyproject.toml` under
+`tool.aihi.release.python-distributions`:
 
 ```bash
 mkdir -p dist/pypi
 python3 -m build --sdist --wheel --no-isolation --outdir dist/pypi packages/aihi/models
 python3 -m build --sdist --wheel --no-isolation --outdir dist/pypi packages/aihi/agent
-python3 -m build --sdist --wheel --no-isolation --outdir dist/pypi packages/aihi/code-agent
-python3 -m twine check dist/pypi/*
+python3 -m twine check dist/pypi/aihi_models-* dist/pypi/aihi_agent-*
 ```
 
+Update package versions, dependency ranges and public README install commands before building. PyPI
+captures each package README as release metadata, so a stale long description requires a new release
+rather than an in-place metadata refresh.
+
 Packaging tests must verify wheel layout, PEP 420 namespace coexistence, py.typed, dependency metadata,
-installed-wheel smoke behavior and frozen compatibility fixtures. Never regenerate a frozen fixture merely
-to make a changed implementation pass.
+installed-wheel smoke behavior, the exclusion of aihi-code-agent and frozen compatibility fixtures.
+Never regenerate a frozen fixture merely to make a changed implementation pass.
 
 ## Change workflow
 
@@ -182,14 +190,17 @@ These rules are not implementation preferences; tests and code review must prese
   a result to continue.
 - The event log is the source of truth. Ephemeral model chunks are for observers/UI and do not replace
   durable messages or results.
-- Resume reuses the first run.started Provider, Model, Workspace, Sandbox, permission mode, prompt summary
-  and output budget; it cannot weaken or drift authority.
+- Resume reuses the first run.started Provider, Model, opaque application authority profile, prompt
+  summary and output budget; it cannot weaken or drift authority.
 - INTERRUPTED is resumable; CANCELLED is explicit abandonment and is not resumable.
 - A Session has one writer and monotonic seq; appends use expected_seq for conflict detection.
+- Session metadata is application-owned and opaque to aihi-agent; the base Session API must not require
+  or interpret cwd, workspace, Provider, Model or product permission modes.
 - Provider fallback must never blindly replay a possibly side-effecting Tool.
 - After the first Provider stream chunk, do not automatically retry or switch Provider.
 - Events, errors, messages and tool results must be JSON serializable and reloadable.
-- Child Agents run in independent Sessions with stricter subsets of parent permissions, budget and workspace.
+- Child Agents run in independent Sessions with stricter subsets of parent capabilities, budget and
+  application-owned authority.
 
 ## Security and sandbox rules
 
@@ -198,27 +209,31 @@ These rules are not implementation preferences; tests and code review must prese
 All side effects follow:
 
 ```text
-Tool input -> validation -> policy/approval -> hooks -> sandbox -> durable Tool Result
+Tool input -> validation/preparation -> policy/approval -> hooks -> governed Tool execution -> durable Tool Result
 ```
 
 - ToolSpec owns execution governance; ModelToolDefinition contains only model-visible fields.
 - Validate and normalize tool input before Policy evaluation.
 - Read-only and concurrency-safe tools may run in parallel; mutating or non-safe tools run serially,
   with results committed in call order.
-- process.exec tools require explicit Approval. accept_edits does not authorize process execution.
+- The default reusable Policy asks before process execution; application Policy owns any stricter or
+  explicitly broader mode matrix.
 - Sensitive-path checks in command text are heuristics, not a security boundary.
-- Hooks and remote MCP/Plugin tools cannot bypass Policy, Approval or Sandbox.
+- Hooks and remote MCP/Plugin tools cannot bypass Policy or Approval. A tool executing arbitrary
+  commands must own an explicitly injected command Sandbox.
 
 ### Host and isolation
 
 HostBackend is a controlled local backend, not a security isolation boundary:
 
 - Construction and execution require explicit unsafe=true.
-- run.started and tool.started record sandbox=host and unsafe=true.
-- Enforce workspace canonicalization, symlink escape checks, timeouts, output limits and process-group cleanup.
+- A command tool records its non-secret Sandbox descriptor in `PreparedToolCall.execution`; generic
+  Run and Tool events do not claim a global Sandbox.
+- Enforce command-root canonicalization, timeouts, output limits and process-group cleanup. Application
+  file tools separately own workspace canonicalization and symlink escape checks.
 - Do not claim Host provides filesystem or network isolation.
 - Local-isolated and Docker backends must fail closed when required capabilities are unavailable.
-- require_isolation=true must reject Host.
+- Applications requiring isolation must reject Host during command-backend selection.
 
 ## Package-specific rules
 
@@ -232,7 +247,8 @@ HostBackend is a controlled local backend, not a security isolation boundary:
 
 ### aihi-agent
 
-- Keep RuntimeBuilder explicit: Provider, Model, Sandbox and Tools are application choices.
+- Keep RuntimeBuilder explicit: Provider, Model and Tools are application choices. Inject a Sandbox
+  only into tools that execute arbitrary commands.
 - Do not add a default_runtime() that silently selects Provider or tools.
 - Keep optional abilities behind RuntimeExtensions, ContextContributor and RunRecorder.
 - Use SQLite WAL by default; large outputs belong in Artifact Store, not prompt history.
@@ -240,11 +256,11 @@ HostBackend is a controlled local backend, not a security isolation boundary:
 
 ### aihi-code-agent
 
-- Own TOML config discovery, Coding prompts, Provider/Model catalogs, permission mode, Worker composition,
+- Own TOML config discovery, Coding prompts, Provider/Model catalogs, AccessMode/RunMode, Worker composition,
   Coding tools, Skill/MCP/subagent wiring and local audit.
 - User config is ~/.aihi/aihi-code.toml; project config is <workspace>/.aihi/aihi-code.toml.
   Do not introduce a config-directory CLI override.
-- Worker is the sole EventStore writer and communicates using Code Protocol 0.2.
+- Worker is the sole EventStore writer and communicates using Code Protocol 0.3.
 - Built-in Skills are trusted by package integrity; other scopes require explicit trust and hash validation.
 - Keep ModelRouter/ModelGateway and cross-provider fallback out of the base packages.
 

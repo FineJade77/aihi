@@ -6,7 +6,7 @@ need ``tools.spec`` without importing the policy-aware execution layer back.
 
 from typing import TYPE_CHECKING, Any
 
-from aihi.agent.tools.base import Tool, ToolContext, ToolExecutionResult
+from aihi.agent.tools.base import PreparedToolCall, Tool, ToolContext, ToolExecutionResult
 from aihi.agent.tools.registry import ToolRegistry
 from aihi.agent.tools.spec import IdempotencyPolicy, ToolSpec
 
@@ -24,6 +24,7 @@ def __getattr__(name: str) -> Any:
 __all__ = [
     "DispatchResult",
     "IdempotencyPolicy",
+    "PreparedToolCall",
     "Tool",
     "ToolContext",
     "ToolDispatcher",

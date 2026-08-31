@@ -88,7 +88,7 @@ class ApprovalRequest:
     reason: str = ""
     rule_id: str = ""
     required_capabilities: tuple[str, ...] = ()
-    sandbox: dict[str, Any] = field(default_factory=dict)
+    execution: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -101,7 +101,7 @@ class ApprovalRequest:
             "reason": self.reason,
             "rule_id": self.rule_id,
             "required_capabilities": list(self.required_capabilities),
-            "sandbox": dict(self.sandbox),
+            "execution": dict(self.execution),
         }
 
 

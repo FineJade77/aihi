@@ -5,29 +5,26 @@ from pathlib import Path
 
 import pytest
 from aihi.agent import (
-    HostBackend,
     InMemoryEventStore,
     RunCoordinator,
     RunState,
     Session,
     ToolRegistry,
-    WriteFileTool,
 )
 from aihi.agent.evals import ReplayEngine, TraceBundle
 from aihi.models import FakeProvider, FakeStep, Message
 
+from packages.aihi.agent.tests.support_tools import WriteTestTool
+
 
 def session_for(tmp_path: Path, name: str) -> Session:
-    return Session.create(
-        InMemoryEventStore(), cwd=tmp_path, provider="fake", model="fake-model", session_id=name
-    )
+    return Session.create(InMemoryEventStore(), session_id=name)
 
 
 def coordinator_for(tmp_path: Path, steps: list[FakeStep]) -> RunCoordinator:
     return RunCoordinator(
         FakeProvider(steps),
-        registry=ToolRegistry([WriteFileTool()]),
-        sandbox=HostBackend(tmp_path, unsafe=True),
+        registry=ToolRegistry([WriteTestTool(tmp_path)]),
     )
 
 

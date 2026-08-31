@@ -5,9 +5,10 @@ from __future__ import annotations
 import hashlib
 from typing import Any
 
-from aihi.agent.tools.base import ToolContext, ToolExecutionResult
-from aihi.agent.tools.builtin.ledger import ReadLedger
-from aihi.agent.tools.spec import ToolSpec
+from aihi.agent import PreparedToolCall, ToolContext, ToolExecutionResult, ToolSpec
+
+from .ledger import ReadLedger
+from .workspace import workspace_from_context
 
 
 class WriteFileTool:
@@ -33,12 +34,19 @@ class WriteFileTool:
     def __init__(self, *, ledger: ReadLedger | None = None) -> None:
         self.ledger = ledger
 
-    def _unread(self, path: str, context: ToolContext) -> ToolExecutionResult | None:
+    def prepare(
+        self, input: dict[str, Any], context: ToolContext[Any]
+    ) -> PreparedToolCall:
+        prepared = dict(input)
+        prepared["path"] = str(workspace_from_context(context).resolve_path(str(input["path"])))
+        return PreparedToolCall(prepared, {"transport": "local"})
+
+    def _unread(self, path: str, context: ToolContext[Any]) -> ToolExecutionResult | None:
         """Refuse to modify a file this run has not read."""
 
         if self.ledger is None:
             return None
-        resolved = context.sandbox.resolve_path(path)
+        resolved = workspace_from_context(context).resolve_path(path)
         if self.ledger.has_read(context.run_id, resolved):
             return None
         return ToolExecutionResult(
@@ -50,10 +58,11 @@ class WriteFileTool:
             metadata={"error_code": "file_not_read"},
         )
 
-    async def run(self, input: dict[str, Any], context: ToolContext) -> ToolExecutionResult:
+    async def run(self, input: dict[str, Any], context: ToolContext[Any]) -> ToolExecutionResult:
         path = str(input["path"])
+        workspace = workspace_from_context(context)
         # Creating a file needs no prior read; there is nothing to overwrite.
-        if context.sandbox.resolve_path(path).exists():
+        if workspace.resolve_path(path).exists():
             refusal = self._unread(path, context)
             if refusal is not None:
                 return refusal
@@ -65,12 +74,12 @@ class WriteFileTool:
                 is_error=True,
                 metadata={"error_code": "tool_input_invalid"},
             )
-        await context.sandbox.write_text(
+        await workspace.write_text(
             path,
             content,
             expected_sha256=expected_sha256,
         )
-        resolved = context.sandbox.resolve_path(path)
+        resolved = workspace.resolve_path(path)
         digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
         return ToolExecutionResult(
             content=f"Wrote {len(content.encode('utf-8'))} bytes to {resolved}.",

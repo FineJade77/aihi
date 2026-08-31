@@ -8,7 +8,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from aihi.agent import Event, EventStore, RunResult, RunState, Session
+from aihi.agent import Event, EventStore, RunResult, RunState
+from aihi.code_agent import create_coding_session
 from aihi.code_agent.evals import CodeTask, TaskExecution
 
 
@@ -114,7 +115,9 @@ async def reference_executor(
             encoding="utf-8",
         )
 
-    session = Session.create(store, cwd=workspace, provider="reference", model="reference")
+    session = create_coding_session(
+        store, cwd=workspace, provider="reference", model="reference"
+    )
     session.append_many(
         [
             Event(type="run.started", session_id=session.id, run_id="reference-run"),

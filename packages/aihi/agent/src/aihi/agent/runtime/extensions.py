@@ -21,9 +21,8 @@ class ContextRequest:
 
     session_id: str
     run_id: str
-    cwd: str
-    permission_mode: str
     user_text: str = ""
+    app_context: object | None = None
 
 
 @dataclass(frozen=True, slots=True)
