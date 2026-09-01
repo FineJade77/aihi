@@ -6,6 +6,10 @@ AIHI is a small, provider-neutral foundation for building recoverable AI agents,
 
 The repository is a Python/TypeScript monorepo. The Python packages own model contracts and agent execution; the TypeScript packages own the wire contract and the local TUI.
 
+## Demo
+
+![AIHI Coding CLI demo](docs/assets/aihi-code-cli-demo.gif)
+
 ## Highlights
 
 - Provider-neutral model contracts with OpenAI, Anthropic, DeepSeek, OpenAI-compatible, and fake providers.

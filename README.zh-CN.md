@@ -5,6 +5,10 @@
 AIHI 是一个面向可恢复 AI Agent 的轻量、Provider-neutral 基础设施，同时提供 Coding Agent
 运行时和 TypeScript 终端界面。
 
+## 产品演示
+
+![AIHI Coding CLI 产品演示](docs/assets/aihi-code-cli-demo.gif)
+
 ## 特性
 
 - 统一的模型契约，支持 OpenAI、Anthropic、DeepSeek、OpenAI-compatible 和 Fake Provider。
