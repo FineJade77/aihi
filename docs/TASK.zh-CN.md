@@ -71,21 +71,20 @@ M0–M7 和 H-01–H-17 基础建设已完成，建立了多包边界、事件 S
 
 ### H-19：Prompt Cache 与 Context Compaction v2
 
-**状态：Done。** Cache 契约、稳定 Provider Prefix、Token 压力控制、可恢复 Tool Result Pruning、
-带证据的 ContextState v2 和联合评估/发布门禁均已实现。可复用 Harness 需求记录在已确认的本地 RFC
-`docs/rfcs/0004-prompt-cache-and-context-compaction-v2.md`。Cache 请求契约和 Provider wire 映射属于
-`aihi-models`；稳定前缀编译、Token 压力、可恢复
-Tool Result 清理、结构化压缩、持久化和 Replay 属于 `aihi-agent`；产品 Prompt 和 Compact Model
-选择仍由应用层负责。发布证据包括 Cache/Compaction Golden Trace、独立的
-`aihi-code-agent-context-v1` 长 Session 对比、冻结兼容测试和 installed-wheel PEP 420 Smoke 覆盖。
+**状态：Done。** Cache 契约、稳定 Provider Prefix、完整请求 Token 计量和滚动摘要压缩均已实现。
+Context 组装与压缩是两个独立 Harness 阶段：大型 Tool Result 在计量前外置或内联限界；压缩以有界、带证据的
+`ContextState` 替换旧的闭合 Tool Call/Result 分组，并保留 Token 有界的近期原文 Tail。有界状态是权威输入，
+后续只投影其游标之后的 EventStore 增量。Runtime 每次请求只有一个 Compaction 决策，不再运行独立 Pruning
+算法。Cache 请求契约和 Provider wire 映射属于 `aihi-models`；前缀组装、压力、压缩持久化和
+Replay 属于 `aihi-agent`；产品 Prompt 和 Compact Model 选择仍由应用层负责。
 
 | 切片 | 范围 | 验收 |
 | --- | --- | --- |
 | H-19.1 | 冻结 `CachePolicy`、System Block、`CompactionPolicy`、ContextState v2 和兼容契约 | 实现前新增契约测试保持失败；旧 ModelRequest、Message、Event 和 Summary 数据仍可解码 |
 | H-19.2 | Stable Prefix 编译和 Provider Cache 映射 | 只有一个稳定断点；Cache Family Key 确定性；不支持的 Provider 语义等价 no-op；Cache Usage 规范化 |
-| H-19.3 | 完整请求 Token 压力和 65/70/85/60 滞回 | 支持时在阈值附近精确计数；计数失败保守降级；避免频繁小压缩 |
-| H-19.4 | 可恢复的旧 Tool Result 清理 | 只替换已持久化且有 Artifact 的完整 Result；满足最小回收量；Tool 配对、Event 历史和 Stable Prefix 不变 |
-| H-19.5 | 带证据的 ContextState Hard Compaction | 先确定性投影 Event，再由模型补充；近期完整 Group 保留原文；多轮压缩保留所有关键事实并达到目标预算 |
+| H-19.3 | 完整请求 Token 压力和 60/80/60 滚动水位 | 支持时在阈值附近精确计数；计数失败保守降级；每个请求只做一次 Compaction 决策 |
+| H-19.4 | Artifact-first 组装 | 存在 Store 时外置并按内容/调用身份复用大型 Tool Result，否则内联限界；Stable Prefix 与原始 Event 历史不变 |
+| H-19.5 | 带证据的滚动 ContextState 压缩 | 闭合 Tool Exchange 保持原子性；状态按 Event 游标增量投影；按 Recency 单调淘汰；累计状态与原文 Tail 均受 Token 预算约束 |
 | H-19.6 | 联合 Eval、兼容性、文档和打包门禁 | Cache/Compaction Golden Trace、长 Session Eval、冻结 Fixture Replay、installed-wheel 检查和中英文文档全部通过 |
 
 ### H-20：应用 Context 与命令 Sandbox 边界

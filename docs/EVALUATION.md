@@ -81,10 +81,12 @@ involved and the gate does not require a Docker daemon.
 ## Joint cache/compaction evaluation
 
 `aihi-code-agent-context-v1` runs the same packaged-prompt task against an uncompacted long-session
-baseline and a ContextState v2 hard-compaction profile. Both workspace outcomes and exported Harness
-Traces must pass. The comparison additionally gates on 100% critical-state recall, identical hashed
-cache-family identity, zero in-task cache-key changes, at least one hard compaction, a cache hit and
-fewer input tokens after compaction. It records task latency but does not gate on wall-clock timing.
+baseline and a rolling-summary profile. Both workspace outcomes and exported Harness Traces must pass.
+The comparison additionally gates on 100% critical-state recall, identical hashed cache-family identity,
+zero in-task cache-key changes, at least one rolling compaction, a cache hit and fewer input tokens after
+compaction. Its 121-message input is one user request followed by 60 Tool Call/Result cycles, so the gate
+exercises closed-exchange grouping rather than a plain-text multi-turn surrogate. It records task latency
+but does not gate on wall-clock timing.
 
 The Harness corpus also contains a replay-only `cache-compaction-v2` golden Trace with cache read/write
 usage, stable-prefix identity, pressure metadata and a schema-v2 compaction record. This leaves the
@@ -194,7 +196,7 @@ overrides that value. Repeating `--config` evaluates multiple Provider/model
 profiles only after every profile has passed fail-closed validation.
 
 Each live case records task duration, model calls, tool calls, input/output/cache-read/cache-write
-tokens, cache-hit ratio, cache-key changes, soft/hard compaction counts and Provider-reported cost when
+tokens, cache-hit ratio, cache-key changes and rolling-compaction count, plus Provider-reported cost when
 available. The summary reports empirical
 `pass_at_1` (the mean per-task success fraction), at-least-once success, stable
 all-attempt success and P50/P95 task latency. Every non-offline gate writes `context.json` and

@@ -90,23 +90,22 @@ must exercise `aihi-agent` through redacted, replay-only traces.
 
 ### H-19 — Prompt cache and context compaction v2
 
-**Status: Done.** Cache contracts, stable Provider prefixes, token-pressure control, recoverable
-Tool Result pruning, evidence-backed ContextState v2 and the joint evaluation/release gates are
-implemented. The reusable Harness slice was specified in the accepted local RFC
-`docs/rfcs/0004-prompt-cache-and-context-compaction-v2.md`. Cache request contracts and Provider wire mappings belong to
-`aihi-models`; prefix compilation, token pressure, recoverable tool-result pruning, structured
-compaction, persistence and replay belong to `aihi-agent`. Product prompts and compact-model selection
-remain application-owned. The release evidence is the cache/compaction golden Trace, the independent
-`aihi-code-agent-context-v1` long-session comparison, frozen compatibility tests and installed-wheel
-PEP 420 smoke coverage.
+**Status: Done.** Cache contracts, stable Provider prefixes, complete-request token measurement and
+rolling-summary compaction are implemented. Context assembly and compaction are separate Harness
+phases: large Tool Results are externalized or bounded before measurement; compaction replaces old
+closed Tool Call/Result groups with an evidence-backed `ContextState` and a token-bounded raw tail.
+The bounded state is authoritative and later projections consume EventStore deltas after its cursor.
+The Runtime has one compaction decision and no separate pruning algorithm. Cache request contracts and
+Provider wire mappings belong to `aihi-models`; prefix assembly, pressure, compaction persistence and
+replay belong to `aihi-agent`. Product prompts and compact-model selection remain application-owned.
 
 | Slice | Scope | Acceptance |
 | --- | --- | --- |
 | H-19.1 | Freeze `CachePolicy`, system blocks, `CompactionPolicy`, ContextState v2 and compatibility contracts | New contract tests fail before implementation; old ModelRequest, message, event and summary data remain decodable |
 | H-19.2 | Stable-prefix compilation and Provider cache mapping | One stable breakpoint, deterministic cache-family key, semantic no-op on unsupported Providers and normalized cache usage |
-| H-19.3 | Full-request token pressure and 65/70/85/60 hysteresis | Exact counting is used near the threshold when supported; count failure degrades conservatively; repeated small compactions are prevented |
-| H-19.4 | Recoverable old Tool Result pruning | Only durable, artifact-backed completed results are replaced; minimum reclaim is met; Tool pairing, Event history and stable prefix are unchanged |
-| H-19.5 | Evidence-backed ContextState hard compaction | Deterministic event projection precedes model enrichment; recent complete groups remain raw; repeated compactions preserve all critical facts and reach the target budget |
+| H-19.3 | Full-request token pressure and 60/80/60 rolling watermarks | Exact counting is used near the threshold when supported; count failure degrades conservatively; one compaction decision is made per request |
+| H-19.4 | Artifact-first assembly | Large Tool Results are externalized and reused by content/call identity when a Store exists, otherwise bounded inline; the stable prefix and raw Event history remain unchanged |
+| H-19.5 | Evidence-backed rolling ContextState compaction | Closed Tool exchanges stay atomic; state projection advances by Event cursor; recency eviction is monotonic; cumulative state and raw tail remain token-bounded |
 | H-19.6 | Joint eval, compatibility, documentation and packaging gates | Cache/compaction golden traces, long-session evals, frozen fixture replay, installed-wheel checks and synchronized English/Chinese docs pass |
 
 ### H-20 — Application context and command-sandbox boundary

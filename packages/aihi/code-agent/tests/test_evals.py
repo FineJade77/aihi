@@ -165,8 +165,6 @@ async def test_code_eval_runner_grades_workspace_tests_scope_and_trace(tmp_path:
         "cache_hit_ratio": 0.0,
         "cache_key_change_count": 0,
         "compaction_count": 0,
-        "hard_compaction_count": 0,
-        "soft_compaction_count": 0,
         "tokens": 0,
         "model_calls": 0,
         "tool_calls": 0,
@@ -430,8 +428,6 @@ async def test_code_eval_runner_records_usage_cost_and_tool_metrics(tmp_path: Pa
     assert result.metrics["cache_key_change_count"] == 0
     assert result.metrics["cache_key_hash"] == "a" * 64
     assert result.metrics["compaction_count"] == 1
-    assert result.metrics["hard_compaction_count"] == 1
-    assert result.metrics["soft_compaction_count"] == 0
     assert result.metrics["tokens"] == 150
     assert result.metrics["cost_usd"] == pytest.approx(0.0125)
     assert result.metrics["tool_calls"] == 1
@@ -452,8 +448,6 @@ def test_code_eval_report_summarizes_repeated_live_attempts() -> None:
                 "cache_write_input_tokens": 95,
                 "cache_key_change_count": 0,
                 "compaction_count": 1,
-                "hard_compaction_count": 1,
-                "soft_compaction_count": 0,
                 "tokens": 120,
                 "model_calls": 2,
                 "tool_calls": 1,
@@ -473,8 +467,6 @@ def test_code_eval_report_summarizes_repeated_live_attempts() -> None:
                 "cache_write_input_tokens": 0,
                 "cache_key_change_count": 1,
                 "compaction_count": 0,
-                "hard_compaction_count": 0,
-                "soft_compaction_count": 1,
                 "tokens": 140,
                 "model_calls": 2,
                 "tool_calls": 2,
@@ -515,8 +507,6 @@ def test_code_eval_report_summarizes_repeated_live_attempts() -> None:
     assert summary["cache_hit_ratio"] == pytest.approx(5 / 210)
     assert summary["cache_key_change_count"] == 1
     assert summary["compaction_count"] == 1
-    assert summary["hard_compaction_count"] == 1
-    assert summary["soft_compaction_count"] == 1
     assert summary["model_calls"] == 4
     assert summary["tool_calls"] == 3
     assert summary["cost_usd"] == pytest.approx(0.03)
@@ -924,7 +914,6 @@ def test_context_comparison_gates_cache_compaction_and_task_success() -> None:
                     "cache_key_hash": "a" * 64,
                     "cache_key_change_count": 0,
                     "compaction_count": 0,
-                    "hard_compaction_count": 0,
                     "critical_state_recall": 1.0,
                 },
             ),
@@ -939,7 +928,6 @@ def test_context_comparison_gates_cache_compaction_and_task_success() -> None:
                     "cache_key_hash": "a" * 64,
                     "cache_key_change_count": 0,
                     "compaction_count": 1,
-                    "hard_compaction_count": 1,
                     "critical_state_recall": 1.0,
                 },
             ),
@@ -953,7 +941,7 @@ def test_context_comparison_gates_cache_compaction_and_task_success() -> None:
     assert comparison["input_token_reduction_ratio"] == 0.6
     assert comparison["stable_cache_family"] is True
     assert comparison["compacted"]["cache_hit_ratio"] == 0.5
-    assert comparison["compacted"]["hard_compaction_count"] == 1
+    assert comparison["compacted"]["compaction_count"] == 1
     assert_context_gate(report, comparison)
 
 
@@ -978,7 +966,7 @@ def test_context_gate_rejects_cache_family_drift() -> None:
                     "input_tokens": 1_000,
                     "cached_input_tokens": 500,
                     "cache_key_hash": "b" * 64,
-                    "hard_compaction_count": 1,
+                    "compaction_count": 1,
                     "critical_state_recall": 1.0,
                 },
             ),

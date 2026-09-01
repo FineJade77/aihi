@@ -177,7 +177,7 @@ class RuntimeBuilder:
         return replace(self, context_contributors=contributors, run_recorders=recorders)
 
     def with_compaction(self, *, provider: Provider, model: str) -> RuntimeBuilder:
-        """Use a compact model for L2 summaries, degrading to the offline one."""
+        """Use a compact model for rolling summaries, degrading to offline."""
 
         return replace(
             self,

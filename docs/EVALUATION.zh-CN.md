@@ -67,10 +67,11 @@ v1 Smoke-plus 语料目前包含九个任务，覆盖 Bug 修复、小功能、�
 
 ## Cache/Compaction 联合评估
 
-`aihi-code-agent-context-v1` 使用打包 Prompt，对同一任务分别运行未压缩长 Session 基线和
-ContextState v2 Hard Compaction Profile。两次工作区结果及导出的 Harness Trace 都必须通过。联合门禁
-还要求关键状态召回率为 100%、Cache Family Hash 相同、任务内 Cache Key 变化为 0、至少一次 Hard
-Compaction、观察到 Cache Hit，并且压缩后输入 Token 更少。任务耗时会记录，但不作为墙钟回归门禁。
+`aihi-code-agent-context-v1` 使用打包 Prompt，对同一任务分别运行未压缩长 Session 基线和滚动摘要 Profile。
+两次工作区结果及导出的 Harness Trace 都必须通过。联合门禁还要求关键状态召回率为 100%、Cache Family Hash
+相同、任务内 Cache Key 变化为 0、至少一次滚动 Compaction、观察到 Cache Hit，并且压缩后输入 Token 更少。
+输入由一次 User 请求和后续 60 轮 Tool Call/Result 构成，共 121 条消息，因此门禁验证的是真实闭合 Exchange
+分组，而不是纯文本多 Turn 替身。任务耗时会记录，但不作为墙钟回归门禁。
 
 Harness 语料还包含只做 Replay 的 `cache-compaction-v2` Golden Trace，覆盖 Cache Read/Write Usage、
 稳定前缀身份、压力 Metadata 和 Schema v2 Compaction Record。这样无需改变既有 Coding Benchmark 与
@@ -152,7 +153,7 @@ python3 -m scripts.evals.run --mode nightly \
 比较多个 Provider/Model；所有配置必须先通过 fail-closed 校验，之后才会产生真实 Provider 调用。
 
 每个真实案例记录任务耗时、模型调用数、Tool 调用数、输入/输出/Cache Read/Cache Write Token、Cache Hit
-Ratio、Cache Key 变化、Soft/Hard Compaction 次数，以及 Provider 能提供时的成本。
+Ratio、Cache Key 变化和滚动 Compaction 次数，以及 Provider 能提供时的成本。
 汇总报告提供经验 `pass_at_1`（各任务成功比例的均值）、至少一次成功率、所有尝试稳定通过率和任务耗时
 P50/P95。所有非 Offline 门禁还会写入 `context.json` 与 `context-comparison.json`。单个 Live Profile 写入
 `code.json` 与 `baseline-comparison.json`；多 Profile 在 `profiles/` 下分别写入 Live 报告，并额外生成

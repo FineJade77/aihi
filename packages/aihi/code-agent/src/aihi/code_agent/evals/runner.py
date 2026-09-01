@@ -391,14 +391,6 @@ def _session_metrics(execution: TaskExecution) -> dict[str, object]:
         ),
         "cache_key_change_count": cache_key_change_count,
         "compaction_count": len(compaction_events),
-        "hard_compaction_count": sum(
-            event.data.get("version") == 2 for event in compaction_events
-        ),
-        "soft_compaction_count": sum(
-            isinstance(event.data.get("context_pruned_tool_results"), int)
-            and event.data.get("context_pruned_tool_results", 0) > 0
-            for event in usage_events
-        ),
         "tokens": input_tokens + output_tokens,
         "tool_calls": sum(event.type == "tool.started" for event in events),
     }

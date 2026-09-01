@@ -1,4 +1,4 @@
-"""Structured L2 context summary contracts and the offline default implementation."""
+"""Structured rolling-summary contracts and the offline default implementation."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from aihi.models import Message, TextBlock
 
 @dataclass(frozen=True, slots=True)
 class SummaryRequest:
-    """The bounded input supplied to an L2 summary generator.
+    """The bounded input supplied to a summary generator.
 
     A future compact-model adapter can use the same request shape without
     coupling the compiler to a particular provider or network client.
@@ -30,7 +30,7 @@ class StructuredSummary:
     #: How this summary was produced. It travels with the payload so a run that
     #: silently fell back from a compact model to the offline generator says so
     #: in its own event log.
-    strategy: str = "l2_deterministic"
+    strategy: str = "rolling_summary"
     objective: str = ""
     constraints: tuple[str, ...] = ()
     decisions: tuple[str, ...] = ()
@@ -42,6 +42,7 @@ class StructuredSummary:
     subagents: tuple[str, ...] = ()
     artifacts: tuple[str, ...] = ()
     omitted_message_count: int = 0
+    fallback_reason: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -58,6 +59,7 @@ class StructuredSummary:
             "subagents": list(self.subagents),
             "artifacts": list(self.artifacts),
             "omitted_message_count": self.omitted_message_count,
+            "fallback_reason": self.fallback_reason,
         }
 
     def to_message(
@@ -79,7 +81,7 @@ class StructuredSummary:
 
 
 class SummaryGenerator(Protocol):
-    """Pluggable L2 summary boundary.
+    """Pluggable summary boundary.
 
     `generate` is async because a compact model is a network call — the one
     place in context compilation with a real concurrent object to wait on

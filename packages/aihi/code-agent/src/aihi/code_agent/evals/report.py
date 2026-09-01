@@ -196,12 +196,6 @@ class CodeEvalReport:
                 self.results, "cache_key_change_count"
             ),
             "compaction_count": _integer_metric(self.results, "compaction_count"),
-            "hard_compaction_count": _integer_metric(
-                self.results, "hard_compaction_count"
-            ),
-            "soft_compaction_count": _integer_metric(
-                self.results, "soft_compaction_count"
-            ),
             "tokens": _integer_metric(self.results, "tokens"),
             "model_calls": _integer_metric(self.results, "model_calls"),
             "tool_calls": _integer_metric(self.results, "tool_calls"),

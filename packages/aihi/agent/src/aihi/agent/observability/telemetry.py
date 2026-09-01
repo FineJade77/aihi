@@ -146,8 +146,6 @@ class Redactor:
             "before_tokens",
             "cache_write_input_tokens",
             "cached_input_tokens",
-            "context_pruned_tool_results",
-            "context_reclaimed_tokens",
             "context_target_tokens",
             "context_tokens",
             "input_tokens",

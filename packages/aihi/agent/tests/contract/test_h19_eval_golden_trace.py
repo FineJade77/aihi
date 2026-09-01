@@ -21,7 +21,7 @@ def test_cache_compaction_golden_trace_replays_and_preserves_joint_invariants() 
     assert compaction["data"]["version"] == 2
     assert compaction["data"]["before_tokens"] > compaction["data"]["after_tokens"]
     assert compaction["data"]["after_tokens"] <= compaction["data"]["target_tokens"]
-    assert compaction["data"]["stable_prefix_hash"] == compaction["data"]["cache_epoch_hash"]
+    assert compaction["data"]["stable_prefix_hash"] == "a" * 64
     assert [event["data"]["cache_key_hash"] for event in usages] == ["b" * 64] * 2
     assert sum(event["data"]["cached_input_tokens"] for event in usages) == 500
     assert sum(event["data"]["cache_write_input_tokens"] for event in usages) == 500

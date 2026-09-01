@@ -14,12 +14,7 @@ from aihi.agent._core.awaits import await_cancelable
 from aihi.agent._core.errors import ContextWindowExceeded, TurnLimitExceeded
 from aihi.agent._core.events import Event
 from aihi.agent._core.ids import new_id
-from aihi.agent.artifacts import (
-    ArtifactAccess,
-    ArtifactRef,
-    ArtifactStore,
-    session_artifact_policy,
-)
+from aihi.agent.artifacts import ArtifactRef, ArtifactStore, session_artifact_policy
 from aihi.agent.context import (
     CompactionPolicy,
     CompiledContext,
@@ -513,7 +508,9 @@ class RunCoordinator:
         provider_context_retry_used = False
         # Built once per run: re-deriving it from the whole event log on every
         # model turn made a long run quadratic in its own history.
-        recorded_artifacts = self._recorded_artifact_ids(session)
+        recorded_artifacts = {
+            ref.artifact_id: ref for ref in self._recorded_artifacts(session)
+        }
         pending_calls = self._pending_calls(session, pending_tool_call_ids)
         # Count durable model usage events so a suspended/resumed run cannot
         # reset the budget and bypass the loop guard.
@@ -559,31 +556,15 @@ class RunCoordinator:
                 safety_margin=self.context_safety_margin,
             )
             sections = self._context_sections(session, run_id, app_context=app_context)
-            try:
-                compiled = self.context_compiler.compile(
-                    session.messages,
-                    system_prompt=system_prompt,
-                    tools=self.registry.specs,
-                    budget=budget,
-                    artifact_store=self.artifact_store,
-                    artifact_policy=session_artifact_policy(session.id),
-                    sections=sections,
-                )
-            except ContextWindowExceeded:
-                # Keep the legacy emergency preflight path decodable and
-                # writer-compatible. Normal 85%/predicted hard compaction and
-                # Provider context retries use ContextState v2 below.
-                compiled = await self.context_compiler.compact_l2(
-                    session.messages,
-                    system_prompt=system_prompt,
-                    tools=self.registry.specs,
-                    budget=budget,
-                    artifact_store=self.artifact_store,
-                    artifact_policy=session_artifact_policy(session.id),
-                    summary_generator=self.summary_generator,
-                    sections=sections,
-                    trigger="preflight_context_window",
-                )
+            compiled = self.context_compiler.compile(
+                session.messages,
+                system_prompt=system_prompt,
+                budget=budget,
+                artifact_store=self.artifact_store,
+                artifact_policy=session_artifact_policy(session.id),
+                sections=sections,
+                known_artifacts=tuple(recorded_artifacts.values()),
+            )
             model_tools = tuple(
                 sorted(
                     (spec.model_definition for spec in self.registry.specs),
@@ -600,53 +581,13 @@ class RunCoordinator:
             pressure = await self.context_pressure.measure(
                 request,
                 input_capacity=budget.input_capacity,
-                predicted_growth_tokens=effective_output_tokens,
                 exact_counter=(self.provider.count_tokens if capabilities.token_counting else None),
             )
-            if pressure.trigger != "none" and self.artifact_store is not None:
-                pruned = self.context_compiler.prune_tool_results(
-                    compiled,
-                    artifact_store=self.artifact_store,
-                    artifact_access=ArtifactAccess(session_id=session.id, run_id=run_id),
-                    tools=self.registry.specs,
-                    policy=self.compaction_policy,
-                    durable_message_ids=self._durable_message_ids(session),
-                    trigger=pressure.trigger,
-                )
-                if pruned.pruning is not None:
-                    used_exact_count = pressure.count_method == "provider"
-                    compiled = pruned
-                    request = self._model_request(
-                        model=model,
-                        compiled=compiled,
-                        model_tools=model_tools,
-                        max_output_tokens=effective_output_tokens,
-                        prefix_caching=capabilities.prefix_caching,
-                    )
-                    pressure = await self.context_pressure.measure(
-                        request,
-                        input_capacity=budget.input_capacity,
-                        predicted_growth_tokens=effective_output_tokens,
-                        exact_counter=(
-                            self.provider.count_tokens if capabilities.token_counting else None
-                        ),
-                        force_exact=used_exact_count,
-                    )
-            legacy_compaction = (
-                compiled.compaction is not None
-                and compiled.compaction.version == 1
-            )
-            if pressure.input_tokens > budget.input_capacity or (
-                pressure.trigger == "hard" and not legacy_compaction
-            ):
-                compiled = await self._compact_hard(
+            if pressure.needs_compaction or pressure.input_tokens > budget.input_capacity:
+                compiled = await self._compact_context(
                     session,
-                    compiled.messages,
-                    system_prompt=system_prompt,
-                    budget=budget,
-                    sections=sections,
-                    trigger=pressure.trigger_reason,
-                    known_artifacts=compiled.artifacts,
+                    compiled,
+                    trigger=pressure.reason,
                 )
                 request = self._model_request(
                     model=model,
@@ -658,15 +599,14 @@ class RunCoordinator:
                 pressure = await self.context_pressure.measure(
                     request,
                     input_capacity=budget.input_capacity,
-                    predicted_growth_tokens=effective_output_tokens,
                     exact_counter=(
                         self.provider.count_tokens if capabilities.token_counting else None
                     ),
                     force_exact=capabilities.token_counting,
                 )
-                if pressure.input_tokens > pressure.target_tokens:
+                if pressure.input_tokens > pressure.input_capacity:
                     raise ContextWindowExceeded(
-                        "Context cannot be reduced below the measured compaction target",
+                        "Context cannot be reduced below the measured input capacity",
                         details={
                             "input_tokens": pressure.input_tokens,
                             "input_capacity": budget.input_capacity,
@@ -699,12 +639,17 @@ class RunCoordinator:
                     raise
                 provider_context_retry_used = True
                 session.refresh()
-                retry_compiled = await self._compact_hard(
+                retry_compiled = await self._compact_context(
                     session,
-                    session.messages,
-                    system_prompt=system_prompt,
-                    budget=budget,
-                    sections=sections,
+                    self.context_compiler.compile(
+                        session.messages,
+                        system_prompt=system_prompt,
+                        budget=budget,
+                        artifact_store=self.artifact_store,
+                        artifact_policy=session_artifact_policy(session.id),
+                        sections=sections,
+                        known_artifacts=tuple(recorded_artifacts.values()),
+                    ),
                     trigger="provider_context_length",
                 )
                 retry_request = self._model_request(
@@ -717,15 +662,14 @@ class RunCoordinator:
                 retry_pressure = await self.context_pressure.measure(
                     retry_request,
                     input_capacity=budget.input_capacity,
-                    predicted_growth_tokens=effective_output_tokens,
                     exact_counter=(
                         self.provider.count_tokens if capabilities.token_counting else None
                     ),
                     force_exact=capabilities.token_counting,
                 )
-                if retry_pressure.input_tokens > retry_pressure.target_tokens:
+                if retry_pressure.input_tokens > retry_pressure.input_capacity:
                     raise ContextWindowExceeded(
-                        "Provider-error compaction did not reach the measured target",
+                        "Provider-error compaction did not reach the measured input capacity",
                         details={
                             "input_tokens": retry_pressure.input_tokens,
                             "target_tokens": retry_pressure.target_tokens,
@@ -1233,47 +1177,42 @@ class RunCoordinator:
         return ""
 
     @staticmethod
-    def _recorded_artifact_ids(session: Session) -> set[str]:
-        return {
-            str(event.data["artifact"]["artifact_id"])
-            for event in session.events
-            if event.type == "artifact.created"
-            and isinstance(event.data.get("artifact"), dict)
-            and "artifact_id" in event.data["artifact"]
-        }
+    def _recorded_artifacts(session: Session) -> tuple[ArtifactRef, ...]:
+        refs: dict[str, ArtifactRef] = {}
+        for event in session.events:
+            if event.type == "artifact.deleted":
+                raw_deleted = event.data.get("artifact")
+                artifact_id = event.data.get("artifact_id")
+                if not isinstance(artifact_id, str) and isinstance(raw_deleted, dict):
+                    artifact_id = raw_deleted.get("artifact_id")
+                if isinstance(artifact_id, str):
+                    refs.pop(artifact_id, None)
+                continue
+            raw = event.data.get("artifact")
+            if event.type != "artifact.created" or not isinstance(raw, dict):
+                continue
+            try:
+                ref = ArtifactRef.from_dict(raw)
+                refs[ref.artifact_id] = ref
+            except (TypeError, ValueError):
+                continue
+        return tuple(refs.values())
 
-    @staticmethod
-    def _durable_message_ids(session: Session) -> frozenset[str]:
-        return frozenset(
-            str(event.data["message"]["id"])
-            for event in session.events
-            if isinstance(event.data.get("message"), dict)
-            and "id" in event.data["message"]
-        )
-
-    async def _compact_hard(
+    async def _compact_context(
         self,
         session: Session,
-        messages: tuple[Message, ...],
+        compiled: CompiledContext,
         *,
-        system_prompt: str,
-        budget: ContextBudget,
-        sections: tuple[ContextSection, ...],
         trigger: str,
-        known_artifacts: tuple[ArtifactRef, ...] = (),
     ) -> CompiledContext:
-        return await self.context_compiler.compact_context_state(
-            messages,
-            system_prompt=system_prompt,
+        return await self.context_compiler.compact(
+            compiled,
             tools=self.registry.specs,
-            budget=budget,
             policy=self.compaction_policy,
-            events=session.events,
-            artifact_store=self.artifact_store,
-            artifact_policy=session_artifact_policy(session.id),
-            known_artifacts=known_artifacts,
+            event_reader=lambda after_seq: session.store.read(
+                session.id, after_seq=after_seq
+            ),
             summary_generator=self.summary_generator,
-            sections=sections,
             trigger=trigger,
         )
 
@@ -1282,7 +1221,7 @@ class RunCoordinator:
         session: Session,
         run_id: str,
         compiled: CompiledContext,
-        recorded_artifacts: set[str],
+        recorded_artifacts: dict[str, ArtifactRef],
     ) -> None:
         # Context bookkeeping has no side effects to fence, so one transaction
         # commits every artifact reference together with its compaction record.
@@ -1298,7 +1237,7 @@ class RunCoordinator:
                     data={"artifact": artifact.to_dict(), "purpose": "context"},
                 )
             )
-            recorded_artifacts.add(artifact.artifact_id)
+            recorded_artifacts[artifact.artifact_id] = artifact
         if compiled.compaction is None:
             if pending:
                 session.append_many(pending)
@@ -1405,9 +1344,7 @@ class RunCoordinator:
         pressure = compiled.pressure or self.context_pressure.evaluate(
             input_tokens=compiled.estimated_tokens,
             input_capacity=compiled.budget.input_capacity,
-            predicted_growth_tokens=compiled.budget.reserved_output,
         )
-        pruning = compiled.pruning
         cache_policy = request.cache_policy
         cache_key = (
             cache_policy.key
@@ -1439,20 +1376,10 @@ class RunCoordinator:
                 "context_count_method": pressure.count_method,
                 "context_count_fallback": pressure.count_fallback_reason,
                 "context_pressure": pressure.ratio,
-                "context_projected_pressure": pressure.projected_ratio,
-                "context_trigger": pressure.trigger,
-                "context_trigger_reason": pressure.trigger_reason,
+                "context_compaction_decision": pressure.decision,
+                "context_compaction_reason": pressure.reason,
                 "context_target_tokens": pressure.target_tokens,
                 "context_target_ratio": pressure.target_ratio,
-                "context_pruned_tool_results": (
-                    len(pruning.tool_call_ids) if pruning is not None else 0
-                ),
-                "context_reclaimed_tokens": (
-                    pruning.reclaimed_tokens if pruning is not None else 0
-                ),
-                "context_pruning_trigger": (
-                    pruning.trigger if pruning is not None else None
-                ),
             },
         )
 

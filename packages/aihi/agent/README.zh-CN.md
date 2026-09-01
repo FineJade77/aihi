@@ -182,24 +182,24 @@ Definition 派生唯一 Cache Family Key。Memory、Skill、Compaction State 和
 持久化语义。
 
 `ContextPressureController` 使用 `ContextBudget.input_capacity` 衡量完整的规范化请求。默认使用
-保守的本地估算；达到 65% 且 Provider 声明能力时请求精确计数；计数不可用时只做降级，不使 Run
-失败。`CompactionPolicy` 使用 60% 目标、70% Soft Trigger 和 85% Hard Trigger；只有预测保留的
-下一轮输出会耗尽后续请求容量时，才允许在 85% 以下产生 Hard 决策。每个持久化
-`model.usage` Event 都记录计数方法、当前/预测压力、Trigger、Reason 和 Target，并记录 Provider 上报的
-Cache Read/Write Token 与 Cache Family Key 的 SHA-256，绝不记录完整 Key 或 Prompt。
+保守的本地估算；接近 60% 且 Provider 声明能力时请求精确计数；计数不可用时只做降级，不使 Run
+失败。输出与安全空间已由 `input_capacity` 一次性预留。`CompactionPolicy` 在 80% 水位做唯一一次
+Compaction 决策，目标为 60%。每个持久化 `model.usage` Event 都记录计数方法、当前压力、决策、Reason
+和 Target，并记录 Provider 上报的 Cache Read/Write Token 与 Cache Family Key 的 SHA-256，绝不记录
+完整 Key 或 Prompt。
 
-压力达到 70% 后，Runtime 在调用 Provider 前最多尝试一次批量 Soft Pruning。它只移除旧的、成功的、
-只读 Tool Result 正文，并要求原始 Message 已持久化，且 Session Scope Artifact 通过访问权限、Manifest
-和 Payload 完整性校验。Tool Call、Result 标识与错误状态、Artifact 引用、近期完整 Group Tail 以及
-稳定 Cache Prefix 均保持不变。未达到最小回收量时整批放弃；不可变 Event 历史永不改写。
+Context 组装与压缩是两个独立阶段。`ContextAssembler` 保持应用 System Prompt 为稳定缓存前缀，追加
+动态 Section，并在 Token 计量前外置大型 Tool Result；未注入 Artifact Store 时也会生成带摘要指纹的
+有界 Head/Tail 投影。`ContextCompactor` 以能够闭合所有 Tool Call/Result 的最小 Exchange 为原子单位，
+用累计的 Schema v2 `ContextState` 替换旧分组，并仅按 30%/32K Token 预算选择近期原文后缀，同时保留最新
+闭合分组。累计状态自身限制在约 2K Token；没有固定 Turn 数下限，也没有第二套 Pruning 模块。
 
-压力达到 85%，或保留输出预测后续请求将超限时，Runtime 会用 Schema v2 `ContextState` 替换较旧的
-完整 Group，并保留按 Token 选择的近期原文 Tail（20%、最大 32K、至少四个完整 Group）。文件状态、
-验证收据、失败、Pending Approval、Subagent 和 Artifact 会先从不可变 Event、Tool Result Metadata 与
-Artifact Manifest 确定性投影，再执行可选的模型语义补充。模型只能补充约束、决策、开放问题和下一步，
-不能宣称文件已修改或验证已成功。每个 `compaction.created` v2 Event 都记录证据引用、Policy/计数元数据
-和保留 Tail；v1 Event 继续可 Replay。Hard Compaction 必须达到 60% Target，否则返回
-`context_window_exceeded`。
+文件状态、验证收据、失败、Pending Approval、Subagent 和 Artifact 会先从不可变 Event、Tool Result
+Metadata 与 Artifact Manifest 确定性投影，再执行可选的模型语义补充。模型只能补充约束、决策、开放问题
+和下一步，不能宣称文件已修改或验证已成功。首次压缩后，有界状态成为权威输入，后续只投影其
+`event_cursor` 之后的 EventStore 增量，并按观测序号淘汰事实。Compact Model 分块使用有界并发且逐块
+降级。每次实际替换只产生一个 `compaction.created` Event；原始 Message 与 Tool Result Event 永不重写。
+如果状态与最新闭合分组仍无法放入输入容量，Run 返回 `context_window_exceeded`。
 
 应用可以只使用持久化 Event 派生 Cache 与 Compaction 诊断：
 

@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from aihi.agent._core.errors import EventInvariantViolation
 from aihi.agent._core.events import Event
+from aihi.agent.artifacts import ArtifactRef
 from aihi.agent.observability import InMemoryTelemetrySink, Telemetry
 from aihi.agent.runtime import RunCoordinator, RunState
 from aihi.agent.sessions import InMemoryEventStore, Session
@@ -109,14 +110,14 @@ async def test_artifact_projection_does_not_rescan_history_each_turn(
         registry=ToolRegistry(),
     )
     scans = 0
-    original = RunCoordinator._recorded_artifact_ids
+    original = RunCoordinator._recorded_artifacts
 
-    def counting(target: Session) -> set[str]:
+    def counting(target: Session) -> tuple[ArtifactRef, ...]:
         nonlocal scans
         scans += 1
         return original(target)
 
-    monkeypatch.setattr(RunCoordinator, "_recorded_artifact_ids", staticmethod(counting))
+    monkeypatch.setattr(RunCoordinator, "_recorded_artifacts", staticmethod(counting))
 
     await coordinator.run(session, model="fake-model", user_message=Message.text("user", "a"))
     await coordinator.run(session, model="fake-model", user_message=Message.text("user", "b"))

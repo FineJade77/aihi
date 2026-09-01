@@ -25,6 +25,8 @@ from aihi.models import (
     MessageEnd,
     ModelRequest,
     StreamChunk,
+    ToolCallBlock,
+    ToolResultBlock,
     Usage,
     estimate_messages_tokens,
     estimate_model_request_tokens,
@@ -50,7 +52,7 @@ class _ContextEvalSummaryGenerator:
             "",
         )
         return StructuredSummary(
-            strategy="l2_context_eval",
+            strategy="rolling_summary_model",
             objective=objective,
             constraints=constraints,
             omitted_message_count=len(request.omitted_messages),
@@ -76,19 +78,35 @@ class _CacheHitFakeProvider(FakeProvider):
 
 
 def _history() -> tuple[Message, ...]:
-    messages: list[Message] = []
-    for index in range(28):
-        marker = f"{_CRITICAL_CONSTRAINT} " if index == 0 else ""
-        messages.append(
-            Message.text(
-                "user",
-                f"{marker}Long-session checkpoint {index:02d}: " + "context " * 45,
-            )
+    messages: list[Message] = [
+        Message.text(
+            "user",
+            f"{_CRITICAL_CONSTRAINT} Inspect the repository and complete the task.",
         )
-        messages.append(
-            Message.text(
-                "assistant",
-                f"Recorded checkpoint {index:02d}. " + "evidence " * 35,
+    ]
+    for index in range(60):
+        call_id = f"context-eval-call-{index}"
+        messages.extend(
+            (
+                Message(
+                    role="assistant",
+                    content=(
+                        ToolCallBlock(
+                            id=call_id,
+                            name="read_file",
+                            input={"path": f"checkpoint-{index:02d}.txt"},
+                        ),
+                    ),
+                ),
+                Message(
+                    role="user",
+                    content=(
+                        ToolResultBlock(
+                            tool_call_id=call_id,
+                            content=f"checkpoint {index:02d}: " + "evidence " * 90,
+                        ),
+                    ),
+                ),
             )
         )
     return tuple(messages)
@@ -97,7 +115,7 @@ def _history() -> tuple[Message, ...]:
 async def context_reference_executor(
     task: CodeTask, workspace: Path, store: EventStore
 ) -> TaskExecution:
-    """Execute the same task above and below the hard-compaction threshold."""
+    """Execute the same task above and at the rolling-compaction watermark."""
 
     session = create_coding_session(store, cwd=workspace, provider="fake", model=_MODEL)
     for message in _history():

@@ -37,12 +37,19 @@ class ContextFact:
     reason: str | None = None
     source_message_ids: tuple[str, ...] = ()
     source_event_seqs: tuple[int, ...] = ()
+    observed_seq: int | None = None
 
     def __post_init__(self) -> None:
         if not self.id.strip():
             raise ValueError("ContextFact id must not be empty")
         if not self.text.strip():
             raise ValueError("ContextFact text must not be empty")
+        if self.observed_seq is not None and (
+            isinstance(self.observed_seq, bool)
+            or not isinstance(self.observed_seq, int)
+            or self.observed_seq < 0
+        ):
+            raise ValueError("ContextFact observed_seq must be a non-negative integer")
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -51,17 +58,24 @@ class ContextFact:
             "reason": self.reason,
             "source_message_ids": list(self.source_message_ids),
             "source_event_seqs": list(self.source_event_seqs),
+            "observed_seq": self.observed_seq,
         }
 
     @classmethod
     def from_dict(cls, value: dict[str, object]) -> ContextFact:
         reason = value.get("reason")
+        observed_seq = value.get("observed_seq")
+        if observed_seq is not None and (
+            isinstance(observed_seq, bool) or not isinstance(observed_seq, int)
+        ):
+            raise ValueError("ContextFact observed_seq must be an integer")
         return cls(
             id=str(value.get("id", "")),
             text=str(value.get("text", "")),
             reason=str(reason) if reason is not None else None,
             source_message_ids=_string_tuple(value.get("source_message_ids")),
             source_event_seqs=_int_tuple(value.get("source_event_seqs")),
+            observed_seq=observed_seq,
         )
 
 
@@ -104,7 +118,9 @@ class ArtifactState:
         )
 
 
-_FACT_FIELDS = (
+#: Every ContextFact field on :class:`ContextState`, in declaration order.
+#: Serialization and bounded retention both derive from this one list.
+FACT_FIELDS = (
     "constraints",
     "decisions",
     "files",
@@ -120,10 +136,10 @@ _FACT_FIELDS = (
 
 @dataclass(frozen=True, slots=True)
 class ContextState:
-    """Versioned cumulative state used by hard compaction."""
+    """Versioned cumulative state carried across rolling compactions."""
 
     schema_version: int = CONTEXT_STATE_SCHEMA_VERSION
-    strategy: str = "l2_deterministic"
+    strategy: str = "rolling_summary"
     objective: str = ""
     constraints: tuple[ContextFact, ...] = ()
     decisions: tuple[ContextFact, ...] = ()
@@ -139,6 +155,7 @@ class ContextState:
     source_message_ids: tuple[str, ...] = ()
     source_event_seqs: tuple[int, ...] = ()
     previous_compaction_id: str | None = None
+    event_cursor: int = 0
     omitted_message_count: int = 0
 
     def __post_init__(self) -> None:
@@ -148,6 +165,10 @@ class ContextState:
             raise ValueError("ContextState strategy must not be empty")
         if self.omitted_message_count < 0:
             raise ValueError("omitted_message_count cannot be negative")
+        if isinstance(self.event_cursor, bool) or not isinstance(self.event_cursor, int):
+            raise ValueError("event_cursor must be an integer")
+        if self.event_cursor < 0:
+            raise ValueError("event_cursor cannot be negative")
 
     def to_dict(self) -> dict[str, object]:
         value: dict[str, object] = {
@@ -159,9 +180,10 @@ class ContextState:
             "source_message_ids": list(self.source_message_ids),
             "source_event_seqs": list(self.source_event_seqs),
             "previous_compaction_id": self.previous_compaction_id,
+            "event_cursor": self.event_cursor,
             "omitted_message_count": self.omitted_message_count,
         }
-        for field_name in _FACT_FIELDS:
+        for field_name in FACT_FIELDS:
             value[field_name] = [
                 item.to_dict() for item in getattr(self, field_name)
             ]
@@ -175,7 +197,7 @@ class ContextState:
         if raw_version != CONTEXT_STATE_SCHEMA_VERSION:
             raise ValueError(f"Unsupported ContextState schema: {raw_version}")
         kwargs: dict[str, Any] = {}
-        for field_name in _FACT_FIELDS:
+        for field_name in FACT_FIELDS:
             raw_items = value.get(field_name, [])
             if not isinstance(raw_items, list):
                 raise ValueError(f"ContextState {field_name} must be a list")
@@ -194,9 +216,12 @@ class ContextState:
             or not isinstance(omitted_message_count, int)
         ):
             raise ValueError("omitted_message_count must be an integer")
+        event_cursor = value.get("event_cursor", 0)
+        if isinstance(event_cursor, bool) or not isinstance(event_cursor, int):
+            raise ValueError("event_cursor must be an integer")
         return cls(
             schema_version=raw_version,
-            strategy=str(value.get("strategy", "l2_deterministic")),
+            strategy=str(value.get("strategy", "rolling_summary")),
             objective=str(value.get("objective", "")),
             artifacts=tuple(
                 ArtifactState.from_dict(dict(item))
@@ -206,6 +231,7 @@ class ContextState:
             source_message_ids=_string_tuple(value.get("source_message_ids")),
             source_event_seqs=_int_tuple(value.get("source_event_seqs")),
             previous_compaction_id=str(previous) if previous is not None else None,
+            event_cursor=event_cursor,
             omitted_message_count=omitted_message_count,
             **kwargs,
         )
@@ -238,6 +264,7 @@ class ContextState:
 __all__ = [
     "ArtifactState",
     "CONTEXT_STATE_SCHEMA_VERSION",
+    "FACT_FIELDS",
     "ContextFact",
     "ContextState",
 ]

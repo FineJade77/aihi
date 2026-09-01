@@ -187,19 +187,36 @@ The application-owned base system block and canonical model-visible Tool definit
 prompt-cache prefix. Dynamic sections, `ContextState`, Tool Result placeholders and current turns stay
 after that boundary, so compaction never changes the stable cache family.
 
-The Runtime measures the complete normalized request and uses 70%/85% soft/hard watermarks with a 60%
-target. Soft pruning removes only durable, integrity-checked, Artifact-backed read-only Tool Result
-bodies. Hard compaction projects evidence-backed schema-v2 `ContextState` from immutable Events, Tool
-metadata and Artifact manifests, merges older state field by field, and retains a token-bounded raw tail
-of complete Tool groups. Model enrichment cannot create file or verification receipts. Version-2
-`compaction.created` records are additive; version-1 records and frozen stores remain replayable.
+`aihi.agent.context` follows one pipeline: `models` defines budgets and projection records; `assembler`
+renders the stable prefix and bounds large Tool Results; `grouping` defines closed Tool Call/Result
+exchanges; `state` and `projector` maintain evidence-backed cumulative state; `summary` and
+`model_summary` provide deterministic or model enrichment; `compaction` performs replacement; and
+`compiler` is the Runtime facade. Assembly is deterministic and repeatable. Compaction is the only
+semantic edit and returns a new model-input projection.
 
-Cache observability is durable but contains no prompt or cache key: each `model.usage` event records
-Provider-reported cache read/write tokens, a SHA-256 of the cache-family key, full-request pressure and
-any pruning decision. Evaluation aggregates cache-hit ratio, cache-key changes and soft/hard
-compaction counts. The replay-only golden Trace and the application-owned
-`aihi-code-agent-context-v1` comparison require unchanged cache-family identity, 100% critical-state
-recall and task success before accepting a token reduction; wall-clock latency is diagnostic only.
+The Runtime measures the complete normalized request against `ContextBudget.input_capacity`, which has
+already reserved output and safety capacity exactly once. The default policy asks for an exact count
+near 60%, makes one compaction decision at 80%, and aims for 60% after compaction. The canonical grouping
+unit is the smallest sequence that closes every Tool Call with its Tool Result; ordinary messages form
+standalone groups. This allows one user request followed by many assistant/tool cycles to compact.
+Compaction replaces older closed groups with one cumulative evidence-backed schema-v2 `ContextState`.
+Its recent raw suffix is selected only by the 30%/32K token budget while always retaining the newest
+closed group; there is no fixed turn-count minimum. The state itself is bounded to about 2K estimated
+tokens. Once a state exists it is authoritative: `event_cursor` causes later projection to read only
+new EventStore entries, and facts are evicted monotonically by observed sequence.
+
+Large Tool Results are externalized and reused by artifact identity when an Artifact Store is injected;
+without one, assembly still emits a bounded head/tail projection with size and digest metadata while the
+raw Message Event remains unchanged. Compact-model chunks run with bounded concurrency and degrade per
+chunk, preserving successful summaries. There is no second pruning module or Runtime pass. Model
+enrichment may add semantic constraints and next steps, but Events, Tool metadata and Artifact manifests
+remain the only source for file changes, verification receipts, failures and approvals.
+
+Every actual replacement produces one durable `compaction.created` record; raw message and Tool Result
+Events are never rewritten. Cache observability remains durable but contains no prompt or cache key:
+each `model.usage` event records Provider cache read/write tokens, a SHA-256 of the cache-family key,
+full-request pressure and the compaction decision. Evaluation aggregates cache-hit ratio, cache-key
+changes and rolling-compaction counts.
 
 ## Tools and safety
 

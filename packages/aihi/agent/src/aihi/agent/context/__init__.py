@@ -1,17 +1,19 @@
-"""Context compilation, deterministic compaction, and L2 summary contracts."""
+"""Context assembly, token pressure and rolling compaction contracts."""
 
+from aihi.agent.context.assembler import ContextAssembler
 from aihi.agent.context.cache import (
     PROMPT_CACHE_CONTRACT_VERSION,
     build_prompt_cache_key,
     stable_system_blocks,
 )
+from aihi.agent.context.compaction import ContextCompactor
 from aihi.agent.context.compiler import (
+    AssembledContext,
     CompactionRecord,
     CompiledContext,
     ContextBudget,
     ContextCompiler,
     ContextSection,
-    ToolResultPruningRecord,
     compose_system_blocks,
     compose_system_prompt,
 )
@@ -40,11 +42,14 @@ from aihi.agent.context.summary import (
 
 __all__ = [
     "ArtifactState",
+    "AssembledContext",
     "CONTEXT_STATE_SCHEMA_VERSION",
-    "CompactionRecord",
     "CompactionPolicy",
+    "CompactionRecord",
     "CompiledContext",
+    "ContextAssembler",
     "ContextBudget",
+    "ContextCompactor",
     "ContextCompiler",
     "ContextFact",
     "ContextPressure",
@@ -59,7 +64,6 @@ __all__ = [
     "StructuredSummary",
     "SummaryGenerator",
     "SummaryRequest",
-    "ToolResultPruningRecord",
     "build_prompt_cache_key",
     "compose_system_blocks",
     "compose_system_prompt",
