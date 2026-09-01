@@ -164,17 +164,28 @@ OpenAI-compatible 实现，但必须使用明确 endpoint。
 动态 Section、`ContextState`、Tool Result 占位符和当前 Turn 位于该边界之后，因此 Compaction
 不会改变稳定 Cache Family。
 
-Runtime 衡量完整的规范化请求，使用 70%/85% Soft/Hard 水位和 60% Target。Soft Pruning 只移除
-已持久化、通过完整性校验且有 Artifact 的只读 Tool Result 正文。Hard Compaction 从不可变 Event、
-Tool Metadata 和 Artifact Manifest 投影带证据的 Schema v2 `ContextState`，与旧状态逐字段合并，
-并按 Token 保留完整 Tool Group 的近期原文 Tail。模型补充不能创建文件或验证收据。
-`compaction.created` v2 只增加字段；v1 Record 与冻结 Store 继续可 Replay。
+`aihi.agent.context` 采用一条明确流水线：`models` 定义预算和投影记录；`assembler` 组装稳定前缀并约束
+大型 Tool Result；`grouping` 定义闭合的 Tool Call/Result Exchange；`state` 与 `projector` 维护带证据的
+累计状态；`summary` 与 `model_summary` 提供确定性或模型补充；`compaction` 执行替换；`compiler` 是
+Runtime 门面。组装是确定性的，可以反复执行；只有 Compaction 才会做语义编辑并返回新模型输入投影。
 
-Cache 可观测数据会持久化，但不包含 Prompt 或完整 Cache Key：每个 `model.usage` Event 记录 Provider
-上报的 Cache Read/Write Token、Cache Family Key 的 SHA-256、完整请求压力和 Pruning 决策。Eval 会汇总
-Cache Hit Ratio、Cache Key 变化次数以及 Soft/Hard Compaction 次数。只做 Replay 的 Golden Trace 与
-应用层 `aihi-code-agent-context-v1` 对比要求 Cache Family 不变、关键状态召回率 100% 且任务成功，满足
-这些语义门禁后才接受 Token 降低；墙钟延迟只用于诊断。
+Runtime 使用 `ContextBudget.input_capacity` 衡量完整规范化请求；该容量已经且只会一次性预留输出与安全
+空间。默认策略在接近 60% 时请求精确计数，在 80% 做唯一一次 Compaction 决策，压缩后目标为 60%。规范
+分组单位是能够闭合其中所有 Tool Call/Result 的最小消息序列，普通消息单独成组，因此一次 User 请求后接
+几十轮 Assistant/Tool 循环也可以压缩。旧的闭合分组会被一个累计、带证据的 Schema v2 `ContextState`
+替换。近期原文后缀只受 30%/32K Token 预算控制，并始终保留最新闭合分组；不再有固定 Turn 数下限。
+状态自身限制在约 2K Token。首个状态形成后它就是权威输入：后续通过 `event_cursor` 只读取 EventStore
+增量，并按事实的观测序号单调淘汰，不会从完整历史重新插入已删除事实。
+
+注入 Artifact Store 时，大型 Tool Result 会外置并按 Artifact 身份复用；未注入时，组装器也会生成带
+大小与摘要指纹的有界 Head/Tail 投影，而原始 Message Event 保持不变。Compact Model 分块使用有界并发，
+并按 Chunk 降级以保留其他成功摘要。不再存在第二套 Pruning 模块或 Runtime 阶段。模型只能补充语义约束
+和下一步；文件修改、验证收据、失败和审批仍只能来自不可变 Event、Tool Metadata 与 Artifact Manifest。
+
+每次实际替换只产生一个持久化 `compaction.created` Record；原始 Message 和 Tool Result Event 永不重写。
+Cache 可观测数据仍会持久化，但不包含 Prompt 或完整 Cache Key：每个 `model.usage` Event 记录 Provider
+上报的 Cache Read/Write Token、Cache Family Key 的 SHA-256、完整请求压力和 Compaction 决策；Eval 汇总
+Cache Hit Ratio、Cache Key 变化次数与滚动 Compaction 次数。
 
 ## 工具与安全
 

@@ -277,7 +277,7 @@ async def test_runtime_records_pressure_and_count_fallback_without_failing(
     usage = next(event for event in session.events if event.type == "model.usage")
     assert usage.data["context_count_method"] == "estimate_fallback"
     assert usage.data["context_count_fallback"] == "RuntimeError"
-    assert usage.data["context_trigger"] == "none"
+    assert usage.data["context_compaction_decision"] == "none"
     assert usage.data["context_target_ratio"] == 0.60
 
 
@@ -307,7 +307,7 @@ async def test_exact_over_capacity_count_forces_preflight_compaction_and_recount
     assert result.state == RunState.COMPLETED, result.error
     assert provider.count_calls == 2
     compaction = next(event for event in session.events if event.type == "compaction.created")
-    assert compaction.data["trigger"] == "hard_threshold"
+    assert compaction.data["trigger"] == "over_capacity"
     assert compaction.data["version"] == 2
     usage = next(event for event in session.events if event.type == "model.usage")
     assert usage.data["context_tokens"] == 200
@@ -359,7 +359,7 @@ async def test_runtime_compacts_history_without_dropping_raw_events(
     assert result.state == RunState.COMPLETED
     assert any(event.type == "compaction.created" for event in session.events)
     assert sum(event.type == "user.message" for event in session.events) == 20
-    assert session.messages[0].metadata["compaction"] == "l2_context_state"
+    assert session.messages[0].metadata["compaction"] == "rolling_summary"
     compaction = next(event for event in session.events if event.type == "compaction.created")
     assert compaction.data["version"] == 2
     assert compaction.data["context_state"]["schema_version"] == 2
@@ -507,10 +507,10 @@ async def test_runtime_records_artifact_reference_for_large_tool_result(
 
 
 @pytest.mark.asyncio
-async def test_runtime_soft_prunes_old_results_without_rewriting_raw_events(
+async def test_runtime_externalizes_results_without_rewriting_raw_events(
     session_tmp_path: Path,
 ) -> None:
-    session = make_session(session_tmp_path, "ses-context-soft-prune")
+    session = make_session(session_tmp_path, "ses-context-artifacts")
     for index in range(8):
         call = ToolCallBlock(
             id=f"call-soft-{index}",
@@ -547,7 +547,7 @@ async def test_runtime_soft_prunes_old_results_without_rewriting_raw_events(
             max_output=64,
         ),
     )
-    artifact_store = FileArtifactStore(session_tmp_path / "soft-prune-artifacts")
+    artifact_store = FileArtifactStore(session_tmp_path / "context-artifacts")
     coordinator = RunCoordinator(
         provider,
         registry=ToolRegistry([ReadTestTool(session_tmp_path)]),
@@ -567,14 +567,11 @@ async def test_runtime_soft_prunes_old_results_without_rewriting_raw_events(
     assert result.state == RunState.COMPLETED, result.error
     sent = provider.requests[0]
     results = [result for message in sent.messages for result in message.tool_results]
-    assert any(result.metadata.get("context_pruned") is True for result in results[:-4])
-    assert all(result.metadata.get("context_pruned") is None for result in results[-3:])
+    assert all(result.metadata.get("artifact_id") for result in results)
     assert sent.system_blocks[0].stable_prefix is True
     assert sent.cache_policy is not None
     usage = next(event for event in session.events if event.type == "model.usage")
-    assert usage.data["context_pruned_tool_results"] > 0
-    assert usage.data["context_reclaimed_tokens"] >= 4_096
-    assert usage.data["context_pruning_trigger"] == "soft"
+    assert usage.data["context_compaction_decision"] in {"none", "compact"}
     assert str(raw_content[0]["content"]) == original_body
     assert len(original_body) > 8_000
     assert [event.to_dict() for event in session.events[: len(original_events)]] == original_events
@@ -650,10 +647,10 @@ async def test_runtime_retries_once_after_provider_context_length_error(
     assert len(provider.requests) == 2
     compactions = [event for event in session.events if event.type == "compaction.created"]
     assert len(compactions) == 1
-    assert compactions[0].data["strategy"] == "l2_context_state"
+    assert compactions[0].data["strategy"] == "rolling_summary"
     assert compactions[0].data["version"] == 2
     assert compactions[0].data["trigger"] == "provider_context_length"
-    assert provider.requests[1].messages[0].metadata["compaction"] == "l2_context_state"
+    assert provider.requests[1].messages[0].metadata["compaction"] == "rolling_summary"
 
 
 @pytest.mark.asyncio

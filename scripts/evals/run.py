@@ -501,7 +501,7 @@ def report_regression_warning(
 
 
 def compare_context_report(report: CodeEvalReport) -> dict[str, object]:
-    """Compare the deterministic long-session baseline with hard compaction."""
+    """Compare the deterministic long-session baseline with rolling compaction."""
 
     if report.dataset_id != "aihi-code-agent-context-v1":
         raise ValueError("context comparison requires aihi-code-agent-context-v1")
@@ -543,8 +543,6 @@ def compare_context_report(report: CodeEvalReport) -> dict[str, object]:
             "cache_hit_ratio": number(result, "cache_hit_ratio"),
             "cache_key_change_count": integer(result, "cache_key_change_count"),
             "compaction_count": integer(result, "compaction_count"),
-            "hard_compaction_count": integer(result, "hard_compaction_count"),
-            "soft_compaction_count": integer(result, "soft_compaction_count"),
             "critical_state_recall": number(result, "critical_state_recall"),
         }
 
@@ -582,8 +580,8 @@ def assert_context_gate(
         raise ValueError("context comparison is incomplete")
     if comparison.get("stable_cache_family") is not True:
         raise CodeEvalGateFailed("Context evaluation cache family changed after compaction")
-    if int(compacted.get("hard_compaction_count", 0)) < 1:
-        raise CodeEvalGateFailed("Context evaluation did not exercise hard compaction")
+    if int(compacted.get("compaction_count", 0)) < 1:
+        raise CodeEvalGateFailed("Context evaluation did not exercise rolling compaction")
     if int(compacted.get("input_tokens", 0)) >= int(baseline.get("input_tokens", 0)):
         raise CodeEvalGateFailed("Context evaluation did not reduce input tokens")
     if int(compacted.get("cached_input_tokens", 0)) <= 0:

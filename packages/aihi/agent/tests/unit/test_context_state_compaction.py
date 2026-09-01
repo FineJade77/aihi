@@ -185,7 +185,7 @@ def test_projector_merges_state_and_rejects_model_file_or_verification_claims() 
         policy=ArtifactPolicy(session_id="ses-state", retention="session"),
     )
     enrichment = StructuredSummary(
-        strategy="l2_model",
+        strategy="rolling_summary_model",
         objective="Ship the cache-safe compactor",
         constraints=("Do not change the public API",),
         decisions=("Retain four complete groups",),
@@ -249,7 +249,7 @@ class IncrementalSummaryGenerator:
     async def generate(self, request: SummaryRequest) -> StructuredSummary:
         self.calls += 1
         return StructuredSummary(
-            strategy="l2_model",
+            strategy="rolling_summary_model",
             objective=f"objective-{self.calls}",
             constraints=(f"constraint-{self.calls}",),
             decisions=(f"decision-{self.calls}",),
@@ -260,7 +260,7 @@ class IncrementalSummaryGenerator:
 
 
 @pytest.mark.asyncio
-async def test_three_context_state_compactions_merge_fields_and_keep_four_raw_groups() -> None:
+async def test_three_context_state_compactions_merge_fields_and_keep_bounded_raw_suffix() -> None:
     generator = IncrementalSummaryGenerator()
     compiler = ContextCompiler(summary_generator=generator)
     raw_messages = tuple(
@@ -286,13 +286,13 @@ async def test_three_context_state_compactions_merge_fields_and_keep_four_raw_gr
     policy = CompactionPolicy(recent_tail_max_tokens=1)
 
     for cycle in range(3):
-        compiled = await compiler.compact_context_state(
+        compiled = await compiler.compile_and_compact(
             messages,
             system_prompt="stable prompt",
             tools=(),
             budget=budget,
             policy=policy,
-            trigger="hard_threshold",
+            trigger="threshold",
         )
         assert compiled.compaction is not None
         assert compiled.compaction.version == 2
@@ -311,13 +311,12 @@ async def test_three_context_state_compactions_merge_fields_and_keep_four_raw_gr
             "token_count_method",
             "artifact_ids",
             "stable_prefix_hash",
-            "cache_epoch_hash",
             "summary_generator",
             "fallback_reason",
         } <= event_data.keys()
         state = ContextState.from_message(compiled.messages[0])
-        assert len(compiled.messages) >= 5
-        assert all(message.role != "system" for message in compiled.messages[-4:])
+        assert len(compiled.messages) >= 2
+        assert all(message.role != "system" for message in compiled.messages[1:])
         messages = (
             *compiled.messages,
             Message.text("user", f"new-{cycle}-a"),
@@ -352,7 +351,7 @@ async def test_three_context_state_compactions_merge_fields_and_keep_four_raw_gr
     assert state.verified[0].text == "seed tests passed"
     assert state.failures[0].text == "seed failure"
     assert state.pending_approvals[0].text == "seed approval pending"
-    assert state.omitted_message_count == 6
+    assert state.omitted_message_count == 9
 
 
 class FailingSummaryGenerator:
@@ -367,7 +366,7 @@ async def test_context_state_compaction_falls_back_to_deterministic_projection()
 
     compiled = await ContextCompiler(
         summary_generator=FailingSummaryGenerator()
-    ).compact_context_state(
+    ).compile_and_compact(
         messages,
         system_prompt="",
         tools=(),
@@ -376,19 +375,19 @@ async def test_context_state_compaction_falls_back_to_deterministic_projection()
     )
 
     assert compiled.compaction is not None
-    assert compiled.compaction.strategy == "l2_model_fallback"
+    assert compiled.compaction.strategy == "rolling_summary_fallback"
     assert compiled.compaction.fallback_reason == "RuntimeError"
     assert ContextState.from_message(compiled.messages[0]).objective == "turn-5"
 
 
 @pytest.mark.asyncio
-async def test_hard_compaction_reaches_target_or_fails_stably() -> None:
+async def test_rolling_compaction_reaches_target_or_fails_stably() -> None:
     compiler = ContextCompiler()
     policy = CompactionPolicy(recent_tail_max_tokens=100)
     budget = ContextBudget(context_window=1_000, reserved_output=0, safety_margin=0)
     messages = tuple(Message.text("user", f"turn-{index} " + "x" * 200) for index in range(10))
 
-    compiled = await compiler.compact_context_state(
+    compiled = await compiler.compile_and_compact(
         messages,
         system_prompt="",
         tools=(),
@@ -398,15 +397,177 @@ async def test_hard_compaction_reaches_target_or_fails_stably() -> None:
 
     assert compiled.estimated_tokens <= int(budget.input_capacity * policy.target_ratio)
 
-    oversized_tail = tuple(
+    large_groups = tuple(
         Message.text("user", f"required-{index} " + "x" * 1_000) for index in range(5)
     )
+    reduced = await compiler.compile_and_compact(
+        large_groups,
+        system_prompt="",
+        tools=(),
+        budget=budget,
+        policy=policy,
+    )
+    assert reduced.estimated_tokens <= budget.input_capacity
+
+    unshrinkable = tuple(
+        Message.text("user", f"required-{index} " + "x" * 8_000) for index in range(2)
+    )
     with pytest.raises(ContextWindowExceeded) as error:
-        await compiler.compact_context_state(
-            oversized_tail,
+        await compiler.compile_and_compact(
+            unshrinkable,
             system_prompt="",
             tools=(),
             budget=budget,
             policy=policy,
         )
     assert error.value.code == "context_window_exceeded"
+
+
+@pytest.mark.asyncio
+async def test_bounded_state_does_not_reinsert_evicted_full_history_facts() -> None:
+    events = tuple(
+        _event(
+            index + 1,
+            "tool.completed",
+            {
+                "tool_call_id": f"call-{index}",
+                "tool_name": "bash",
+                "is_error": True,
+                "metadata": {"error_code": f"failure-{index}"},
+            },
+        )
+        for index in range(100)
+    )
+    compiler = ContextCompiler()
+    policy = CompactionPolicy(recent_tail_max_tokens=1, summary_max_tokens=1_024)
+    budget = ContextBudget(context_window=8_000, reserved_output=0, safety_margin=0)
+    messages: tuple[Message, ...] = tuple(
+        Message.text("user", f"history-{index}") for index in range(8)
+    )
+    snapshots: list[tuple[int, ...]] = []
+
+    for round_index in range(4):
+        compiled = await compiler.compile_and_compact(
+            messages,
+            system_prompt="",
+            tools=(),
+            budget=budget,
+            policy=policy,
+            events=events,
+        )
+        state = ContextState.from_message(compiled.messages[0])
+        observed = tuple(
+            item.observed_seq
+            for item in state.failures
+            if item.observed_seq is not None
+        )
+        assert len(observed) == len(state.failures)
+        snapshots.append(observed)
+        assert state.event_cursor == 100
+        messages = (
+            *compiled.messages,
+            Message.text("user", f"continue-{round_index}"),
+            Message.text("assistant", f"continued-{round_index}"),
+        )
+
+    assert snapshots[0]
+    for previous, current in zip(snapshots, snapshots[1:], strict=False):
+        assert current == previous[-len(current) :]
+    assert all(snapshot[-1] == 100 for snapshot in snapshots)
+
+
+class _OneShotConstraintGenerator:
+    """Emit the critical constraint once, the way a real compaction would."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def generate(self, request: SummaryRequest) -> StructuredSummary:
+        self.calls += 1
+        return StructuredSummary(
+            strategy="rolling_summary_model",
+            objective="ship the compactor",
+            constraints=("Preserve checkpoint ALPHA.",) if self.calls == 1 else (),
+            omitted_message_count=len(request.omitted_messages),
+        )
+
+
+@pytest.mark.asyncio
+async def test_bounded_state_evicts_tool_receipts_before_model_semantics() -> None:
+    # A semantic fact is anchored to the sequence it was observed at and never
+    # refreshed, so a stream of newer tool receipts must not be able to push it
+    # out: its source messages are already gone and no later summary can
+    # reproduce it.
+    generator = _OneShotConstraintGenerator()
+    compiler = ContextCompiler(summary_generator=generator)
+    policy = CompactionPolicy(recent_tail_max_tokens=1, summary_max_tokens=1_024)
+    budget = ContextBudget(context_window=8_000, reserved_output=0, safety_margin=0)
+    messages: tuple[Message, ...] = tuple(
+        Message.text("user", f"history-{index}") for index in range(8)
+    )
+    seq = 0
+    events: tuple[Event, ...] = ()
+
+    for round_index in range(4):
+        events = (
+            *events,
+            *(
+                _event(
+                    seq + offset + 1,
+                    "tool.completed",
+                    {
+                        "tool_call_id": f"call-{round_index}-{offset}",
+                        "tool_name": "bash",
+                        "is_error": True,
+                        "metadata": {"error_code": f"failure-{round_index}-{offset}"},
+                    },
+                )
+                for offset in range(40)
+            ),
+        )
+        seq += 40
+        compiled = await compiler.compile_and_compact(
+            messages,
+            system_prompt="",
+            tools=(),
+            budget=budget,
+            policy=policy,
+            events=events,
+        )
+        state = ContextState.from_message(compiled.messages[0])
+        assert [item.text for item in state.constraints] == ["Preserve checkpoint ALPHA."]
+        assert state.failures
+        assert len(state.failures) < 40
+        messages = (
+            *compiled.messages,
+            Message.text("user", f"continue-{round_index}"),
+            Message.text("assistant", f"continued-{round_index}"),
+        )
+
+    assert generator.calls >= 4
+
+
+@pytest.mark.asyncio
+async def test_existing_state_reads_only_events_after_its_cursor() -> None:
+    seen_after_seqs: list[int] = []
+
+    def read_events(after_seq: int) -> tuple[Event, ...]:
+        seen_after_seqs.append(after_seq)
+        return (_event(42, "run.state", {"state": "running"}),)
+
+    prior = ContextState(objective="existing objective", event_cursor=41).to_message()
+    compiled = await ContextCompiler().compile_and_compact(
+        (
+            prior,
+            Message.text("user", "older " + "x" * 500),
+            Message.text("user", "latest request"),
+        ),
+        system_prompt="",
+        tools=(),
+        budget=ContextBudget(context_window=1_000, reserved_output=0, safety_margin=0),
+        policy=CompactionPolicy(recent_tail_max_tokens=1),
+        event_reader=read_events,
+    )
+
+    assert seen_after_seqs == [41]
+    assert ContextState.from_message(compiled.messages[0]).event_cursor == 42

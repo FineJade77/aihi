@@ -1,4 +1,4 @@
-"""Deterministic Event, Tool, and Artifact projection for hard compaction."""
+"""Deterministic Event, Tool, and Artifact projection for rolling compaction."""
 
 from __future__ import annotations
 
@@ -25,6 +25,7 @@ _SEMANTIC_FIELDS = (
 def project_context_state(
     *,
     messages: tuple[Message, ...] | list[Message],
+    objective_messages: tuple[Message, ...] | list[Message] = (),
     events: tuple[Event, ...] | list[Event] = (),
     tools: tuple[ToolSpec, ...] = (),
     artifacts: tuple[ArtifactRef, ...] = (),
@@ -33,7 +34,7 @@ def project_context_state(
     enrichment_source_message_ids: tuple[str, ...] = (),
     previous_compaction_id: str | None = None,
     omitted_message_count: int = 0,
-    strategy: str = "l2_context_state",
+    strategy: str = "rolling_summary",
 ) -> ContextState:
     """Build cumulative state without allowing model claims to become receipts.
 
@@ -140,7 +141,10 @@ def project_context_state(
         result_message_ids=result_message_ids,
         message_seqs=message_seqs,
     )
+    deleted_artifact_ids = _deleted_artifact_ids(events)
     for artifact in artifacts:
+        if artifact.artifact_id in deleted_artifact_ids:
+            continue
         call_id = _string(artifact.metadata.get("tool_call_id"))
         source_ids = tuple(
             item
@@ -159,7 +163,9 @@ def project_context_state(
             source_event_seqs=_seqs_for(source_ids, message_seqs),
         )
 
-    objective, objective_source = _latest_user_objective(ordered_messages)
+    objective, objective_source = _latest_user_objective(
+        objective_messages or ordered_messages
+    )
     if (
         not objective
         and enrichment is not None
@@ -191,17 +197,21 @@ def project_context_state(
         source_message_ids=tuple(dict.fromkeys(source_message_ids)),
         source_event_seqs=tuple(dict.fromkeys(source_event_seqs)),
         previous_compaction_id=previous_compaction_id,
+        event_cursor=max(
+            (event.seq for event in events if event.seq is not None),
+            default=prior.event_cursor,
+        ),
         omitted_message_count=prior.omitted_message_count + omitted_message_count,
-        constraints=tuple(field_values["constraints"].values()),
-        decisions=tuple(field_values["decisions"].values()),
-        files=tuple(field_values["files"].values()),
-        verified=tuple(field_values["verified"].values()),
-        failures=tuple(field_values["failures"].values()),
-        open_questions=tuple(field_values["open_questions"].values()),
-        next_steps=tuple(field_values["next_steps"].values()),
-        pending_approvals=tuple(field_values["pending_approvals"].values()),
-        skills=tuple(field_values["skills"].values()),
-        subagents=tuple(field_values["subagents"].values()),
+        constraints=_ordered_facts(field_values["constraints"]),
+        decisions=_ordered_facts(field_values["decisions"]),
+        files=_ordered_facts(field_values["files"]),
+        verified=_ordered_facts(field_values["verified"]),
+        failures=_ordered_facts(field_values["failures"]),
+        open_questions=_ordered_facts(field_values["open_questions"]),
+        next_steps=_ordered_facts(field_values["next_steps"]),
+        pending_approvals=_ordered_facts(field_values["pending_approvals"]),
+        skills=_ordered_facts(field_values["skills"]),
+        subagents=_ordered_facts(field_values["subagents"]),
     )
 
 
@@ -244,7 +254,7 @@ def legacy_summary_state(message: Message) -> ContextState | None:
         )
     omitted = raw.get("omitted_message_count", 0)
     return ContextState(
-        strategy="l2_legacy_upgrade",
+        strategy="rolling_summary_legacy",
         objective=_string(raw.get("objective")),
         source_message_ids=source_ids,
         omitted_message_count=(
@@ -458,6 +468,20 @@ def _project_artifact_events(
         )
 
 
+def _deleted_artifact_ids(events: Iterable[Event]) -> frozenset[str]:
+    values: set[str] = set()
+    for event in events:
+        if event.type != "artifact.deleted":
+            continue
+        raw = event.data.get("artifact")
+        artifact_id = _string(event.data.get("artifact_id")) or (
+            _string(raw.get("artifact_id")) if isinstance(raw, dict) else ""
+        )
+        if artifact_id:
+            values.add(artifact_id)
+    return frozenset(values)
+
+
 def _event_messages(events: Iterable[Event]) -> tuple[tuple[Message, ...], dict[str, int]]:
     messages: list[Message] = []
     seqs: dict[str, int] = {}
@@ -538,6 +562,20 @@ def _fact(
         reason=reason,
         source_message_ids=tuple(dict.fromkeys(source_message_ids)),
         source_event_seqs=tuple(dict.fromkeys(source_event_seqs)),
+        observed_seq=max(source_event_seqs) if source_event_seqs else None,
+    )
+
+
+def _ordered_facts(values: dict[str, ContextFact]) -> tuple[ContextFact, ...]:
+    return tuple(
+        sorted(
+            values.values(),
+            key=lambda item: (
+                item.observed_seq
+                if item.observed_seq is not None
+                else max(item.source_event_seqs, default=-1)
+            ),
+        )
     )
 
 

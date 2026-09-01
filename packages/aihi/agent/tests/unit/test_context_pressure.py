@@ -5,39 +5,24 @@ from aihi.agent.context import ContextPressureController
 from aihi.models import Message, ModelRequest, TextBlock, estimate_model_request_tokens
 
 
-def test_pressure_controller_enforces_high_and_low_watermarks() -> None:
+def test_pressure_controller_has_one_current_request_watermark() -> None:
     controller = ContextPressureController()
 
-    below_soft = controller.evaluate(input_tokens=699, input_capacity=1_000)
-    at_soft = controller.evaluate(input_tokens=700, input_capacity=1_000)
-    below_hard = controller.evaluate(input_tokens=849, input_capacity=1_000)
-    at_hard = controller.evaluate(input_tokens=850, input_capacity=1_000)
+    below = controller.evaluate(input_tokens=799, input_capacity=1_000)
+    at_watermark = controller.evaluate(input_tokens=800, input_capacity=1_000)
+    over_capacity = controller.evaluate(input_tokens=1_001, input_capacity=1_000)
     at_target = controller.evaluate(input_tokens=600, input_capacity=1_000)
 
-    assert below_soft.trigger == "none"
-    assert at_soft.trigger == "soft"
-    assert below_hard.trigger == "soft"
-    assert at_hard.trigger == "hard"
-    assert at_hard.trigger_reason == "hard_threshold"
-    assert at_target.trigger == "none"
+    assert below.decision == "none"
+    assert at_watermark.decision == "compact"
+    assert at_watermark.reason == "threshold"
+    assert over_capacity.reason == "over_capacity"
+    assert at_target.decision == "none"
     assert at_target.target_tokens == 600
 
 
-def test_pressure_controller_allows_early_hard_only_for_predicted_exhaustion() -> None:
-    pressure = ContextPressureController().evaluate(
-        input_tokens=640,
-        input_capacity=1_000,
-        predicted_growth_tokens=361,
-    )
-
-    assert pressure.ratio < 0.70
-    assert pressure.projected_ratio > 1
-    assert pressure.trigger == "hard"
-    assert pressure.trigger_reason == "predicted_context_exhaustion"
-
-
 @pytest.mark.asyncio
-async def test_exact_counting_starts_at_65_percent_and_covers_the_request() -> None:
+async def test_exact_counting_starts_at_60_percent_and_covers_the_request() -> None:
     request = ModelRequest(
         model="exact-model",
         messages=(Message.text("user", "x" * 400),),

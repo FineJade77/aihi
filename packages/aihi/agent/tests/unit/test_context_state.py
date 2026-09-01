@@ -10,24 +10,19 @@ from aihi.agent.context import (
 def test_compaction_policy_freezes_confirmed_thresholds() -> None:
     policy = CompactionPolicy()
 
-    assert policy.exact_count_ratio == 0.65
-    assert policy.soft_trigger_ratio == 0.70
-    assert policy.hard_trigger_ratio == 0.85
+    assert policy.exact_count_ratio == 0.60
+    assert policy.compaction_trigger_ratio == 0.80
     assert policy.target_ratio == 0.60
     assert policy.recent_tail_budget(200_000) == 32_000
-    assert policy.recent_tail_min_groups == 4
-    assert policy.min_reclaim_tokens(128_000) == 12_800
 
 
 @pytest.mark.parametrize(
     "kwargs",
     [
-        {"target_ratio": 0.75},
-        {"soft_trigger_ratio": 0.90},
-        {"exact_count_ratio": 0.80},
+        {"compaction_target_ratio": 0.90},
+        {"exact_count_ratio": 1.10},
         {"recent_tail_ratio": 0},
         {"recent_tail_max_tokens": 0},
-        {"recent_tail_min_groups": 0},
     ],
 )
 def test_compaction_policy_rejects_invalid_ordering(kwargs: dict[str, object]) -> None:
@@ -58,15 +53,16 @@ def test_context_state_round_trips_with_evidence_and_artifacts() -> None:
         source_message_ids=("msg-1", "msg-2"),
         source_event_seqs=(11, 12),
         previous_compaction_id="evt-compaction-1",
+        event_cursor=12,
         omitted_message_count=2,
     )
 
     restored = ContextState.from_dict(state.to_dict())
-    message = state.to_message(strategy="l2_context_state")
+    message = state.to_message(strategy="rolling_summary")
 
     assert restored == state
     assert ContextState.from_message(message) == state
-    assert message.metadata["compaction"] == "l2_context_state"
+    assert message.metadata["compaction"] == "rolling_summary"
     assert message.metadata["context_state_schema_version"] == 2
 
 

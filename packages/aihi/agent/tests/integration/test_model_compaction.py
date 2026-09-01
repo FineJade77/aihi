@@ -16,7 +16,14 @@ from aihi.agent import (
 )
 from aihi.agent.context import ContextBudget
 from aihi.agent.context.model_summary import STRATEGY_FALLBACK, STRATEGY_MODEL
-from aihi.models import FakeProvider, FakeStep, Message, ProviderFailure
+from aihi.models import (
+    FakeProvider,
+    FakeStep,
+    Message,
+    ProviderFailure,
+    ToolCallBlock,
+    ToolResultBlock,
+)
 
 SUMMARY = {
     "objective": "Add retry to the uploader",
@@ -119,9 +126,83 @@ async def test_the_compact_input_is_chunked_without_dropping_early_groups() -> N
     assert "[earlier turns omitted]" not in sent
 
 
+@pytest.mark.asyncio
+async def test_one_bad_chunk_does_not_discard_successful_chunk_summaries() -> None:
+    first = {**SUMMARY, "objective": "first", "decisions": ["keep-first"]}
+    third = {**SUMMARY, "objective": "third", "next_steps": ["keep-third"]}
+    generator = generator_for(
+        [
+            FakeStep(text=json.dumps(first)),
+            FakeStep(text="{}"),
+            FakeStep(text=json.dumps(third)),
+        ],
+        max_input_chars=200,
+        max_concurrency=1,
+    )
+    request = SummaryRequest(
+        omitted_messages=tuple(
+            Message.text("user", f"chunk-{index} " + "x" * 500)
+            for index in range(3)
+        ),
+        retained_messages=(),
+        system_prompt="",
+    )
+
+    summary = await generator.generate(request)
+
+    assert summary.strategy == STRATEGY_FALLBACK
+    assert summary.fallback_reason == "ValueError"
+    assert summary.objective == "third"
+    assert "keep-first" in summary.decisions
+    assert "keep-third" in summary.next_steps
+
+
+@pytest.mark.asyncio
+async def test_compact_model_receives_tool_call_and_result_evidence() -> None:
+    provider = FakeProvider([FakeStep(text=json.dumps(SUMMARY))])
+    request = SummaryRequest(
+        omitted_messages=(
+            Message(
+                role="assistant",
+                content=(
+                    ToolCallBlock(
+                        id="call-1",
+                        name="run_tests",
+                        input={"path": "tests/unit"},
+                    ),
+                ),
+            ),
+            Message(
+                role="user",
+                content=(
+                    ToolResultBlock(
+                        tool_call_id="call-1",
+                        content="1 failed, 9 passed",
+                        is_error=True,
+                    ),
+                ),
+            ),
+        ),
+        retained_messages=(),
+        system_prompt="",
+    )
+
+    await ModelSummaryGenerator(provider, "compact-model").generate(request)
+
+    prompt = provider.requests[0].messages[0].text_content
+    assert 'tool_call id=call-1 name=run_tests input={"path": "tests/unit"}' in prompt
+    assert "tool_result call_id=call-1 status=error" in prompt
+    assert "1 failed, 9 passed" in prompt
+
+
 def test_construction_rejects_meaningless_bounds() -> None:
     provider = FakeProvider()
-    for kwargs in ({"max_input_chars": 0}, {"max_output_tokens": 0}, {"timeout_seconds": 0}):
+    for kwargs in (
+        {"max_input_chars": 0},
+        {"max_output_tokens": 0},
+        {"timeout_seconds": 0},
+        {"max_concurrency": 0},
+    ):
         with pytest.raises(ValueError, match="positive"):
             ModelSummaryGenerator(provider, "compact-model", **kwargs)  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="non-empty"):
@@ -151,7 +232,7 @@ async def test_the_run_records_which_generator_produced_the_summary(tmp_path: Pa
 
     assert result.state == RunState.COMPLETED
     compaction = next(event for event in session.events if event.type == "compaction.created")
-    assert compaction.data["strategy"] == "l2_model_context_state"
+    assert compaction.data["strategy"] == "rolling_summary_model"
     assert compaction.data["version"] == 2
 
 
@@ -168,7 +249,7 @@ async def test_l2_records_the_model_strategy(tmp_path: Path) -> None:
         Message.text("user", "latest request"),
     )
 
-    compiled = await compiler.compact_l2(
+    compiled = await compiler.compile_and_compact(
         messages,
         system_prompt="",
         tools=(),
@@ -176,6 +257,6 @@ async def test_l2_records_the_model_strategy(tmp_path: Path) -> None:
     )
 
     assert compiled.compaction is not None
-    assert compiled.compaction.strategy == STRATEGY_MODEL
-    assert compiled.messages[0].metadata["compaction"] == STRATEGY_MODEL
+    assert compiled.compaction.strategy == "rolling_summary_model"
+    assert compiled.messages[0].metadata["compaction"] == "rolling_summary_model"
     assert "exponential backoff" in compiled.messages[0].text_content

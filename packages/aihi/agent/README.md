@@ -185,29 +185,29 @@ compaction state and current turns remain after the cache boundary. Cache availa
 Event replay, policy, approval, command execution or tool persistence semantics.
 
 `ContextPressureController` measures the complete normalized request against `ContextBudget.input_capacity`.
-It uses the conservative local estimate by default, asks a capable Provider for an exact count at 65%,
-and falls back without failing the run when counting is unavailable. `CompactionPolicy` applies the
-60% target, 70% soft trigger and 85% hard trigger; a hard decision below 85% is allowed only when the
-reserved next output would exhaust the following request. Each durable `model.usage` event records the
-count method, current/projected pressure, trigger, reason and target. It also records Provider-reported
-cache read/write tokens and a SHA-256 of the cache-family key, never the key or prompt itself.
+It uses the conservative local estimate by default, asks a capable Provider for an exact count near 60%,
+and falls back without failing the run when counting is unavailable. Output and safety capacity are already
+reserved exactly once by `input_capacity`. `CompactionPolicy` makes one decision at an 80% watermark and
+aims for 60% afterwards. Each durable `model.usage` event records the count method, current pressure,
+decision, reason and target. It also records Provider-reported cache read/write tokens and a SHA-256 of the
+cache-family key, never the key or prompt itself.
 
-At 70% pressure or above, the Runtime makes at most one batched soft-pruning attempt before the
-Provider call. It removes only old, successful, read-only Tool Result bodies whose original Messages
-are durable and whose session-scoped Artifacts pass access, manifest and payload-integrity checks.
-Tool calls, result identity/error state, Artifact references, the recent complete-group tail and the
-stable cache prefix remain unchanged. A batch is discarded unless it reclaims the configured minimum;
-the immutable Event history is never rewritten.
+Context assembly and compaction are separate phases. `ContextAssembler` keeps the application system
+prompt as the stable cache prefix, appends dynamic sections, and externalizes large Tool Results before
+token measurement. Without an Artifact Store it still emits a bounded head/tail result projection with
+digest metadata. `ContextCompactor` uses the smallest closed Tool Call/Result exchange as its atomic unit,
+replaces older groups with one cumulative schema-v2 `ContextState`, and chooses the recent raw suffix only
+by the 30%/32K token budget while retaining the newest closed group. The cumulative state is bounded to
+approximately 2K estimated tokens. There is no fixed turn-count minimum and no second pruning module.
 
-At 85% pressure, or when reserved output predicts exhaustion, the Runtime replaces older complete
-groups with a schema-v2 `ContextState` and keeps a token-bounded recent raw tail (20%, capped at 32K,
-with at least four complete groups). Files, verification receipts, failures, pending approvals,
-subagents and Artifacts are projected deterministically from immutable Events, Tool Result metadata
-and Artifact manifests before optional model enrichment. Model output may add semantic constraints,
-decisions, questions and next steps, but cannot assert file changes or successful verification. Each
-`compaction.created` v2 event records evidence references, policy/count metadata and the retained tail;
-v1 events remain replayable. Hard compaction must reach the 60% target or fail with
-`context_window_exceeded`.
+Files, verification receipts, failures, pending approvals, subagents and Artifacts are projected from
+immutable Events, Tool Result metadata and Artifact manifests before optional model enrichment. Model
+output may add semantic constraints, decisions, questions and next steps, but cannot assert file changes
+or successful verification. After the first compaction, the bounded state is authoritative and only Event
+Store entries after its `event_cursor` are projected; fact eviction is ordered by observed sequence.
+Compact-model chunks run with bounded concurrency and fall back independently. Each actual replacement
+emits one `compaction.created` event; raw Message and Tool Result events are never rewritten. If the state
+plus newest closed group cannot fit the input capacity, the run fails with `context_window_exceeded`.
 
 Applications can derive cache and compaction diagnostics entirely from durable Events:
 
