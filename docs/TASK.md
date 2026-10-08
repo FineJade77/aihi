@@ -102,9 +102,9 @@ replay belong to `aihi-agent`. Product prompts and compact-model selection remai
 | Slice | Scope | Acceptance |
 | --- | --- | --- |
 | H-19.1 | Freeze `CachePolicy`, system blocks, `CompactionPolicy`, ContextState v2 and compatibility contracts | New contract tests fail before implementation; old ModelRequest, message, event and summary data remain decodable |
-| H-19.2 | Stable-prefix compilation and Provider cache mapping | One stable breakpoint, deterministic cache-family key, semantic no-op on unsupported Providers and normalized cache usage |
+| H-19.2 | Stable-prefix compilation and Provider cache mapping | One stable-prefix breakpoint plus an Anthropic rolling conversation-tail breakpoint, deterministic cache-family key, semantic no-op on unsupported Providers and normalized cache usage |
 | H-19.3 | Full-request token pressure and 60/80/60 rolling watermarks | Exact counting is used near the threshold when supported; count failure degrades conservatively; one compaction decision is made per request |
-| H-19.4 | Artifact-first assembly | Large Tool Results are externalized and reused by content/call identity when a Store exists, otherwise bounded inline; the stable prefix and raw Event history remain unchanged |
+| H-19.4 | Artifact-first assembly | Large Tool Results are externalized and reused by content/call identity when a Store exists, otherwise bounded inline; large Tool Call inputs are bounded inline; the stable prefix and raw Event history remain unchanged |
 | H-19.5 | Evidence-backed rolling ContextState compaction | Closed Tool exchanges stay atomic; state projection advances by Event cursor; recency eviction is monotonic; cumulative state and raw tail remain token-bounded |
 | H-19.6 | Joint eval, compatibility, documentation and packaging gates | Cache/compaction golden traces, long-session evals, frozen fixture replay, installed-wheel checks and synchronized English/Chinese docs pass |
 

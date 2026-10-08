@@ -78,6 +78,41 @@ def test_context_compiler_bounds_large_tool_results_without_artifact_store() -> 
     assert message.tool_results[0].content == original
 
 
+def test_context_compiler_bounds_large_tool_call_inputs_in_the_projection() -> None:
+    body = "head-" + "x" * 8_000 + "-tail"
+    call = ToolCallBlock(
+        id="call-1",
+        name="write_file",
+        input={"path": "src/app.py", "content": body, "options": {"lines": [body, "short"]}},
+    )
+    small = ToolCallBlock(id="call-2", name="read_file", input={"path": "src/app.py"})
+    message = Message(role="assistant", content=(call, small))
+    compiler = ContextCompiler(artifact_threshold_tokens=10, artifact_preview_chars=100)
+    budget = ContextBudget(context_window=4_096, reserved_output=100, safety_margin=0)
+
+    compiled = compiler.compile((message,), system_prompt="", budget=budget)
+    projected, untouched = compiled.messages[0].tool_calls
+
+    assert projected.id == "call-1"
+    assert projected.name == "write_file"
+    assert projected.input["path"] == "src/app.py"
+    content = projected.input["content"]
+    assert isinstance(content, str)
+    assert content.startswith("head-")
+    assert content.endswith("-tail")
+    assert len(content) < 400
+    assert "8010 chars" in content
+    assert projected.input["options"]["lines"][0] == content
+    assert projected.input["options"]["lines"][1] == "short"
+    assert untouched is small
+    # The durable message is never edited and the projection is a pure
+    # function of it, so a rebuilt request keeps the same cacheable bytes.
+    assert call.input["content"] == body
+    assert compiler.compile((message,), system_prompt="", budget=budget).messages == (
+        compiled.messages
+    )
+
+
 def test_context_compiler_separates_stable_base_prompt_from_dynamic_sections() -> None:
     compiled = ContextCompiler().compile(
         (Message.text("user", "hello"),),

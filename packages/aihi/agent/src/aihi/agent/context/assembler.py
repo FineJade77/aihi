@@ -1,6 +1,6 @@
 """Pure model-input assembly.
 
-Assembly owns prompt ordering and large Tool Result materialization. It does
+Assembly owns prompt ordering and large Tool Call/Result materialization. It does
 not decide when to compact and it never writes a Session event. This makes a
 rebuild after compaction or a provider retry deterministic.
 """
@@ -16,6 +16,7 @@ from aihi.models import (
     ContentBlock,
     Message,
     TextBlock,
+    ToolCallBlock,
     ToolResultBlock,
     estimate_messages_tokens,
     estimate_text_tokens,
@@ -87,6 +88,9 @@ class ContextAssembler:
         for message in messages:
             blocks: list[ContentBlock] = []
             for block in message.content:
+                if isinstance(block, ToolCallBlock):
+                    blocks.append(self._bounded_tool_call(block))
+                    continue
                 if not isinstance(block, ToolResultBlock):
                     blocks.append(block)
                     continue
@@ -155,6 +159,20 @@ class ContextAssembler:
             materialized.append(replace(message, content=tuple(blocks)))
         return tuple(materialized), tuple(artifacts.values())
 
+    def _bounded_tool_call(self, block: ToolCallBlock) -> ToolCallBlock:
+        """Bound a large Tool Call input, such as a whole written file.
+
+        The decision depends only on the call itself, never on its age, so the
+        projection of a message stays byte-identical across requests and the
+        cached conversation prefix survives.
+        """
+
+        if estimate_text_tokens(str(block.input)) <= self.artifact_threshold_tokens:
+            return block
+        bounded = _bounded_json(block.input, self.artifact_preview_chars)
+        assert isinstance(bounded, dict)
+        return replace(block, input=bounded)
+
     @staticmethod
     def _existing_ref(
         block: ToolResultBlock,
@@ -174,6 +192,23 @@ def _bounded_preview(content: str, max_chars: int, *, marker: str) -> str:
     tail_chars = max(0, max_chars - head_chars)
     tail = content[-tail_chars:] if tail_chars else ""
     return f"{content[:head_chars]}\n\n{marker}\n\n{tail}"
+
+
+def _bounded_json(value: object, max_chars: int) -> object:
+    """Bound every long string leaf while keeping the JSON shape and keys."""
+
+    if isinstance(value, str):
+        return _bounded_preview(
+            value,
+            max_chars,
+            marker=f"[Tool input truncated in the model projection ({len(value)} chars); "
+            "the original Message Event is unchanged.]",
+        )
+    if isinstance(value, dict):
+        return {key: _bounded_json(item, max_chars) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_bounded_json(item, max_chars) for item in value]
+    return value
 
 
 def compose_system_blocks(

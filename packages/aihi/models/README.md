@@ -117,7 +117,8 @@ request = ModelRequest(
 ```
 
 The Agent Runtime derives the key from Provider family, Model, canonical tool definitions, and stable
-system blocks. OpenAI receives a cache-family key, Anthropic receives one cache-control breakpoint,
+system blocks. OpenAI receives a cache-family key, Anthropic receives one cache-control breakpoint at
+the stable system boundary plus one rolling breakpoint on the last conversation block,
 DeepSeek relies on its automatic prefix cache, and unprofiled OpenAI-compatible endpoints remain a
 semantic no-op. `Usage.cached_input_tokens` and `Usage.cache_write_input_tokens` normalize cache reads
 and writes when a Provider reports them. Legacy `system_prompt` requests remain supported.

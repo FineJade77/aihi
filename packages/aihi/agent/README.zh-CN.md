@@ -190,7 +190,7 @@ Compaction 决策，目标为 60%。每个持久化 `model.usage` Event 都记�
 
 Context 组装与压缩是两个独立阶段。`ContextAssembler` 保持应用 System Prompt 为稳定缓存前缀，追加
 动态 Section，并在 Token 计量前外置大型 Tool Result；未注入 Artifact Store 时也会生成带摘要指纹的
-有界 Head/Tail 投影。`ContextCompactor` 以能够闭合所有 Tool Call/Result 的最小 Exchange 为原子单位，
+有界 Head/Tail 投影。大型 Tool Call 入参（例如整份写入的文件）同样内联限界。`ContextCompactor` 以能够闭合所有 Tool Call/Result 的最小 Exchange 为原子单位，
 用累计的 Schema v2 `ContextState` 替换旧分组，并仅按 30%/32K Token 预算选择近期原文后缀，同时保留最新
 闭合分组。累计状态自身限制在约 2K Token；没有固定 Turn 数下限，也没有第二套 Pruning 模块。
 

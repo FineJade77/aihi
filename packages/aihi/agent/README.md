@@ -195,7 +195,7 @@ cache-family key, never the key or prompt itself.
 Context assembly and compaction are separate phases. `ContextAssembler` keeps the application system
 prompt as the stable cache prefix, appends dynamic sections, and externalizes large Tool Results before
 token measurement. Without an Artifact Store it still emits a bounded head/tail result projection with
-digest metadata. `ContextCompactor` uses the smallest closed Tool Call/Result exchange as its atomic unit,
+digest metadata. Large Tool Call inputs, such as a whole written file, are bounded inline the same way. `ContextCompactor` uses the smallest closed Tool Call/Result exchange as its atomic unit,
 replaces older groups with one cumulative schema-v2 `ContextState`, and chooses the recent raw suffix only
 by the 30%/32K token budget while retaining the newest closed group. The cumulative state is bounded to
 approximately 2K estimated tokens. There is no fixed turn-count minimum and no second pruning module.

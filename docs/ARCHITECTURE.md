@@ -207,7 +207,9 @@ new EventStore entries, and facts are evicted monotonically by observed sequence
 
 Large Tool Results are externalized and reused by artifact identity when an Artifact Store is injected;
 without one, assembly still emits a bounded head/tail projection with size and digest metadata while the
-raw Message Event remains unchanged. Compact-model chunks run with bounded concurrency and degrade per
+raw Message Event remains unchanged. Large Tool Call inputs are bounded inline by size alone, so a
+message projects to the same bytes on every request and the Anthropic rolling breakpoint on the last
+conversation block keeps reading the cached history. Compact-model chunks run with bounded concurrency and degrade per
 chunk, preserving successful summaries. There is no second pruning module or Runtime pass. Model
 enrichment may add semantic constraints and next steps, but Events, Tool metadata and Artifact manifests
 remain the only source for file changes, verification receipts, failures and approvals.

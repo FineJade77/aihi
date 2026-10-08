@@ -177,6 +177,8 @@ def _request_payload(request: ModelRequest) -> dict[str, Any]:
                     }
                 )
         messages.append({"role": message.role, "content": blocks or [{"type": "text", "text": ""}]})
+    if request.cache_policy is not None and request.cache_policy.enabled:
+        _mark_conversation_tail(messages)
     payload: dict[str, Any] = {
         "model": request.model,
         "messages": messages,
@@ -224,6 +226,23 @@ def _request_payload(request: ModelRequest) -> dict[str, Any]:
     if request.effort is not None:
         payload["output_config"] = {"effort": request.effort}
     return payload
+
+
+def _mark_conversation_tail(messages: list[dict[str, Any]]) -> None:
+    """Put the rolling cache breakpoint on the last conversation block.
+
+    The stable system boundary only caches the prompt and tool definitions.
+    Each tool turn appends to the same message prefix, so marking its tail lets
+    the next request read everything this one wrote instead of paying for the
+    whole history again. Anthropic rejects cache_control on empty text.
+    """
+
+    if not messages:
+        return
+    tail = messages[-1]["content"][-1]
+    if tail.get("type") == "text" and not tail.get("text"):
+        return
+    tail["cache_control"] = {"type": "ephemeral"}
 
 
 async def _parse_stream(

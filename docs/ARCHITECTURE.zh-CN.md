@@ -178,7 +178,9 @@ Runtime 使用 `ContextBudget.input_capacity` 衡量完整规范化请求；该�
 增量，并按事实的观测序号单调淘汰，不会从完整历史重新插入已删除事实。
 
 注入 Artifact Store 时，大型 Tool Result 会外置并按 Artifact 身份复用；未注入时，组装器也会生成带
-大小与摘要指纹的有界 Head/Tail 投影，而原始 Message Event 保持不变。Compact Model 分块使用有界并发，
+大小与摘要指纹的有界 Head/Tail 投影，而原始 Message Event 保持不变。大型 Tool Call 入参只按大小内联限界，
+因此同一条消息在每次请求中投影出相同字节，Anthropic 在会话最后一个内容块上的滚动断点可以持续读取已缓存
+的历史。Compact Model 分块使用有界并发，
 并按 Chunk 降级以保留其他成功摘要。不再存在第二套 Pruning 模块或 Runtime 阶段。模型只能补充语义约束
 和下一步；文件修改、验证收据、失败和审批仍只能来自不可变 Event、Tool Metadata 与 Artifact Manifest。
 

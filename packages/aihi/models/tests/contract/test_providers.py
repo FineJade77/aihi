@@ -381,7 +381,7 @@ def test_openai_cache_request_preserves_a_stable_wire_prefix() -> None:
     assert payload["prompt_cache_key"] == "aihi:prompt-cache:v1:test"
 
 
-def test_anthropic_emits_exactly_one_cache_control_at_the_stable_boundary() -> None:
+def test_anthropic_marks_the_stable_boundary_and_the_conversation_tail() -> None:
     model_request = ModelRequest(
         model="claude-test",
         messages=(
@@ -408,6 +408,68 @@ def test_anthropic_emits_exactly_one_cache_control_at_the_stable_boundary() -> N
     assert system[1] == {"type": "text", "text": "dynamic"}
     assert system[2] == {"type": "text", "text": "compaction summary"}
     assert sum("cache_control" in block for block in system) == 1
+    assert payload["messages"] == [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "hello", "cache_control": {"type": "ephemeral"}}
+            ],
+        }
+    ]
+
+
+def test_anthropic_rolls_one_breakpoint_to_the_last_conversation_block() -> None:
+    model_request = ModelRequest(
+        model="claude-test",
+        messages=(
+            Message.text("user", "read both files"),
+            Message(
+                role="assistant",
+                content=(
+                    ToolCallBlock(id="call-1", name="read_file", input={"path": "a.py"}),
+                    ToolCallBlock(id="call-2", name="read_file", input={"path": "b.py"}),
+                ),
+            ),
+            Message(
+                role="user",
+                content=(
+                    ToolResultBlock(tool_call_id="call-1", content="a"),
+                    ToolResultBlock(tool_call_id="call-2", content="b"),
+                ),
+            ),
+        ),
+        system_blocks=(TextBlock("base", stable_prefix=True),),
+        cache_policy=CachePolicy(),
+    )
+
+    messages = anthropic_adapter._request_payload(model_request)["messages"]
+    blocks = [block for message in messages for block in message["content"]]
+
+    assert [("cache_control" in block) for block in blocks] == [False, False, False, False, True]
+    assert blocks[-1]["tool_use_id"] == "call-2"
+    assert blocks[-1]["cache_control"] == {"type": "ephemeral"}
+
+
+def test_anthropic_never_marks_an_empty_text_block_or_an_uncached_request() -> None:
+    empty_tail = ModelRequest(
+        model="claude-test",
+        messages=(Message(role="assistant", content=()),),
+        system_blocks=(TextBlock("base", stable_prefix=True),),
+        cache_policy=CachePolicy(),
+    )
+    uncached = ModelRequest(
+        model="claude-test",
+        messages=(Message.text("user", "hello"),),
+        system_blocks=(TextBlock("base", stable_prefix=True),),
+    )
+
+    for model_request in (empty_tail, uncached):
+        messages = anthropic_adapter._request_payload(model_request)["messages"]
+        assert all(
+            "cache_control" not in block
+            for message in messages
+            for block in message["content"]
+        )
 
 
 def test_cache_policy_can_disable_all_explicit_provider_hints() -> None:
@@ -422,6 +484,14 @@ def test_cache_policy_can_disable_all_explicit_provider_hints() -> None:
     system = anthropic_adapter._request_payload(model_request)["system"]
     assert isinstance(system, list)
     assert all("cache_control" not in block for block in system)
+    disabled_tail = ModelRequest(
+        model="test-model",
+        messages=(Message.text("user", "hello"),),
+        system_blocks=(TextBlock("base", stable_prefix=True),),
+        cache_policy=CachePolicy(enabled=False, key="unused"),
+    )
+    tail = anthropic_adapter._request_payload(disabled_tail)["messages"][-1]["content"][-1]
+    assert "cache_control" not in tail
 
 
 @pytest.mark.asyncio

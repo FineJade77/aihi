@@ -81,9 +81,9 @@ Replay 属于 `aihi-agent`；产品 Prompt 和 Compact Model 选择仍由应用�
 | 切片 | 范围 | 验收 |
 | --- | --- | --- |
 | H-19.1 | 冻结 `CachePolicy`、System Block、`CompactionPolicy`、ContextState v2 和兼容契约 | 实现前新增契约测试保持失败；旧 ModelRequest、Message、Event 和 Summary 数据仍可解码 |
-| H-19.2 | Stable Prefix 编译和 Provider Cache 映射 | 只有一个稳定断点；Cache Family Key 确定性；不支持的 Provider 语义等价 no-op；Cache Usage 规范化 |
+| H-19.2 | Stable Prefix 编译和 Provider Cache 映射 | 只有一个稳定前缀断点，Anthropic 另有一个会话尾部滚动断点；Cache Family Key 确定性；不支持的 Provider 语义等价 no-op；Cache Usage 规范化 |
 | H-19.3 | 完整请求 Token 压力和 60/80/60 滚动水位 | 支持时在阈值附近精确计数；计数失败保守降级；每个请求只做一次 Compaction 决策 |
-| H-19.4 | Artifact-first 组装 | 存在 Store 时外置并按内容/调用身份复用大型 Tool Result，否则内联限界；Stable Prefix 与原始 Event 历史不变 |
+| H-19.4 | Artifact-first 组装 | 存在 Store 时外置并按内容/调用身份复用大型 Tool Result，否则内联限界；大型 Tool Call 入参内联限界；Stable Prefix 与原始 Event 历史不变 |
 | H-19.5 | 带证据的滚动 ContextState 压缩 | 闭合 Tool Exchange 保持原子性；状态按 Event 游标增量投影；按 Recency 单调淘汰；累计状态与原文 Tail 均受 Token 预算约束 |
 | H-19.6 | 联合 Eval、兼容性、文档和打包门禁 | Cache/Compaction Golden Trace、长 Session Eval、冻结 Fixture Replay、installed-wheel 检查和中英文文档全部通过 |
 

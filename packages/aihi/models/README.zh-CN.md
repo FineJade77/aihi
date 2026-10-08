@@ -86,7 +86,8 @@ request = ModelRequest(
 ```
 
 Agent Runtime 使用 Provider Family、Model、规范化 Tool Definition 和 Stable System Block 派生
-Key。OpenAI 接收 Cache Family Key；Anthropic 接收一个 Cache Control 断点；DeepSeek 使用自动
+Key。OpenAI 接收 Cache Family Key；Anthropic 在稳定 System 边界接收一个 Cache Control
+断点，并在会话最后一个内容块上接收一个滚动断点；DeepSeek 使用自动
 Prefix Cache；未显式声明能力的 OpenAI-compatible Endpoint 保持 no-op。Provider 返回数据时，
 `Usage.cached_input_tokens` 和 `Usage.cache_write_input_tokens` 分别规范化 Cache Read/Write。
 旧 `system_prompt` 调用继续兼容。
